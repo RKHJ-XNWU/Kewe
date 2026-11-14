@@ -1,29 +1,35 @@
-# 🐳 Dart · DeepSeek Harness (ddsh)
+# 🌌 Kewe（聚维）· 双维度聚合大模型中枢
 
 ## 作者问答
 
 | 问题 | 回答 |
 | :--- | :--- |
 | **现在主要维护什么语言** | 现在维护中文，其他语言永久终止维护 |
-| **支持朗读什么语言？怎么实现？** | 普通聊天支持朗读6种语言，机器翻译支持朗读32种语言。普通聊天使用合成播放不落盘，就是有点延迟，而且容易被拦截；机器翻译就是使用下载音频然后再自动播放，缺点就是长期不清除音频文件容易占用空间，但这种方法100%不拦。 |
+| **支持朗读什么语言？怎么实现？** | 普通聊天支持朗读6种语言，机器翻译支持朗读32种语言 |
 | **一定要termux吗？** | 不一定，也可以使用其他的终端，但最好是termux |
 | **为什么要使用浏览器原生的弹窗和样式？** | 因为作者懒得一个个写样式，能用就行 |
 | **什么功能要用到语音key** | 豆包音频生成、豆包语音通话、豆包机器翻译 |
 | **豆包语音通话支持一句话做事吗？** | 不支持。如果有这方面的需求请到DeepSeek维度，千万不要直接到豆包维度调用DeepSeek，记住，千万不要，如果可以的话，我也不会开发双维度通道了。 |
 | **机器翻译使用的是什么大模型？** | 使用的就是机器翻译大模型，已经在控制台给你填好了翻译模型，使用文本输入的。目前翻译模型只有一种模型，建议不要乱动。 |
-| **音频生成使用什么模型？** | 使用的是audio1.0模型，目前也不支持随意乱动，因为都设置好的了。 |
-| **图片生成加入了5.5，这是真的吗？** | 千真万确，但是作者还是建议你使用5.0 pro，因为这个图片模型是唯一可以正常使用的。5.5也可以使用，这个图片目前只能正常使用5.0pro。目前这个功能可能随时暂停维护，我只能保证现在能用，未来能不能用我无法保证。 |
-| **豆包语音通话使用的是什么模型？** | 使用的就是豆包语音通话模型，就是端到端实时语音模型，但是不支持让AI说话，因为没有依赖，而我这个dart项目又没有依赖。 |
+| **音频生成使用什么模型？** | 使用的是audio1.0模型，目前也不支持随意乱动，因为都设置好的了，而且消耗的是你的音频额度|
+| **图片生成加入了5.5，这是真的吗？** | 千真万确，可以正常使用|
+| **豆包语音通话使用的是什么模型？** | 使用的就是豆包语音通话模型，就是端到端实时语音模型，AI可以说话，实时对话 |
 | **豆包大模型的额度使用的是什么？** | 使用的是端到端实时语音的额度，默认模型只有一个已经给你填好了，建议不用乱动。 |
 | **豆包语音通话需要填key吗？** | 往下拉填全双工key，确定填好了之后点击保存。不显示不是bug，是正常表现，但你看数据文件已经正确添加了。 |
 | **为什么提示词不公开？** | 因为属于内部资产，而且提示词你也可以自己写。目前公开了视频理解指令，音频和图片指令你可以自己写。 |
-| **为什么你有了edge tts朗读功能，却不做端到端实时语音的朗读？** | 因为这个功能我不会做，而且你看似很简单，但是有没有可能全被浏览器给拦截了呢？ |
-| **语音通话功能为什么做不到叫AI回答** | 做是可以做到，但是没有依赖包全被浏览器给拦截了 |
 | **设置可以乱改吗？** | 不建议乱改，因为通话、音频生成、机器翻译已经设置好了，乱动乱改可能就会导致程序错误。 |
 | **为什么机器翻译的朗读它要下载播放？** | 因为要100%播放，而且不会被拦截，而且已经拿到了文本再去播放翻译即可。 |
-| **为什么全部清空文件的时候后端日志不打印？** | 因为作者已经无力维护这个项目了，只能按现状提供了，其实这个也很简单，在后端添加逻辑就行了，但是作者已经很累了，再去后端添加怕出错，所以干脆不加了，但是请放心，文件是会真实清空的|
-| **这个项目是不是已经终止了维护？** | 不会永久维护，毕竟dart项目本来就维护，并且这个项目我修bug都差点把身体修垮了。 |
-| **这个项目未来会持续维护吗？** | 这已经是最终版本了，不会持续维护了，除非是修复bug，或者模型失效更新模型，至于新功能不会在添加了。 |
+| **这个项目是不是已经终止了维护？** | 不会永久维护，毕竟dart项目本来就难以维护，要加入其他豆包官方的功能，比如同声传译就要下载依赖包 |
+| **为什么残留日语？** | 因为原语言就是日语开发的 |
+**会不会重复计费？** | 如果你不乱操作，一般情况下压根就不会重复计费 |
+**支持双维度切换吗？** | 必须支持|
+**使用这个项目要安装什么？** | 安装Python和dart即可 |
+**这个项目目前是什么状态？** | 目前是定稿状态 |
+**为什么不做语音合成？** | 不是技术实现不了，而是不想做，再加上要下载依赖 |
+**这个项目我可以fork后二改吗？** | 当然可以，只要署我的名就行了 |
+**豆包语音通话、豆包播客生成、豆包音频生成、豆包机器翻译消耗的是什么额度？** | 消耗的是专属的额度，不会消耗文本额度 |
+**我要使用什么维度来工作？** | 强烈建议是DeepSeek维度，但是他不会的或者依赖不支持以及有限制的内容你就算强行强迫他，他也不会做啊 |
+| **这个项目未来会持续维护吗？** | 这已经是最终版本了，不会持续维护了，除非是修复bug，或者模型失效更新模型，至于新功能不会再添加了。 |
 
 # 📢 项目维护范围调整及现状声明
 
@@ -193,7 +199,7 @@
 
 ## 一、这是什么
 
-**Dart · DeepSeek Harness**（下文简称 **ddsh**）是一个**自己托管、自己享用**的 AI 前端 + 后端一体项目。
+**Kewe（聚维）**（下文简称 **Kewe**）是一个**自己托管、自己享用**的 AI 前端 + 后端一体项目。「聚维」意为双维度聚合——在不同维度之间自由切换，既能调用 DeepSeek 大模型，也能切换到豆包维度调用豆包大模型、GLM 大模型、Kimi 大模型，两个维度互不影响，如同平行时空。
 
 它不是"又一个网页壳子"，而是把一整套后端能力塞进了一个 Dart 进程里：
 
@@ -327,7 +333,7 @@ termux-wake-lock
 
 ### 4.3 安装 Dart SDK
 
-ddsh 需要 Dart 3.0 以上。
+Kewe 需要 Dart 3.0 以上。
 
 ```bash
 pkg install -y dart
@@ -350,8 +356,8 @@ which dart && dart --version
 
 ```bash
 cd ~
-git clone https://github.com/RKHJ-XNWU/Dart-DeepSeek-Harness.git ddsh
-cd ddsh
+git clone https://github.com/RKHJ-XNWU/Kewe
+cd kewe
 ls
 ```
 
@@ -362,7 +368,7 @@ ls
 ### 4.5 编译（自己动手，一行命令）
 
 ```bash
-cd ~/ddsh
+cd ~/kewe
 dart pub get
 dart compile exe bin/main.dart -o app
 ```
@@ -381,14 +387,14 @@ dart run bin/main.dart
 **方式 A：前台运行（调试首选，Ctrl+C 停止）**
 
 ```bash
-cd ~/ddsh
+cd ~/kewe
 ./app
 ```
 
 **方式 B：后台守护（日常使用首选）**
 
 ```bash
-cd ~/ddsh
+cd ~/kewe
 python3 st.py --daemon
 ```
 
@@ -457,7 +463,7 @@ ifconfig wlan0 | grep inet
 ## 五、目录结构详解
 
 ```
-ddsh/
+kewe/
 ├── bin/
 │   └── main.dart              # 入口：路由注册、静态文件、HTTP 服务启动
 ├── lib/src/                   # 后端全部逻辑（按域拆分）
@@ -640,7 +646,7 @@ ddsh/
 
 ### 7.4 怎么自检语言残留
 
-在 `ddsh` 目录执行：
+在 `kewe` 目录执行：
 
 ```bash
 # 1) 词典条目数是否六语一致
@@ -828,7 +834,101 @@ Key 不是明文躺在配置文件里，而是用 **AES-256-GCM** 加密后写�
 
 ### 10.5 豆包配置在哪
 
-`data/deepseek_chat/doubao_config.sts`（加密），以及视频相关 `doubao_video_ark.json`、`doubao_ark_files.sts`。
+`data/deepseek_chat/doubao_config.sts`（明文 JSON），以及视频相关 `doubao_video_ark.json`、`doubao_ark_files.sts`。
+
+---
+
+### 10.6 豆包语音通话（Seeduplex 端到端实时）
+
+#### 10.6.1 是什么
+
+语音通话走的是豆包端到端实时语音大模型（Seeduplex 全双工），连接地址：
+
+`wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue`
+
+- 链路：浏览器 ⇄ 本地 Dart 服务（WebSocket 代理）⇄ 火山引擎。浏览器 WebSocket 无法带自定义请求头，所以鉴权头由服务端补齐。
+- 模型固定 `1.2.6.1`（S2S 全双工版本）。
+- **只消耗豆包语音通话额度**（`Doubao_scene_SLM_Doubao_realtime_voice_model`），不消耗方舟文本 / ASR / TTS 额度。RTC 混合编成已封死，不会外挂方舟 LLM。
+
+#### 10.6.2 音色与多语种
+
+| 音色 | ID | 语种 |
+|---|---|---|
+| Vivi 2.0（默认） | `zh_female_vv_uranus_bigtts` | 中文、日文、印尼、墨西哥西语 + 30+ 语种 |
+| 小何 2.0 | `zh_female_xiaohe_uranus_bigtts` | 中文 + 30+ 语种 |
+| 云舟 2.0 | `zh_male_m191_uranus_bigtts` | 中文 + 30+ 语种 |
+| 小天 2.0 | `zh_male_taocheng_uranus_bigtts` | 中文 + 30+ 语种 |
+
+关键结论（务必记住）：
+
+- `jupiter` 结尾的音色是 S2S-O **旧版**，官方标注**仅中文**，遇到非中文会返回「当前音色不支持回复该语言」。
+- `uranus` 结尾的音色是 2.0 库（S2S-O2.0 / S2S 全双工），支持多语种。
+- 后端 `dbNormalizeDuplexVoice()` 会把 jupiter 旧音色自动归一化到 uranus，即使配置里残留旧值也会被纠正。
+- 官方音色列表：https://docs.volcengine.com/docs/6561/1257544
+- 注意：官方音色列表标注「多语种自动识别参数仅适用于单向流、双向流接口，不支持 S2S 链路」。S2S 链路的多语种是音色内置能力，跟随音色本身，不需要也不接受显式语种参数。
+
+#### 10.6.3 通话记录
+
+- 一次通话 = 一个文件，保存到 `data/voice/voice_时间戳_随机.sts`。
+- 每行格式：`时间戳|角色|文本|序号|语言`（文本内的 `|` 和换行已转义）。
+- 前端历史记录支持：人读渲染（不是直接显示 .sts 原文）、单选删除、批量删除、一键清空；删除后明确提示「共删除 N 条通话记录」。
+- 删除是**真实删除文件**，无幽灵文件。
+
+#### 10.6.4 打断与识别
+
+打断（`response.cancel`）只停止 AI 当前播放，**不会关闭麦克风**。打断后丢弃约 200ms 采集帧让扬声器回声消散，然后立即恢复聆听，服务端 VAD 回到干净状态，用户下一句话能被正常识别。
+
+### 10.7 豆包原生播客（HTTP SSE）
+
+#### 10.7.1 是什么
+
+播客走豆包语音播客大模型，连接地址：
+
+`https://openspeech.bytedance.com/api/v3/podcast/sse`
+
+- 鉴权头：`x-api-key` + `x-api-resource-id: volc.service_type.10050` + `Accept: text/event-stream`。
+- **只消耗豆包语音播客额度**（语音侧 token），不消耗方舟文本额度。
+- 服务端代理补鉴权头（优先用「音频生成 Key」，即 f 开头的 OpenSpeech Key），浏览器只发业务字段。
+
+#### 10.7.2 三种生成方式
+
+| action | 方式 | 关键字段 |
+|---|---|---|
+| 0 | 文本 / 网页 / 文件总结生成 | `input_text`（或 `input_info.input_url`） |
+| 3 | 对话文本直接合成 | `nlp_texts`（数组，每项含 `text` + `speaker`） |
+| 4 | 话题联网生成 | `prompt_text` |
+
+#### 10.7.3 音色（双人，仅支持 2 位发音人）
+
+| 音色对 | 音色 A | 音色 B |
+|---|---|---|
+| 咪仔 + 大衣先生（默认） | `zh_female_mizaitongxue_v2_saturn_bigtts` | `zh_male_dayixiansheng_v2_saturn_bigtts` |
+| 刘飞 + 潇磊 | `zh_male_liufei_v2_saturn_bigtts` | `zh_male_xiaolei_v2_saturn_bigtts` |
+
+- 音色对通过 `audio_config.speaker_info.speakers` 透传（注意是 `speaker_info.speakers` 两层嵌套）。
+- **播客是中文双人对谈，不支持 30+ 语种**。多语种是语音通话（S2S 链路）的能力，播客场景官方明确不支持，不要把通话音色套到播客。
+
+#### 10.7.4 时长与字符限制
+
+官方接口没有固定「分钟」参数，时长由输入文本量决定。前端把目标时长（1~10 分钟）拼进生成指令（action=0 拼进 `input_text`，action=4 拼进 `prompt_text`）。
+
+官方字符限制：
+
+- action=0：`input_text_max_length` 默认 20000 字符（建议不超过 12000 以保证稳定）。
+- action=3：单轮不超过 300 字符，所有轮次合计不超过 10000 字符。
+
+#### 10.7.5 SSE 事件速查
+
+| 事件 | 含义 |
+|---|---|
+| 150 | 保存 session_id |
+| 360 | 轮次开始（含 round_id / speaker / text） |
+| 361 | 轮次音频分片（顶层 `data` 字段为 Base64） |
+| 362 | 轮次结束（含 audio_duration / start_time / end_time） |
+| 363 | 播客结束（`meta_info.audio_url` 完整音频链接，24h 有效，需 `return_audio_url=true`） |
+| 152 / 154 | 生成成功 / 用量信息（154 会多次推送 input/output token） |
+
+音频默认格式是 pcm，服务端已强制改为 mp3 便于前端播放；音频分片逐片 Base64 解码后按顺序拼接。
 
 ---
 
@@ -1022,7 +1122,7 @@ Key 不是明文躺在配置文件里，而是用 **AES-256-GCM** 加密后写�
 ### 15.1 原理
 
 ```
-ddsh 后端
+Kewe 后端
   └─ adb（127.0.0.1:5555，uid=2000 shell 权限）
        └─ auto.py / 底层 adb shell 命令
             └─ Android 系统：点击、滑动、输入、截图、启停应用
@@ -1039,7 +1139,7 @@ ddsh 后端
 ### 15.3 拉起通道
 
 ```bash
-cd ~/ddsh
+cd ~/kewe
 bash adb_up.sh
 ```
 
@@ -1195,12 +1295,17 @@ adb shell settings get secure default_input_method
 | GET | `/api/doubao/video/tasks` | 任务列表 |
 | POST | `/api/doubao/asr` | 语音识别 |
 | POST | `/api/doubao/tts` | 语音合成 |
-| POST | `/api/doubao/podcast` | 播客生成 |
+| POST | `/api/doubao/podcast` | 播客生成（旧：剧本 + Edge TTS） |
+| POST | `/api/doubao/podcast/sse` | 播客生成（原生 SSE，推荐） |
 | POST | `/api/doubao/analyze-audio` | 音频分析 |
 | POST | `/api/doubao/realtime` | 实时会话 |
 | GET | `/api/doubao/realtime/status` | 实时状态 |
 | POST | `/api/doubao/rtc/start` `stop` | RTC 通话 |
 | POST | `/api/doubao/voice/turn` | 语音轮次 |
+| POST | `/api/doubao/voice/save` | 保存通话记录 |
+| GET | `/api/doubao/voice/list` | 通话记录列表 |
+| POST | `/api/doubao/voice/delete` | 删除通话记录 |
+| POST | `/api/doubao/voice/clear` | 清空通话记录 |
 | GET | `/api/doubao/models` | 模型清单 |
 | GET/POST | `/api/doubao/config` | 配置读写 |
 
@@ -1268,7 +1373,7 @@ HTTPS_PROXY=http://127.0.0.1:7890 ./app                    # 走代理
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | `dart: command not found` | 未装 Dart | `pkg install dart` |
-| `Error: Couldn't resolve the package 'ddsh'` | 没跑 `pub get` | `dart pub get` |
+| `Error: Couldn't resolve the package 'kewe'` | 没跑 `pub get` | `dart pub get` |
 | `Address already in use` | 端口被占 | `pkill -f 'app'` 或 `DSH_PORT=8081 ./app` |
 | 编译 OOM | 内存不足 | 改用 `dart run bin/main.dart` |
 | `app` 不存在 | 没编译 | `python3 st.py --rebuild` |
@@ -1315,7 +1420,7 @@ HTTPS_PROXY=http://127.0.0.1:7890 ./app                    # 走代理
 
 ```bash
 python3 st.py --logs 200          # 最近 200 行
-./app 2>&1 | tee /tmp/ddsh.log    # 前台跑并落日志
+./app 2>&1 | tee /tmp/kewe.log    # 前台跑并落日志
 ```
 
 日志里出现 `⚠️ ポート ... が使用できません` 表示端口被占，会自动重试；出现 500 多半是上游返回异常，往上翻能看到具体 URL 与响应体。
@@ -1591,7 +1696,7 @@ Android 7.0。低于此版本 Termux 与 adb 无线调试支持都不完整。
 可以，但要遵守转义规则（换行 `\n`、竖线 `\p`、反斜杠 `\\`），改坏了行会解析失败。
 
 **Q85. 数据能迁移到新手机吗？**
-能。整个 `ddsh/` 目录拷过去（含 `data/`），或备份包还原。
+能。整个 `kewe/` 目录拷过去（含 `data/`），或备份包还原。
 
 **Q86. `.sts` 为什么不存 JSON？**
 单行存储、易追加、易 grep、坏一行不毁全文件。
@@ -1710,8 +1815,8 @@ dart analyze lib bin        # 可选，但建议
 ```bash
 # 安装依赖与编译
 pkg install -y dart git
-git clone https://github.com/RKHJ-XNWU/Dart-DeepSeek-Harness.git ddsh
-cd ddsh && dart pub get
+git clone https://github.com/RKHJ-XNWU/Dart-DeepSeek-Harness.git kewe
+cd kewe && dart pub get
 dart compile exe bin/main.dart -o app
 
 # 启动
@@ -1754,8 +1859,6 @@ curl -s 127.0.0.1:9999/api/displaymodels | head -c 200
 
 <div align="center">
 
-**🐋 Dart · DeepSeek Harness v2.1.0**
-
-本 README 全文基于仓库真实源码结构撰写（端口、端点、模型、脚本、数据格式均与代码一致）。
+**🌌 Kewe（聚维）v2.1.0**
 
 </div>

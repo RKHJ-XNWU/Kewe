@@ -1,0 +1,30 @@
+MIT License
+
+Copyright (c) 2026 Kewe（聚维）· RKHJ-XNWU <yinghuoshengxia@qq.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------------------------------------------------------------------------
+项目名称：Kewe（聚维）
+含义：双维度聚合中枢 —— 在不同维度之间自由切换，既能调用 DeepSeek 大模型，
+      也能切换到豆包维度调用豆包大模型、GLM 大模型、Kimi 大模型，双维度互不影响。
+
+版权归属：本项目源代码（Dart 后端 + 原生 Web 前端）版权归 RKHJ-XNWU 所有。
+        提示词资产属作者作品，可读可用，不可单独抽取分发或转售。
+----------------------------------------------------------------------------

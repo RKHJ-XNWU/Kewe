@@ -359,7 +359,7 @@ Future<SmartShellResult> runSmartShell(String workdir, String cmdStr,
   if (!online) {
     final r = await runRawShell(workdir, cmdStr, timeout: timeout);
     final hint = '\n⚠️ adb shell 通道がオフラインです（$_adbLastError）。'
-        'Termux で ddsh/adb_up.sh を実行してください';
+        'Termux で kewe/adb_up.sh を実行してください';
     return SmartShellResult('${r.out}$hint', false, r.code);
   }
   final sb = StringBuffer();
@@ -1577,7 +1577,7 @@ Future<String> execToolStartApp(Map<String, dynamic> args) async {
     return '❌ $pkg の起動に失敗しました: ${r.out.trim()}';
   }
   if (!adbChannelReady()) {
-    return '⚠️ adb shell 通道がオフラインです。Termux で ddsh/adb_up.sh を実行してください（${adbLastError()}）';
+    return '⚠️ adb shell 通道がオフラインです。Termux で kewe/adb_up.sh を実行してください（${adbLastError()}）';
   }
   return '⚠️ am start は送信しましたが、前面が $pkg になっていません'
       '（現在: ${fg.isEmpty ? '不明' : fg}）\n${r.out.trim()}';
@@ -2373,7 +2373,7 @@ Future<String> execToolAdbStatus() async {
   sb.write('bin: $bin\nserial: $dsAdbSerial\n');
   sb.write('devices: ${dev.out.trim()}\n');
   sb.write('shell id: ${id.out.trim()}\n');
-  if (!ok) sb.write('hint: Termux で ddsh/adb_up.sh を実行してください\n');
+  if (!ok) sb.write('hint: Termux で kewe/adb_up.sh を実行してください\n');
   return sb.toString();
 }
 
@@ -2396,7 +2396,7 @@ Future<String> execToolAdbShell(Map<String, dynamic> args) async {
   final ok = await ensureAdbChannel();
   if (!ok) {
     return '🚫 adb shell 通道がオフラインです（${adbLastError()}）。'
-        'Termux で ddsh/adb_up.sh を実行してください';
+        'Termux で kewe/adb_up.sh を実行してください';
   }
   final r = await runViaAdb(cmdStr, timeout: Duration(seconds: timeout));
   var out = r.out;

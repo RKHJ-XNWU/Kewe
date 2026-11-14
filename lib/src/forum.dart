@@ -1,6 +1,6 @@
 // ============================================================
 // forum.dart —— 论坛帖子模块（帖子展示与论坛发帖）
-//   目录：$DATA_DIR/dispost  （即 ddsh/data/dispost）
+//   目录：$DATA_DIR/dispost  （即 kewe/data/dispost）
 //   一帖一文件：${id}.sts，UTF-8，内容为 JSON 结构
 //   字段：id / title / content / author / createdAt / updatedAt /
 //         isPinned / isFeatured / isBlocked / isDeleted

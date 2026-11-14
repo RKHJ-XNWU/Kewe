@@ -1569,3 +1569,163 @@ I18N.add('fr', `
 単価（元/百万tokens）：|Prix unitaire (yuans par million de tokens) :
 統一単価（時間帯による変動なし）：|Tarif unique (sans variation selon l'heure) :
 `);
+
+
+I18N.add('fr', `
+DeepSeek ディメンション|Dimension DeepSeek
+豆包ディメンション|Dimension Doubao
+ポータルを開いています|Ouverture du portail
+主世界へ戻っています|Retour au monde principal
+チャンクを読み込んでいます…|Chargement des segments…
+新しいディメンションを生成しています…|Génération d'une nouvelle dimension…
+抖音百科が開いています。先に百科をオフにしてください|L'encyclopédie Douyin est activée, veuillez d'abord la désactiver
+抖音百科のマスタースイッチを先にオンにしてください|Veuillez d'abord activer l'interrupteur principal de l'encyclopédie Douyin
+抖音百科は豆包モードでのみ利用可能です|L'encyclopédie Douyin n'est disponible qu'en mode Doubao
+抖音百科をオフにしました|Encyclopédie Douyin désactivée
+抖音百科をオンにしました|Encyclopédie Douyin activée
+抖音百科：オフ（クリックでオン）|Encyclopédie Douyin : désactivée (cliquer pour activer)
+抖音百科：オン（クリックでオフ）|Encyclopédie Douyin : activée (cliquer pour désactiver)
+豆包オーディオ生成|Génération audio Doubao
+音声シーン描写を入力してください|Veuillez saisir la description de la scène audio
+生成中…（最大2分ほどかかる場合があります）|Génération… (peut prendre jusqu'à 2 minutes)
+対話モデル（DeepSeek）：|Modèle de dialogue (DeepSeek) :
+対話モデル（豆包）：|Modèle de dialogue (Doubao) :
+✅ 送信モデルを豆包に切り替えました：|Modèle d'envoi basculé sur Doubao :
+✅ 送信モデルを切り替えました：|Modèle d'envoi changé :
+✅ 対話モデルを追加しました：|Modèle de dialogue ajouté :
+✅ 豆包対話モデルを追加しました：|Modèle de dialogue Doubao ajouté :
+モデル名を追加（対話モデルのみ）|Ajouter un nom de modèle (modèles de dialogue uniquement)
+追加に失敗しました：|Échec de l'ajout :
+翻訳専用 API Key を入力|Saisir la clé API de traduction
+音声生成 API Key を入力|Saisir la clé API de génération audio
+豆包機械翻訳|Traduction automatique Doubao
+対話モデル|Modèle de dialogue
+現在：|Actuel :
+DeepSeek 対話モデル|Modèle de dialogue DeepSeek
+豆包対話モデル（火山方舟）|Modèle de dialogue Doubao (Volcano Ark)
+カスタム|Personnalisé
+豆包画像編集|Édition photo Doubao
+翻訳モデル（テキスト入力）|Modèle de traduction (saisie texte)
+歌唱能力（ネイティブ）|Capacité de chant (native)
+内蔵ウェブ検索|Recherche web intégrée
+ウェブ検索 API Key（融合情報検索）|Clé API de recherche web (recherche d'infos fusionnée)
+出力語速|Débit vocal de sortie
+融合情報検索 API Key（内蔵ウェブ検索を有効化後に設定）|Clé API de recherche d'infos fusionnée (requise après activation)
+エンドツーエンド音声通話 · 豆包音声通話クォータのみ消費 · Vivi ネイティブ音色|Appel vocal de bout en bout · seule la quota d'appel vocal Doubao est consommée · voix native Vivi
+⚠️ 先に設定で豆包音声 API Key を入力してください|⚠️ Veuillez d'abord saisir la clé API vocale Doubao dans les paramètres
+マイク|Micro
+ミュート|Muet
+通話を終了|Raccrocher
+通話終了|Raccrocher
+割り込み|Interrompre
+通話を開始|Démarrer l'appel
+モード|Mode
+全二重|Full-duplex
+通話履歴|Historique
+通話を終了しました|Appel terminé
+現在の応答を割り込みました|Réponse en cours interrompue
+全二重モードでのみ使用できます|Disponible uniquement en mode full-duplex
+接続済み（全二重）|Connecté (full-duplex)
+接続成功。話しかけてください！|Connecté, parlez !
+全二重サービスに接続中…|Connexion au service full-duplex…
+全二重モジュールが読み込まれていません|Module full-duplex non chargé
+接続失敗：|Échec de connexion :
+接続エラー|Erreur de connexion
+待機中|En attente
+マイクON|Micro activé
+✅ 通話記録を保存しました：|✅ Historique d'appel enregistré :
+音声合成に失敗：バックエンドが音声アドレスを返しませんでした|Échec de synthèse vocale : le backend n'a pas renvoyé d'URL audio
+音声合成エラー：|Erreur de synthèse vocale :
+豆包ネイティブポッドキャスト · 中文双人対談 · 公式音色 · 全画面没入型|Podcast natif Doubao · dialogue à deux en chinois · voix officielles · plein écran immersif
+豆包ネイティブポッドキャスト · 中文双人 · 音声ポッドキャストクォータのみ消費|Podcast natif Doubao · deux personnes · seule la quota de podcast est consommée
+テキスト生成（素材ベース）|Génération de texte (basée sur le matériel)
+対話合成|Synthèse de dialogue
+話題ウェブ検索生成|Génération par recherche web de sujet
+ポッドキャストを生成|Générer le podcast
+入力テキスト / 素材|Texte d'entrée / matériel
+対話テキスト（1行1発話、形式 A:xxx / B:xxx。A/B は音色ペアの2人の話者に対応）|Texte de dialogue (une réplique par ligne, format A:xxx / B:xxx)
+話題（ウェブ検索生成）|Sujet (génération par recherche web)
+目標時間（1〜10分）|Durée cible (1 à 10 min)
+ファイル名（任意）|Nom de fichier (facultatif)
+⚠️ 内容を入力してください|⚠️ Veuillez saisir du contenu
+約 {0} 分のポッドキャストを生成し、以下の素材をめぐって議論してください：|Générez un podcast d'environ {0} minutes en discutant du matériel suivant :
+約 {0} 分のポッドキャストを生成してください。話題：|Générez un podcast d'environ {0} minutes. Sujet :
+豆包ネイティブポッドキャストを生成中…（音声が長いため約1〜3分かかります。閉じないでください）|Génération du podcast natif Doubao… (audio long, 1 à 3 min, ne fermez pas)
+音声をダウンロード|Télécharger l'audio
+もう一度生成|Régénérer
+✅ 豆包ポッドキャストを生成しました|✅ Podcast Doubao généré
+ポッドキャスト生成に失敗：{0}|Échec de génération du podcast : {0}
+閲覧のみ。個別削除・一括削除・全削除に対応（ファイルを実際に削除し、元に戻せません）。|Affichage en lecture seule. Suppression simple, par lot et tout effacer (suppression réelle, irréversible).
+すべて選択|Tout sélectionner
+一括削除|Suppression par lot
+すべて削除|Tout effacer
+更新|Actualiser
+すべての通話履歴を完全に削除しますか？この操作は元に戻せません。|Effacer tout l'historique d'appel ? Cette action est irréversible.
+削除する記録を先に選択してください|Veuillez d'abord sélectionner les enregistrements à supprimer
+選択した {0} 件の通話記録を削除しますか？この操作は元に戻せません。|Supprimer les {0} enregistrements sélectionnés ? Cette action est irréversible.
+✅ 削除成功：計 {0} 件の通話記録を削除しました|✅ Suppression réussie : {0} enregistrement(s) supprimé(s)
+✅ {0} 件の通話記録を削除しました|✅ {0} enregistrement(s) d'appel supprimé(s)
+自分|Moi
+通話履歴がありません|Aucun historique d'appel
+（空の記録）|(enregistrement vide)
+ 行 · | lignes · 
+表示|Afficher
+削除|Supprimer
+計 {0} 件の記録|{0} enregistrement(s) au total
+32 言語の相互翻訳に対応。|Prend en charge la traduction entre 32 langues.
+ソース言語（未選択なら自動検出）|Langue source (détection auto si vide)
+自動検出|Détection automatique
+ターゲット言語（必須）|Langue cible (requis)
+翻訳するテキスト（1行1件）|Texte à traduire (un par ligne)
+翻訳|Traduire
+翻訳中…|Traduction…
+コピー|Copier
+読み上げ|Lire à voix haute
+✅ 翻訳成功|✅ Traduction réussie
+翻訳失敗|Échec de la traduction
+コードを畳む|Réduire le code
+コードを開く|Déplier le code
+ネット検索ソース|Sources de recherche web
+詳細を開く|Ouvrir les détails
+音声合成に失敗しました|Échec de la synthèse vocale
+⏳ 方舟が動画を前処理中（抽帧）…|⏳ Ark prétraite la vidéo (extraction d'images)…
+⏳ 方舟が動画を前処理中（抽帧）… {0} 秒|⏳ Ark prétraite la vidéo… {0} s
+☁️ TOS 上の動画を参照登録中（{0}）|☁️ Enregistrement de la référence vidéo sur TOS ({0})
+☁️ 方舟へアップロード中 {0}%（{1} / {2}）|☁️ Téléversement vers Ark {0}% ({1}/{2})
+☁️ 方舟へアップロード開始（{0}）|☁️ Début du téléversement vers Ark ({0})
+♻️ アップロード済みの動画を再利用します|♻️ Réutilisation de la vidéo téléversée
+✅ 動画の準備完了。回答を生成します…|✅ Vidéo prête. Génération de la réponse…
+🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります|🎞️ Plus de 512 Mo, compression locale (orig {0})… prend du temps
+🎞️ 圧縮完了。アップロードを準備中…|🎞️ Compression terminée. Préparation du téléversement…
+🎬 動画 {0} 件を準備します|🎬 Préparation de {0} vidéo(s)
+🎬 動画を準備中…|🎬 Préparation de la vidéo…
+🔁 前処理モデルを切り替えて再試行中…|🔁 Changement du modèle de prétraitement et nouvel essai…
+画面には追加しましたが .sts の書き込みに失敗（バックエンド未コンパイル？）：|Ajouté à l'interface, mais l'écriture .sts a échoué (backend non compilé ?) :
+`);
+
+
+I18N.add('fr', `
+Vivi 2.0（中/日/インドネシア/メキシコ + 30+ 言語）|Vivi 2.0 (zh/ja/id/es-MX + 30+ langues)
+小何 2.0（中国語 + 30+ 言語）|Xiaohe 2.0 (chinois + 30+ langues)
+云舟 2.0（中国語 + 30+ 言語）|Yunzhou 2.0 (chinois + 30+ langues)
+小天 2.0（中国語 + 30+ 言語）|Xiaotian 2.0 (chinois + 30+ langues)
+咪仔 + 大衣先生（既定）|Mizai + Dayi (défaut)
+刘飞 + 潇磊|Liu Fei + Xiao Lei
+用語集管理|Gestion du glossaire
+用語集はサーバーに保存され、.sts 形式で 1 行 1 用語（id|原語|訳語|ソース言語|ターゲット言語）。|Le glossaire est stocké côté serveur au format .sts, un terme par ligne.
+— 選択してください —|— Veuillez sélectionner —
+用語集を選択|Sélectionner le glossaire
+新規用語集名|Nom du nouveau glossaire
+作成 / 保存|Créer / Enregistrer
+用語エントリ（JSON 配列、各項目 {source, target, sourceLang?, targetLang?}）|Entrées de termes (tableau JSON)
+用語集の読み込みに失敗：{0}|Échec du chargement du glossaire : {0}
+⚠️ 用語集名を入力してください|⚠️ Veuillez saisir un nom de glossaire
+⚠️ 用語エントリが有効な JSON ではありません：{0}|⚠️ Les entrées ne sont pas du JSON valide : {0}
+⚠️ 用語エントリは JSON 配列である必要があります|⚠️ Les entrées doivent être un tableau JSON
+✅ 用語集「{0}」を保存しました。計 {1} 件|✅ Glossaire « {0} » enregistré, {1} terme(s)
+✅ 用語集を保存しました|✅ Glossaire enregistré
+⚠️ 削除する用語集を先に選択してください|⚠️ Veuillez d'abord sélectionner le glossaire à supprimer
+用語集「{0}」を削除しますか？|Supprimer le glossaire « {0} » ?
+⚠️ 用語集が存在しません|⚠️ Le glossaire n'existe pas
+用語集を削除しました|Glossaire supprimé
+`);

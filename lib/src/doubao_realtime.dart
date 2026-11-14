@@ -65,8 +65,10 @@ const Map<String, String> _dbSpeakLang = <String, String>{
 String dbDuplexSystemPrompt(String lang) {
   final say = _dbSpeakLang[lang] ?? _dbSpeakLang['zh']!;
   return '你正在和用户进行实时语音通话。$say\n'
+      '如果用户使用其他语言（如日语、英语、韩语、法语等），请自动跟随用户的语言回复，'
+      '不要坚持固定语言。\n'
       '要求：\n'
-      '1. 回答 2〜3 句、80 字以内，说完就停。\n'
+      '1. 回答最多 1000 字，最少不限，说完就停。\n'
       '2. 不要列表、不要 Markdown、不要念代码、网址或标点符号串。\n'
       '3. 用自然口语，句子短，便于朗读。\n'
       '4. 没听清时只简短追问一次。';
@@ -126,12 +128,21 @@ String dbPrepareUpstream(
     // ★ 前端由 Edge TTS 负责出声时，不向服务端索要豆包音色：
     //   账号没有该音色权限时，硬塞音色 id 会让 session.create 直接被拒。
     output.remove('voice');
-  } else if (_str(output['voice']).isEmpty) {
-    final v = _str(voice).isNotEmpty
-        ? _str(voice)
-        : (_str(cfg.duplexVoice).isNotEmpty ? _str(cfg.duplexVoice) : cfg.voice);
-    if (v.isNotEmpty) output['voice'] = v;
-    else output.remove('voice'); // 留空则由服务端使用默认音色
+  } else {
+    // 端到端通话音色：只认 duplexVoice / voice，绝不回退到普通 TTS 音色（cfg.voice）。
+    // 普通 TTS 音色 ID（*_bigtts 的 mars/moon 系列）端到端链路不认，
+    // 硬塞会触发 ClientError:InvalidSpeaker。
+    // 空值最终落到 Vivi 2.0（zh_female_vv_uranus_bigtts），这是官方示例默认音色。
+    var v = _str(output['voice']);
+    if (v.isEmpty) v = _str(voice);
+    if (v.isEmpty) v = _str(cfg.duplexVoice);
+    if (v.isEmpty) v = 'zh_female_vv_uranus_bigtts';
+    v = dbNormalizeDuplexVoice(v); // 旧版 jupiter（仅中文）→ 多语种 uranus
+    output['voice'] = v;
+  }
+  // 语速走官方字段 session.audio.output.speed（-50~100），不再塞 extension
+  if (cfg.duplexSpeechRate != 0) {
+    output['speed'] = cfg.duplexSpeechRate;
   }
   audio['output'] = output;
   session['audio'] = audio;
@@ -143,6 +154,32 @@ String dbPrepareUpstream(
         : _str(cfg.duplexInstructions);
     session['instructions'] =
         custom.isNotEmpty ? custom : dbDuplexSystemPrompt(lang);
+  }
+
+  // ---- 专有能力（唱歌 / 联网）通过 extension.dialog.extra 透传 ----
+  //   官方字段（Seeduplex 全双工协议）：
+  //     · enable_music：唱歌能力
+  //     · enable_volc_websearch：开启内置联网搜索
+  //     · volc_websearch_type：web_custom_api（豆包搜索 Custom 版）/ web_global_api（Global 版）
+  //     · volc_websearch_api_key：融合信息搜索 API Key（开启联网后需配置）
+  //   语速不走 extension，已放到 session.audio.output.speed。
+  if (cfg.duplexMusic || cfg.duplexWebsearch) {
+    final extension = _asMap(session['extension']);
+    final dialog = _asMap(extension['dialog']);
+    final extra = _asMap(dialog['extra']);
+    if (cfg.duplexMusic) {
+      extra['enable_music'] = true;
+    }
+    if (cfg.duplexWebsearch) {
+      extra['enable_volc_websearch'] = true;
+      extra['volc_websearch_type'] = 'web_custom_api';
+      if (cfg.duplexWebsearchApiKey.trim().isNotEmpty) {
+        extra['volc_websearch_api_key'] = cfg.duplexWebsearchApiKey.trim();
+      }
+    }
+    dialog['extra'] = extra;
+    extension['dialog'] = dialog;
+    session['extension'] = extension;
   }
 
   m['session'] = session;
@@ -431,7 +468,9 @@ Map<String, dynamic> dbRtcTaskPayload(Map<String, dynamic> body) {
       'db_${fmtStamp14(DateTime.now())}_${DateTime.now().millisecondsSinceEpoch % 1000}');
   final userId = trimOr(mStr(body, 'userId'), 'dsc_user');
   final botUserId = trimOr(mStr(body, 'botUserId'), 'dsc_bot');
-  final mixed = mBool(body, 'mixedMode');
+  // ★ 只消耗豆包语音通话额度：RTC 也强制纯端到端（S2S），禁止混合编成。
+  //   混合编成会外挂方舟 LLM（走 cfg.apiKey + cfg.chatModel，消耗 ark 文本额度），
+  //   违反「语音通话只能消耗端到端额度」的硬约束，故忽略 body.mixedMode。
   final voice = trimOr(mStr(body, 'voice'),
       trimOr(cfg.duplexVoice, cfg.voice));
   final lang = trimOr(mStr(body, 'lang'), 'zh');
@@ -440,7 +479,7 @@ Map<String, dynamic> dbRtcTaskPayload(Map<String, dynamic> body) {
 
   final s2s = <String, dynamic>{
     'Provider': 'volcano_duplex',
-    'OutputMode': mixed ? 1 : 0,
+    'OutputMode': 0,
     'ProviderParams': <String, dynamic>{
       'app': <String, dynamic>{
         'appid': trimOr(mStr(body, 's2sAppId'), cfg.s2sAppId),
@@ -461,15 +500,6 @@ Map<String, dynamic> dbRtcTaskPayload(Map<String, dynamic> body) {
     'SubtitleConfig': <String, dynamic>{'SubtitleMode': 1},
   };
 
-  if (mixed) {
-    config['LLMConfig'] = <String, dynamic>{
-      'Mode': 'ArkV3',
-      'ModelName': trimOr(mStr(body, 'llmModel'), cfg.chatModel),
-      'APIKey': cfg.apiKey,
-      'SystemMessages': <String>[instructions],
-    };
-  }
-
   return <String, dynamic>{
     'AppId': trimOr(mStr(body, 'rtcAppId'), cfg.rtcAppId),
     'RoomId': roomId,
@@ -485,6 +515,181 @@ Map<String, dynamic> dbRtcTaskPayload(Map<String, dynamic> body) {
 // ------------------------------------------------------------
 // HTTP 处理器
 // ------------------------------------------------------------
+/// POST /api/doubao/voice/save —— 保存一次语音通话的纯文本记录
+///   请求体：{ "lines": ["时间戳|角色|文本|序号|语言", ...] }
+///   写入：data/voice/voice_YYYYMMDD_HHMMSS.sts（一次通话 = 一个文件）
+Future<void> handleDbVoiceSave(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final body = await readJsonBody(req);
+  final linesRaw = body['lines'];
+  if (linesRaw is! List || linesRaw.isEmpty) {
+    await errJson(req.response, 400, '没有可保存的通话记录');
+    return;
+  }
+  try {
+    final dir = '$DATA_DIR/voice';
+    ensureDir(dir);
+    // 秒级时间戳 + 随机后缀：避免两次通话在同一秒挂断时文件互相覆盖
+    final fileName = 'voice_${fmtStamp14(DateTime.now())}_${randomHex(6)}.sts';
+    final file = File('$dir/$fileName');
+    final sb = StringBuffer();
+    for (final l in linesRaw) {
+      // 每行已经是「数据1|数据2|数据3|数据4|数据5」，直接写入
+      sb.writeln('$l');
+    }
+    file.writeAsStringSync(sb.toString());
+    await jsonResponse(req.response, 200, <String, dynamic>{
+      'ok': true,
+      'file': fileName,
+      'path': '$dir/$fileName',
+      'count': linesRaw.length,
+    });
+  } catch (e) {
+    logp('❌ 通话记录保存失败: $e');
+    await errJson(req.response, 500, '通话记录保存失败：$e');
+  }
+}
+
+/// 读取 data/voice 下所有 .sts 通话记录，返回文件名 + 解析后的行内容
+List<Map<String, dynamic>> _listVoiceRecords() {
+  final dir = Directory('$DATA_DIR/voice');
+  final out = <Map<String, dynamic>>[];
+  if (!dir.existsSync()) return out;
+  try {
+    final files = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) => f.path.toLowerCase().endsWith('.sts'))
+        .toList()
+      ..sort((a, b) => b.path.compareTo(a.path)); // 新在前
+    for (final f in files) {
+      try {
+        final name = f.uri.pathSegments.isNotEmpty
+            ? f.uri.pathSegments.last
+            : f.path;
+        final lines = <String>[];
+        var preview = '';
+        for (final raw in f.readAsStringSync().split('\n')) {
+          final t = raw.trim();
+          if (t.isEmpty) continue;
+          lines.add(t);
+        }
+        // 预览：取第一条 user 文本的前 40 字
+        for (final l in lines) {
+          final parts = l.split('|');
+          if (parts.length >= 3 && parts[1] == 'user') {
+            preview = parts[2];
+            if (preview.length > 40) preview = preview.substring(0, 40) + '…';
+            break;
+          }
+        }
+        if (preview.isEmpty && lines.isNotEmpty) {
+          preview = lines.first;
+          if (preview.length > 40) preview = preview.substring(0, 40) + '…';
+        }
+        out.add(<String, dynamic>{
+          'name': name,
+          'preview': preview,
+          'lineCount': lines.length,
+          'lines': lines,
+          'mtime': f.statSync().modified.millisecondsSinceEpoch,
+        });
+      } catch (_) {}
+    }
+  } catch (e) {
+    logp('⚠️ 读取通话记录失败: $e');
+  }
+  return out;
+}
+
+/// GET /api/doubao/voice/list —— 列出全部历史通话记录（只读）
+Future<void> handleDbVoiceList(HttpRequest req) async {
+  if (req.method != 'GET') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'records': _listVoiceRecords(),
+  });
+}
+
+/// POST /api/doubao/voice/delete —— 删除通话记录（单选/批量，真实删除文件）
+///   请求体：{ "names": ["a.sts", "b.sts"] } 或 { "name": "a.sts" }
+Future<void> handleDbVoiceDelete(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final body = await readJsonBody(req);
+  final dir = '$DATA_DIR/voice';
+  var removed = 0;
+  var targets = <String>[];
+  final nm = mStr(body, 'name').trim();
+  if (nm.isNotEmpty) targets.add(nm);
+  final names = body['names'];
+  if (names is List) {
+    for (final e in names) {
+      final v = '$e'.trim();
+      if (v.isNotEmpty) targets.add(v);
+    }
+  }
+  // 去重
+  final seen = <String>{};
+  final uniq = <String>[];
+  for (final t in targets) {
+    if (seen.add(t)) uniq.add(t);
+  }
+  for (final name in uniq) {
+    // 防路径穿越：只允许纯文件名
+    if (name.contains('/') || name.contains('\\') || name.contains('..')) continue;
+    if (!name.toLowerCase().endsWith('.sts')) continue;
+    final f = File('$dir/$name');
+    try {
+      if (f.existsSync()) {
+        f.deleteSync();
+        removed++;
+      }
+    } catch (e) {
+      logp('⚠️ 删除通话记录失败 $name: $e');
+    }
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'removed': removed,
+  });
+}
+
+/// POST /api/doubao/voice/clear —— 一键删除全部通话记录（真实删除文件）
+Future<void> handleDbVoiceClear(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final dir = Directory('$DATA_DIR/voice');
+  var removed = 0;
+  if (dir.existsSync()) {
+    try {
+      for (final f in dir.listSync().whereType<File>()) {
+        if (!f.path.toLowerCase().endsWith('.sts')) continue;
+        try {
+          f.deleteSync();
+          removed++;
+        } catch (_) {}
+      }
+    } catch (e) {
+      logp('⚠️ 清空通话记录失败: $e');
+    }
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'removed': removed,
+  });
+}
+
 /// GET /api/doubao/realtime/status —— 实时语音配置就绪度
 Future<void> handleDbRealtimeStatus(HttpRequest req) async {
   final cfg = getDbConfig();

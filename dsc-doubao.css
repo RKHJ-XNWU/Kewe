@@ -1150,3 +1150,772 @@
     border-color: #a7f3d0 !important;
     color: #047857 !important;
 }
+
+
+/* ============ 豆包语音通话 · 全新通话界面 ============ */
+.dsc-db-call-info {
+    text-align: center;
+    font-size: 0.74rem;
+    color: #6b7280;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f3f4f6;
+    margin: 0 auto 6px;
+    max-width: 92%;
+    line-height: 1.5;
+    word-break: break-word;
+}
+.dsc-db-call-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 0 2px;
+}
+.dsc-db-call-orbwrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+}
+.dsc-db-call-orb {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 28%, #c7d2fe, #818cf8 45%, #4f46e5 75%, #3730a3);
+    box-shadow: 0 16px 44px rgba(79, 70, 229, 0.42), inset 0 2px 6px rgba(255, 255, 255, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: box-shadow 0.3s ease, transform 0.3s ease;
+}
+/* 覆盖旧动画：orb 本体不再缩放/旋转，改为内圈光晕 + 波形条跳动 */
+.dsc-db-call-orb.listening { animation: none; }
+.dsc-db-call-orb.speaking { animation: none; }
+.dsc-db-call-orb.thinking { animation: dscDbGlow 1.6s ease-in-out infinite; }
+.dsc-db-call-wave {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 48px;
+}
+.dsc-db-call-wavebar {
+    width: 6px;
+    height: 14px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+.dsc-db-call-orb.listening .dsc-db-call-wavebar {
+    animation: dscDbWave 1.1s ease-in-out infinite;
+}
+.dsc-db-call-orb.speaking .dsc-db-call-wavebar {
+    animation: dscDbWave 0.62s ease-in-out infinite;
+}
+@keyframes dscDbWave {
+    0%, 100% { height: 12px; opacity: 0.75; }
+    50% { height: 44px; opacity: 1; }
+}
+@keyframes dscDbGlow {
+    0%, 100% { box-shadow: 0 16px 44px rgba(79, 70, 229, 0.42); }
+    50% { box-shadow: 0 18px 62px rgba(124, 58, 237, 0.68), 0 0 0 8px rgba(99, 102, 241, 0.12); }
+}
+.dsc-db-call-status {
+    text-align: center;
+    font-size: 0.95rem;
+    color: #3730a3;
+    font-weight: 700;
+    min-height: 24px;
+    letter-spacing: 0.02em;
+}
+.dsc-db-call-log {
+    width: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #f8fafc, #f1f5f9);
+    border: 1px solid #e5e7eb;
+    box-sizing: border-box;
+}
+.dsc-db-call-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 30px;
+    padding: 6px 0;
+}
+.dsc-db-call-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    outline: none;
+    padding: 0;
+}
+.dsc-db-call-btn-ico {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    background: #f1f5f9;
+    color: #475569;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+.dsc-db-call-btn:active .dsc-db-call-btn-ico { transform: scale(0.9); }
+.dsc-db-call-btn-lbl {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 600;
+    line-height: 1;
+}
+.dsc-db-call-btn.mic.dsc-db-mic-off .dsc-db-call-btn-ico {
+    background: #fee2e2;
+    color: #dc2626;
+}
+.dsc-db-call-btn.hang .dsc-db-call-btn-ico {
+    width: 68px;
+    height: 68px;
+    font-size: 1.4rem;
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: #fff;
+    box-shadow: 0 8px 22px rgba(220, 38, 38, 0.45);
+}
+.dsc-db-call-btn.cxl .dsc-db-call-btn-ico {
+    background: #fff7ed;
+    color: #ea580c;
+}
+.dsc-db-call-startwrap {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+}
+.dsc-db-call-start {
+    width: 84%;
+    padding: 13px 20px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    box-shadow: 0 10px 26px rgba(99, 102, 241, 0.4);
+    transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+.dsc-db-call-start:hover { box-shadow: 0 14px 34px rgba(99, 102, 241, 0.5); }
+.dsc-db-call-start:active { transform: scale(0.98); }
+.dsc-db-call-start:disabled { opacity: 0.55; cursor: not-allowed; }
+.dsc-db-call-moderow {
+    align-self: flex-start;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.72;
+}
+.dsc-db-call-moderow .dsc-db-field { font-size: 0.72rem; }
+.dsc-db-call-moderow select {
+    padding: 4px 8px;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+    font-size: 0.74rem;
+    background: #fff;
+    outline: none;
+}
+
+/* ============ 豆包语音通话 · 全屏沉浸式 ============ */
+.dsc-db-overlay.dsc-db-call-overlay {
+    padding: 0;
+    background: #0b1020;
+    align-items: stretch;
+    justify-content: stretch;
+}
+.dsc-db-modal.dsc-db-call-modal {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh; /* 旧浏览器兜底 */
+    height: 100dvh; /* 移动端动态视口：不被地址栏/底部工具栏遮挡 */
+    max-height: 100vh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    background:
+        radial-gradient(1200px 700px at 50% -10%, rgba(99, 102, 241, 0.28), transparent 60%),
+        radial-gradient(900px 620px at 88% 112%, rgba(139, 92, 246, 0.22), transparent 55%),
+        linear-gradient(180deg, #0f172a 0%, #1e1b4b 52%, #0b1020 100%);
+    overflow: hidden;
+    animation: dscDbCallIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes dscDbCallIn {
+    from { opacity: 0; transform: scale(1.03); }
+    to { opacity: 1; transform: none; }
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-modal-head {
+    padding: calc(14px + env(safe-area-inset-top)) 18px 6px;
+    margin: 0;
+    flex-shrink: 0;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-modal-ic {
+    background: linear-gradient(135deg, #818cf8, #c084fc);
+    box-shadow: 0 6px 18px rgba(129, 140, 248, 0.45);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-modal-title {
+    color: #f1f5f9;
+    font-size: 1.12rem;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-modal-sub {
+    color: #94a3b8;
+    margin: 0 18px 2px;
+    flex-shrink: 0;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-close {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    width: 34px;
+    height: 34px;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-close:active { background: rgba(255, 255, 255, 0.18); }
+
+/* 顶部信息条：端到端额度说明 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-info {
+    color: #c7d2fe;
+    background: rgba(99, 102, 241, 0.14);
+    border: 1px solid rgba(129, 140, 248, 0.28);
+    margin: 4px auto 0;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+}
+.dsc-db-call-info-ok { color: #a7f3d0 !important; }
+.dsc-db-call-info-warn { color: #fca5a5 !important; }
+
+/* 舞台：占满剩余空间，orb 居中、字幕可滚动、控制区沉底 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-stage {
+    flex: 1;
+    min-height: 0;
+    gap: 8px;
+    padding: 4px 18px 12px;
+    justify-content: flex-start;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-orbwrap { padding: 2px; }
+/* 滚动容器内的 flex 子项禁止被压缩，否则 orb / 按键会被压扁 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-stage > * { flex-shrink: 0; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-orb {
+    width: 150px;
+    height: 150px;
+    background: radial-gradient(circle at 32% 28%, #c7d2fe, #818cf8 45%, #4f46e5 75%, #312e81);
+    box-shadow: 0 18px 52px rgba(79, 70, 229, 0.5), inset 0 2px 6px rgba(255, 255, 255, 0.35);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-status {
+    color: #e0e7ff;
+    font-size: 1rem;
+    min-height: 26px;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-log {
+    flex: 0 0 auto;
+    min-height: 64px;
+    max-height: 240px; /* 旧浏览器兜底 */
+    max-height: min(30vh, 240px);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(8px);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-bubble {
+    color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-bubble.user {
+    background: rgba(129, 140, 248, 0.22);
+    border-color: rgba(129, 140, 248, 0.4);
+    color: #eef2ff;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-bubble.ai {
+    background: rgba(192, 132, 252, 0.18);
+    border-color: rgba(192, 132, 252, 0.38);
+    color: #faf5ff;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-bubble.sys {
+    background: rgba(148, 163, 184, 0.14);
+    border-color: rgba(148, 163, 184, 0.3);
+    color: #cbd5e1;
+}
+
+/* 底部三键通话布局 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-actions {
+    gap: 36px;
+    padding: 2px 0;
+    flex-shrink: 0;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn-ico {
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn-lbl { color: #94a3b8; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn.mic.dsc-db-mic-off .dsc-db-call-btn-ico {
+    background: rgba(239, 68, 68, 0.25);
+    color: #fca5a5;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn.hang .dsc-db-call-btn-ico {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    box-shadow: 0 10px 26px rgba(239, 68, 68, 0.5);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn.cxl .dsc-db-call-btn-ico {
+    background: rgba(251, 146, 60, 0.22);
+    color: #fdba74;
+}
+
+/* 开始通话按钮 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-start {
+    width: 86%;
+    padding: 15px 20px;
+    border-radius: 16px;
+    font-size: 1.06rem;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-textrow input {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-textrow input::placeholder { color: #64748b; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-moderow { opacity: 0.8; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-moderow select {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #cbd5e1;
+}
+/* 底部操作条：历史记录 / 关闭。固定在安全区内，永不被遮挡 */
+.dsc-db-modal.dsc-db-call-modal > .dsc-db-footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px 18px calc(10px + env(safe-area-inset-bottom));
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    background: rgba(11, 16, 32, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+}
+.dsc-db-modal.dsc-db-call-modal > .dsc-db-footer .dsc-db-btn {
+    color: #c7d2fe;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(129, 140, 248, 0.32);
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 0.84rem;
+    flex: 1 1 0;
+    max-width: 170px;
+    white-space: nowrap;
+}
+.dsc-db-modal.dsc-db-call-modal > .dsc-db-footer .dsc-db-btn:active {
+    background: rgba(99, 102, 241, 0.36);
+}
+
+/* 矮屏适配：压缩 orb / 按键 / 间距，保证底部控件全部可见 */
+@media (max-height: 740px) {
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-orb { width: 112px; height: 112px; }
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-stage { gap: 6px; }
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn-ico { width: 48px; height: 48px; }
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn.hang .dsc-db-call-btn-ico { width: 60px; height: 60px; }
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-start { padding: 12px 18px; font-size: 0.98rem; }
+    .dsc-db-modal.dsc-db-call-modal .dsc-db-call-log { min-height: 54px; max-height: 180px; max-height: min(26vh, 180px); }
+}
+
+
+/* ============ 通话界面 · 去气泡框 + 界面增强 ============ */
+/* 纯文本字幕行（替代气泡框）：用户与 AI 消息一律无框无背景 */
+.dsc-call-line {
+    font-size: 0.84rem;
+    line-height: 1.65;
+    word-break: break-word;
+    white-space: pre-wrap;
+    padding: 3px 6px;
+    color: #e2e8f0;
+}
+.dsc-call-line.user { color: #a5b4fc; }
+.dsc-call-line.ai { color: #f1f5f9; }
+.dsc-call-line.sys {
+    color: #94a3b8;
+    font-size: 0.74rem;
+    opacity: 0.85;
+    text-align: center;
+}
+
+/* 全屏安全区：由 header（顶部）与 footer（底部）各自处理，
+   容器本身不再重复留白，否则会叠加成双份空白，把底部控件顶出屏幕 */
+.dsc-db-modal.dsc-db-call-modal {
+    height: 100dvh;
+    max-height: 100dvh;
+    padding-top: 0;
+    padding-bottom: 0;
+    box-sizing: border-box;
+}
+
+/* 通话字幕滚动条美化 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-log::-webkit-scrollbar { width: 4px; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-log::-webkit-scrollbar-thumb {
+    background: rgba(129, 140, 248, 0.4);
+    border-radius: 4px;
+}
+
+/* orb 外圈呼吸光环 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-orbwrap { position: relative; }
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-orbwrap::before {
+    content: '';
+    position: absolute;
+    inset: -16px;
+    border-radius: 50%;
+    border: 1px solid rgba(129, 140, 248, 0.22);
+    animation: dscCallRing 2.6s ease-in-out infinite;
+    pointer-events: none;
+}
+@keyframes dscCallRing {
+    0%, 100% { transform: scale(0.94); opacity: 0.25; }
+    50% { transform: scale(1.08); opacity: 0.7; }
+}
+
+/* 波形条渐变 */
+.dsc-db-call-wavebar {
+    background: linear-gradient(180deg, #ffffff, #c7d2fe);
+}
+
+/* 按钮 hover 浮起 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn-ico {
+    transition: transform 0.16s ease, background 0.22s ease, box-shadow 0.22s ease;
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-btn:hover .dsc-db-call-btn-ico {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* 开始按钮脉冲光晕 */
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-start {
+    animation: dscCallStartGlow 2.4s ease-in-out infinite;
+}
+@keyframes dscCallStartGlow {
+    0%, 100% { box-shadow: 0 12px 30px rgba(99, 102, 241, 0.5); }
+    50% { box-shadow: 0 16px 44px rgba(168, 85, 247, 0.72); }
+}
+
+/* 通话背景第三重光晕 + 状态文字发光 */
+.dsc-db-modal.dsc-db-call-modal {
+    background:
+        radial-gradient(1200px 700px at 50% -10%, rgba(99, 102, 241, 0.30), transparent 60%),
+        radial-gradient(900px 620px at 88% 112%, rgba(139, 92, 246, 0.24), transparent 55%),
+        radial-gradient(700px 500px at 12% 90%, rgba(56, 189, 248, 0.14), transparent 55%),
+        linear-gradient(180deg, #0f172a 0%, #1e1b4b 52%, #0b1020 100%);
+}
+.dsc-db-modal.dsc-db-call-modal .dsc-db-call-status {
+    text-shadow: 0 0 18px rgba(129, 140, 248, 0.5);
+}
+
+
+/* ============ 历史语音通话记录 ============ */
+.dsc-db-hist-modal {
+    max-width: 620px;
+}
+.dsc-db-hist-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.dsc-db-hist-list {
+    max-height: 52vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px;
+}
+.dsc-db-hist-empty {
+    text-align: center;
+    color: #9ca3af;
+    font-size: 0.82rem;
+    padding: 30px 10px;
+}
+.dsc-db-hist-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #eef0f4;
+    border-radius: 12px;
+    background: #fbfbfd;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.dsc-db-hist-item:hover { border-color: #c7d2fe; background: #f8f9ff; }
+.dsc-db-hist-check {
+    flex: 0 0 auto;
+    margin-top: 3px;
+    width: 16px;
+    height: 16px;
+    accent-color: #6366f1;
+    cursor: pointer;
+}
+.dsc-db-hist-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.dsc-db-hist-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.dsc-db-hist-preview {
+    font-size: 0.84rem;
+    color: #1f2937;
+    font-weight: 600;
+    word-break: break-word;
+    flex: 1;
+    min-width: 0;
+}
+.dsc-db-hist-meta {
+    font-size: 0.68rem;
+    color: #9ca3af;
+    flex-shrink: 0;
+}
+.dsc-db-hist-detail {
+    font-size: 0.74rem;
+    color: #4b5563;
+    line-height: 1.6;
+    background: #f1f5f9;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-top: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+.dsc-db-hist-line {
+    word-break: break-word;
+    white-space: pre-wrap;
+    padding: 2px 0;
+    border-bottom: 1px dashed #e5e7eb;
+}
+.dsc-db-hist-line:last-child { border-bottom: none; }
+.dsc-db-hist-ops {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.dsc-db-hist-ops .dsc-db-btn {
+    padding: 5px 10px;
+    font-size: 0.72rem;
+}
+.dsc-db-hist-list::-webkit-scrollbar { width: 5px; }
+.dsc-db-hist-list::-webkit-scrollbar-thumb {
+    background: #c7d2fe;
+    border-radius: 5px;
+}
+
+
+/* ============ 豆包播客 · 全屏沉浸式（原生 SSE） ============ */
+.dsc-db-overlay.dsc-db-podcast-overlay {
+    padding: 0;
+    background: #0b1020;
+    align-items: stretch;
+    justify-content: stretch;
+}
+.dsc-db-modal.dsc-db-podcast-modal {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    background:
+        radial-gradient(1200px 700px at 50% -10%, rgba(14, 165, 233, 0.30), transparent 60%),
+        radial-gradient(900px 620px at 88% 112%, rgba(139, 92, 246, 0.26), transparent 55%),
+        radial-gradient(700px 500px at 12% 90%, rgba(56, 189, 248, 0.14), transparent 55%),
+        linear-gradient(180deg, #0f172a 0%, #172554 52%, #0b1020 100%);
+    overflow: hidden;
+    animation: dscDbCallIn 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-modal-head {
+    padding: calc(14px + env(safe-area-inset-top)) 18px 6px;
+    margin: 0;
+    flex-shrink: 0;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-modal-ic {
+    background: linear-gradient(135deg, #38bdf8, #a855f7);
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-modal-title { color: #f1f5f9; font-size: 1.12rem; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-modal-sub { color: #94a3b8; margin: 0 18px 2px; flex-shrink: 0; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-close {
+    background: rgba(255, 255, 255, 0.08);
+    color: #cbd5e1;
+    width: 34px;
+    height: 34px;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-close:active { background: rgba(255, 255, 255, 0.18); }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-call-info {
+    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.14);
+    border: 1px solid rgba(56, 189, 248, 0.28);
+    margin: 4px auto 0;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-podcast-stage {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 12px 18px 14px;
+    box-sizing: border-box;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-podcast-stage > * { flex-shrink: 0; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-podcast-input { margin-bottom: 6px; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field > label { color: #cbd5e1; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field input,
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field select,
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field textarea {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field input::placeholder,
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-field textarea::placeholder { color: #64748b; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-status {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-status.ok {
+    color: #a7f3d0;
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.3);
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-status.err {
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.3);
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-status.busy {
+    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.12);
+    border-color: rgba(56, 189, 248, 0.3);
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-result audio { width: 100%; margin-top: 6px; }
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-script {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #cbd5e1;
+}
+.dsc-db-modal.dsc-db-podcast-modal .dsc-db-filename { color: #cbd5e1; }
+.dsc-db-modal.dsc-db-podcast-modal > .dsc-db-footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin: 0;
+    padding: 8px 18px calc(10px + env(safe-area-inset-bottom));
+    flex-shrink: 0;
+    flex-wrap: nowrap;
+    background: rgba(11, 16, 32, 0.82);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+}
+.dsc-db-modal.dsc-db-podcast-modal > .dsc-db-footer .dsc-db-btn {
+    color: #bae6fd;
+    background: rgba(56, 189, 248, 0.2);
+    border: 1px solid rgba(56, 189, 248, 0.32);
+    border-radius: 10px;
+    padding: 9px 16px;
+    font-size: 0.84rem;
+    flex: 1 1 0;
+    max-width: 170px;
+    white-space: nowrap;
+}
+.dsc-db-modal.dsc-db-podcast-modal > .dsc-db-footer .dsc-db-btn.primary {
+    background: linear-gradient(135deg, #0ea5e9, #8b5cf6);
+    border-color: transparent;
+    color: #fff;
+}
+.dsc-db-modal.dsc-db-podcast-modal > .dsc-db-footer .dsc-db-btn:active {
+    background: rgba(56, 189, 248, 0.36);
+}
+
+/* ============ 历史通话记录 · 人读渲染（对话消息卡片） ============ */
+.dsc-db-hist-msg {
+    padding: 6px 9px;
+    border-radius: 8px;
+    margin-bottom: 6px;
+    background: #ffffff;
+    border: 1px solid #eef0f4;
+}
+.dsc-db-hist-msg:last-child { margin-bottom: 0; }
+.dsc-db-hist-msg-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 3px;
+    flex-wrap: wrap;
+}
+.dsc-db-hist-role {
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 1px 9px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+.dsc-db-hist-role.user { background: #eef2ff; color: #4f46e5; }
+.dsc-db-hist-role.ai { background: #f5f0ff; color: #7c3aed; }
+.dsc-db-hist-time {
+    font-size: 0.64rem;
+    color: #9ca3af;
+}
+.dsc-db-hist-text {
+    font-size: 0.76rem;
+    color: #1f2937;
+    line-height: 1.6;
+    word-break: break-word;
+    white-space: pre-wrap;
+}

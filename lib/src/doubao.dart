@@ -257,6 +257,7 @@ const Set<String> dbVideoUnderstandModels = <String>{
   'doubao-seed-2-1-turbo-260628',
   'doubao-seed-2-1-pro-260628',
   'doubao-seed-evolving-latest-version',
+  'deepseek-v4-1-flash-261017',
 };
 
 /// 该模型能否直接理解原始音频
@@ -378,6 +379,24 @@ Future<({List<int> bytes, String format})> dbPrepareAudioForArk(
 String get dbConfigFile => '$dsChatDir/doubao_config.sts';
 String get dbVideoTasksFile => '$dsChatDir/doubao_video_tasks.sts';
 
+/// 把 S2S-O 旧版音色（jupiter，官方仅中文）归一化到 S2S 全双工多语种音色（uranus）。
+/// 旧版音色在非中文对话时会被服务端拒绝（"当前音色不支持回复该语言"）。
+String dbNormalizeDuplexVoice(String v) {
+  final t = v.trim();
+  switch (t) {
+    case 'zh_female_vv_jupiter_bigtts':
+      return 'zh_female_vv_uranus_bigtts'; // Vivi 2.0（30+ 语种）
+    case 'zh_female_xiaohe_jupiter_bigtts':
+      return 'zh_female_xiaohe_uranus_bigtts'; // 小何 2.0
+    case 'zh_male_yunzhou_jupiter_bigtts':
+      return 'zh_male_m191_uranus_bigtts'; // 云舟 2.0
+    case 'zh_male_xiaotian_jupiter_bigtts':
+      return 'zh_male_taocheng_uranus_bigtts'; // 小天 2.0
+    default:
+      return t;
+  }
+}
+
 class DbConfig {
   String apiKey;
   String audioGenApiKey;
@@ -420,6 +439,14 @@ class DbConfig {
   String duplexLang;
   /// Seeduplex 专用 API Key（豆包语音控制台，非方舟 Key）
   String duplexApiKey;
+  /// 唱歌能力（enable_music：检索曲库提升唱歌表现，端到端模型内能力）
+  bool duplexMusic;
+  /// 内置联网（enable_volc_websearch：需控制台开通融合信息搜索，默认关闭避免额外额度）
+  bool duplexWebsearch;
+  /// 联网搜索 API Key（融合信息搜索，开启 enable_volc_websearch 后需配置）
+  String duplexWebsearchApiKey;
+  /// 输出语速（speech_rate，[-50,100]，0 为默认）
+  int duplexSpeechRate;
 
   // ---- RTC AI 音视频互动 ----
   /// RTC 应用 AppId（控制台 > 实时音视频）
@@ -452,10 +479,14 @@ class DbConfig {
     this.watermark = false,
     this.autoRouteAudio = true,
     this.fastMode = true,
-    this.duplexVoice = '',
+    this.duplexVoice = 'zh_female_vv_uranus_bigtts',
     this.duplexInstructions = '',
     this.duplexLang = 'zh',
     this.duplexApiKey = '',
+    this.duplexMusic = false,
+    this.duplexWebsearch = false,
+    this.duplexWebsearchApiKey = '',
+    this.duplexSpeechRate = 0,
     this.rtcAppId = '',
     this.rtcAccessKey = '',
     this.rtcSecretKey = '',
@@ -491,6 +522,10 @@ class DbConfig {
         'duplexInstructions': duplexInstructions,
         'duplexLang': duplexLang,
         'duplexApiKey': duplexApiKey,
+        'duplexMusic': duplexMusic,
+        'duplexWebsearch': duplexWebsearch,
+        'duplexWebsearchApiKey': duplexWebsearchApiKey,
+        'duplexSpeechRate': duplexSpeechRate,
         'rtcAppId': rtcAppId,
         'rtcAccessKey': rtcAccessKey,
         'rtcSecretKey': rtcSecretKey,
@@ -522,10 +557,14 @@ class DbConfig {
         watermark: mBool(j, 'watermark'),
         autoRouteAudio: mBool(j, 'autoRouteAudio', true),
         fastMode: mBool(j, 'fastMode', true),
-        duplexVoice: mStr(j, 'duplexVoice'),
+        duplexVoice: dbNormalizeDuplexVoice(mStr(j, 'duplexVoice')),
         duplexInstructions: mStr(j, 'duplexInstructions'),
         duplexLang: trimOr(mStr(j, 'duplexLang'), 'zh'),
         duplexApiKey: mStr(j, 'duplexApiKey'),
+        duplexMusic: mBool(j, 'duplexMusic'),
+        duplexWebsearch: mBool(j, 'duplexWebsearch'),
+        duplexWebsearchApiKey: mStr(j, 'duplexWebsearchApiKey'),
+        duplexSpeechRate: int.tryParse('${j['duplexSpeechRate'] ?? ''}') ?? 0,
         rtcAppId: mStr(j, 'rtcAppId'),
         rtcAccessKey: mStr(j, 'rtcAccessKey'),
         rtcSecretKey: mStr(j, 'rtcSecretKey'),
@@ -2190,6 +2229,10 @@ Map<String, dynamic> _configJson() {
     'duplexInstructions': cfg.duplexInstructions,
     'duplexLang': cfg.duplexLang,
     'hasDuplexKey': cfg.duplexApiKey.trim().isNotEmpty,
+    'duplexMusic': cfg.duplexMusic,
+    'duplexWebsearch': cfg.duplexWebsearch,
+    'hasDuplexWebsearchKey': cfg.duplexWebsearchApiKey.trim().isNotEmpty,
+    'duplexSpeechRate': cfg.duplexSpeechRate,
     'rtcAppId': cfg.rtcAppId,
     'rtcRoomId': cfg.rtcRoomId,
     'hasRtcKeys': cfg.rtcAccessKey.trim().isNotEmpty &&
@@ -2267,6 +2310,18 @@ Future<void> handleDbConfig(HttpRequest req) async {
     duplexApiKey: body.containsKey('duplexApiKey')
         ? mStr(body, 'duplexApiKey').trim()
         : old.duplexApiKey,
+    duplexMusic: body.containsKey('duplexMusic')
+        ? mBool(body, 'duplexMusic')
+        : old.duplexMusic,
+    duplexWebsearch: body.containsKey('duplexWebsearch')
+        ? mBool(body, 'duplexWebsearch')
+        : old.duplexWebsearch,
+    duplexWebsearchApiKey: body.containsKey('duplexWebsearchApiKey')
+        ? mStr(body, 'duplexWebsearchApiKey').trim()
+        : old.duplexWebsearchApiKey,
+    duplexSpeechRate: body.containsKey('duplexSpeechRate')
+        ? (int.tryParse('${body['duplexSpeechRate']}') ?? old.duplexSpeechRate)
+        : old.duplexSpeechRate,
     rtcAppId: body.containsKey('rtcAppId')
         ? mStr(body, 'rtcAppId').trim()
         : old.rtcAppId,
@@ -2917,4 +2972,238 @@ Future<List<int>> dbGenerateAudio(
   
   if (r.bytes.length < 128) throw Exception("返回的音频数据过短");
   return r.bytes;
+}
+
+
+// ------------------------------------------------------------
+// 豆包原生播客（HTTP SSE 接口，官方推荐，无需 Protobuf 依赖）
+//   POST https://openspeech.bytedance.com/api/v3/podcast/sse
+//   headers: x-api-key / x-api-resource-id=volc.service_type.10050 / Accept: text/event-stream
+//   action: 0=根据文本/网页/文件总结生成，3=按对话文本直接合成，4=按话题联网生成
+//   事件：150=session_id，360/361/362=每轮文本与音频分片(Base64 按序拼接)，
+//         152+code=20000000=生成成功，363=完整音频链接(return_audio_url=true)
+//   额度：仅消耗豆包语音播客额度（语音侧 token），不消耗方舟文本额度。
+// ------------------------------------------------------------
+const String dbPodcastSseUrl =
+    'https://openspeech.bytedance.com/api/v3/podcast/sse';
+const String dbPodcastResourceId = 'volc.service_type.10050';
+
+Future<void> handleDbPodcastSse(HttpRequest req) async {
+  final res = req.response;
+  if (req.method != 'POST') {
+    await errJson(res, 405, 'Method not allowed');
+    return;
+  }
+  Map<String, dynamic> body;
+  try {
+    body = await readJsonBody(req);
+  } catch (_) {
+    await errJson(res, 400, '无效的请求体');
+    return;
+  }
+  final cfg = getDbConfig();
+  // 播客走语音侧 OpenSpeech 通道（f 开头 Key），回退 duplex / 方舟 Key
+  var key = cfg.audioGenApiKey.trim();
+  if (key.isEmpty) key = cfg.duplexApiKey.trim();
+  if (key.isEmpty) key = cfg.apiKey.trim();
+  if (key.isEmpty) {
+    await errJson(res, 400, '播客需要语音侧 API Key（OpenSpeech）。请在设置中填写「音频生成 Key」。');
+    return;
+  }
+  try {
+    final out = await dbGeneratePodcastNative(body, key);
+    await jsonResponse(res, 200, out);
+  } catch (e) {
+    logp('❌ 豆包原生播客生成错误: $e');
+    await errJson(res, 500, dbErrText(e));
+  }
+}
+
+/// 调用豆包原生播客 SSE，收集音频与文本并落盘
+Future<Map<String, dynamic>> dbGeneratePodcastNative(
+    Map<String, dynamic> body, String key) async {
+  final action = int.tryParse('${body['action'] ?? '0'}') ?? 0;
+  if (action != 0 && action != 3 && action != 4) {
+    throw Exception('不支持的 action：$action（支持 0=文本生成 / 3=对话合成 / 4=话题联网）');
+  }
+  // 透传官方字段，鉴权由服务端补（voice / input_text / topic / dialogues 等原样转发）
+  final payload = <String, dynamic>{'action': action};
+  body.forEach((k, v) {
+    if (k == 'action' || k == 'name') return;
+    payload[k] = v;
+  });
+  if (!payload.containsKey('return_audio_url')) {
+    payload['return_audio_url'] = true;
+  }
+  // 官方默认音频格式是 pcm（前端 <audio> 无法直接播放），强制 mp3
+  if (!payload.containsKey('audio_config')) {
+    payload['audio_config'] = <String, dynamic>{'format': 'mp3'};
+  } else {
+    final ac = asMap(payload['audio_config']);
+    if (!ac.containsKey('format')) {
+      ac['format'] = 'mp3';
+      payload['audio_config'] = ac;
+    }
+  }
+
+  final client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 30)
+    ..idleTimeout = const Duration(minutes: 8);
+  try {
+    final r = await client.postUrl(Uri.parse(dbPodcastSseUrl));
+    r.headers.set('Content-Type', 'application/json');
+    r.headers.set('Accept', 'text/event-stream');
+    r.headers.set('X-Api-Key', key);
+    r.headers.set('X-Api-Resource-Id', dbPodcastResourceId);
+    r.add(utf8.encode(jsonEncode(payload)));
+    final resp = await r.close().timeout(const Duration(seconds: 30));
+    if (resp.statusCode != 200) {
+      final errBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
+      throw Exception('HTTP ${resp.statusCode}: ${_errFromBytes(errBytes)}');
+    }
+    final raw = await resp.transform(utf8.decoder).join();
+    final parsed = _parsePodcastSse(raw);
+
+    final rawAudio = parsed['audioBytes'];
+    var audioBytes = rawAudio is List ? rawAudio.cast<int>() : <int>[];
+    final audioUrl = mStr(parsed, 'audioUrl');
+    final sessionId = mStr(parsed, 'sessionId');
+    final texts = parsed['texts'] is List ? (parsed['texts'] as List).cast<String>() : <String>[];
+    final events = parsed['events'] ?? 0;
+
+    // 音频分片没拼出来，但有下载链接 → 下载
+    if (audioBytes.isEmpty && audioUrl.isNotEmpty) {
+      final dl = await _httpRaw('GET', audioUrl,
+          timeout: const Duration(minutes: 5));
+      if (dl.code == 200 && dl.bytes.isNotEmpty) {
+        audioBytes = dl.bytes;
+      }
+    }
+    if (audioBytes.isEmpty) {
+      throw Exception('播客未返回音频（session_id=$sessionId，SSE 事件数=$events）');
+    }
+
+    final name = trimOr(mStr(body, 'name'),
+        'doubao_podcast_${fmtStamp14(DateTime.now())}');
+    final prompt = trimOr(mStr(body, 'input_text'),
+        trimOr(mStr(body, 'topic'), trimOr(mStr(body, 'query'), '')));
+    final meta = saveDbBlob(audioBytes, name, 'audio/mpeg', 'audio',
+        source: 'doubao-podcast-native', prompt: prompt);
+    if (meta == null) throw Exception('播客音频保存失败');
+
+    return <String, dynamic>{
+      'success': true,
+      'file': _fileJson(meta),
+      'sessionId': sessionId,
+      'scriptText': texts.join('\n'),
+      'audioUrl': audioUrl,
+      'action': action,
+      'bytes': audioBytes.length,
+    };
+  } finally {
+    client.close();
+  }
+}
+
+/// 解析火山播客 SSE 文本流，提取 session_id / 音频分片 / 文本 / 成功标记 / 下载链接
+Map<String, dynamic> _parsePodcastSse(String text) {
+  var sessionId = '';
+  var audioUrl = '';
+  var success = false;
+  final audioB64 = StringBuffer();
+  final audioParts = <List<int>>[];
+  final texts = <String>[];
+  var events = 0;
+
+  final blocks = text.split(RegExp(r'\r?\n\r?\n'));
+  for (final block in blocks) {
+    var evt = '';
+    var dataRaw = '';
+    for (final line in block.split(RegExp(r'\r?\n'))) {
+      final t = line.trim();
+      if (t.startsWith('event:')) {
+        evt = t.substring(6).trim();
+      } else if (t.startsWith('data:')) {
+        dataRaw += t.substring(5).trim();
+      }
+    }
+    if (evt.isEmpty && dataRaw.isEmpty) continue;
+    events++;
+    Map<String, dynamic> j = <String, dynamic>{};
+    if (dataRaw.isNotEmpty) {
+      try {
+        j = asMap(jsonDecode(dataRaw));
+      } catch (_) {
+        j = <String, dynamic>{};
+      }
+    }
+    final code = mStr(j, 'code');
+    final ec = evt.isNotEmpty ? evt : code;
+
+    if (sessionId.isEmpty) {
+      final sid = mStr(j, 'session_id');
+      if (sid.isNotEmpty) sessionId = sid;
+    }
+    final meta = asMap(j['meta_info']);
+    final au = mStr(meta, 'audio_url');
+    if (au.isNotEmpty) audioUrl = au;
+    final au2 = mStr(j, 'audio_url');
+    if (au2.isNotEmpty) audioUrl = au2;
+    final aur = mStr(j, 'url');
+    if (aur.isNotEmpty && aur.startsWith('http')) audioUrl = aur;
+
+    // 音频 base64 分片（官方字段：顶层 data；兼容其他字段名）
+    // 每个分片独立 base64 编码，逐片解码后按顺序拼接，
+    // 避免多分片直接拼字符串导致整体 decode 失败（填充符出现在中间）。
+    for (final k in <String>[
+      'data', 'audio', 'audio_base64', 'base64', 'audio_data', 'data_audio', 'audio_b64'
+    ]) {
+      final b = mStr(j, k);
+      if (b.isNotEmpty && b.length > 20) {
+        try {
+          audioParts.add(base64.decode(b));
+        } catch (_) {
+          audioB64.write(b);
+        }
+      }
+    }
+
+    // 文本
+    for (final k in <String>[
+      'text', 'content', 'script', 'dialogue', 'transcript', 'narrator_text'
+    ]) {
+      final tx = mStr(j, k);
+      if (tx.isNotEmpty) texts.add(tx);
+    }
+
+    if (code == '20000000' || ec == '20000000') {
+      success = true;
+    }
+  }
+
+  var audioBytes = <int>[];
+  // 优先使用逐片解码的结果
+  for (final p in audioParts) {
+    audioBytes.addAll(p);
+  }
+  // 兜底：整体解码拼接后的 base64 字符串
+  if (audioBytes.isEmpty) {
+    final b64str = audioB64.toString().trim();
+    if (b64str.isNotEmpty) {
+      try {
+        audioBytes = base64.decode(b64str);
+      } catch (_) {
+        audioBytes = <int>[];
+      }
+    }
+  }
+
+  return <String, dynamic>{
+    'sessionId': sessionId,
+    'success': success,
+    'audioUrl': audioUrl,
+    'audioBytes': audioBytes,
+    'texts': texts,
+    'events': events,
+  };
 }

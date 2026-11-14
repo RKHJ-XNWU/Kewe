@@ -10,8 +10,8 @@ go.mod / go.sum / *.go / app はすべて削除済み（README_DART.md参照）�
 
 旧版のst.pyはGoプロジェクトとして動作するため、実行時に必ずエラーになります。根本原因は4つ：
   1) detect_project_dir() にフォールバックがない —— is_go_project() が False の後、
-     無条件に return BASE_DIR/ddsh（存在しないパス）を返し、
-     「❌ プロジェクトディレクトリが存在しません：.../ddsh/ddsh」が発生
+     無条件に return BASE_DIR/kewe（存在しないパス）を返し、
+     「❌ プロジェクトディレクトリが存在しません：.../kewe/kewe」が発生
   2) is_go_project() は go.mod/main.go を確認 —— ファイルは削除済みで常に False
   3) run_build() は go build -o app . を実行 —— go は無関係で必ず失敗
   4) run_app()/daemon/デーモンサービスは ./app を実行 —— そのファイルは存在しない
@@ -44,8 +44,8 @@ go.mod / go.sum / *.go / app はすべて削除済み（README_DART.md参照）�
     python3 st.py --no-aot       AOTをスキップし、直接 dart run（コンパイル時間を節約）
 
 配置方法（両方対応）：
-  1) st.py と ddsh/ が同じ階層  ->   python3 st.py
-  2) st.py を ddsh/ 内に配置   ->   python3 ddsh/st.py
+  1) st.py と kewe/ が同じ階層  ->   python3 st.py
+  2) st.py を kewe/ 内に配置   ->   python3 kewe/st.py
 """
 
 import argparse
@@ -60,7 +60,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------- 設定エリア（必要に応じて変更） ----------------
 # ha.py 外部プラグイン（思考チェーンコード折りたたみ）は削除済み、自動実行しない
-SERVICE_NAME = "ddsh"   # termux-services サービス名
+SERVICE_NAME = "kewe"   # termux-services サービス名
 ENTRY_REL = os.path.join("bin", "main.dart")   # Dartエントリ（プロジェクトディレクトリからの相対パス）
 # ---------------------------------------------------
 
@@ -98,7 +98,7 @@ def detect_project_dir():
     """
     プロジェクトディレクトリを自動検出し、2つの配置方法に対応。
     修正点：どの分岐でも実在するディレクトリを必ず返し、存在しないパスは絶対に返さない。
-    優先順位：環境変数 > スクリプト自身のディレクトリ > 同階層の ddsh/ > スクリプト自身のディレクトリ(フォールバック)
+    優先順位：環境変数 > スクリプト自身のディレクトリ > 同階層の kewe/ > スクリプト自身のディレクトリ(フォールバック)
     """
     env = os.environ.get("PROJECT_DIR")
     if env:
@@ -108,8 +108,8 @@ def detect_project_dir():
     if is_project(BASE_DIR):
         return BASE_DIR
 
-    # 2) st.py が親ディレクトリにあり、プロジェクトが ddsh/ サブディレクトリにある
-    cand = os.path.join(BASE_DIR, "ddsh")
+    # 2) st.py が親ディレクトリにあり、プロジェクトが kewe/ サブディレクトリにある
+    cand = os.path.join(BASE_DIR, "kewe")
     if is_project(cand):
         return cand
 
@@ -185,7 +185,7 @@ def run_build(force_aot=True):
     """
     if not os.path.isdir(PROJECT_DIR):
         log(f"❌ プロジェクトディレクトリが存在しません：{PROJECT_DIR}")
-        log("   ヒント：st.pyをddshと同じレベルに置くか、ddsh/ディレクトリ内に置いて実行してください。")
+        log("   ヒント：st.pyをkeweと同じレベルに置くか、kewe/ディレクトリ内に置いて実行してください。")
         sys.exit(1)
     if not is_dart_project(PROJECT_DIR):
         log(f"⚠️ {PROJECT_DIR} Dartプロジェクトではないようです（pubspec.yamlまたはbin/main.dartが欠けています）")
@@ -632,7 +632,7 @@ def install_service():
     r = subprocess.run(["sv", "status", SERVICE_NAME], capture_output=True, text=True)
     log(f"サービス状態：{r.stdout.strip() or r.stderr.strip()}")
     log("✅ セキュリティサービスがインストールされました。クラッシュした場合は自動的に再起動し、Termuxが再開すると自動的に起動します。")
-    log("   管理コマンド：sv up ddsh / sv down ddsh / sv status ddsh")
+    log("   管理コマンド：sv up kewe / sv down kewe / sv status kewe")
     return 0
 
 

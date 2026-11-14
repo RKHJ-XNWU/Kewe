@@ -33,6 +33,13 @@
     var ADVANCED_DEFAULT_LEVEL = 30;
     var LONG_TEXT_DEFAULT_CHARS = 150000;
     var TTS_CHUNK_SIZE = 3000;
+    // ★ 朗读打包参数（2026-11-14 修复「越读越慢、一卡一卡」）
+    //   背景：分段朗读后每段都单独发一次 /api/ds-chat/tts，而后端每次请求都要
+    //   重新建立 Edge TTS 的 WebSocket 连接（tts_edge.dart 里没有连接复用），
+    //   串行等待下每段之间都会裸露一次「握手 + 合成」的时间差。
+    //   对策：块做大 + 播放时预取后面的块，把合成时间藏进播放时间里。
+    var TTS_PIECE_MAX = 2000;      // 单段上限（后端 chunk 2500 字，留余量避免超时）
+    var TTS_PREFETCH_AHEAD = 1;    // 预取深度：当前块播放时，后面 1 块已在合成（并发 2 条连接，避免 Edge 限流）
 
     // ============================================================
     // ★ 多言語 TTS：テキストの言語に応じて音声を自動選択
@@ -63,6 +70,9 @@
     // 欧文は . , ! ? ; : を残さないと長文が一息で読まれ、間が不自然になる。
     var TTS_KEEP_PUNCT_LANGS = { en: 1, fr: 1, ru: 1, ko: 1 };
     var TTS_MAX_RETRY = 1;
+    // ★ 混在文の言語判定しきい値：かな / (かな + 漢字) がこれ未満なら
+    //    「中文に日本語が点在するだけ」とみなし、中文音声で読む（全文日本語読みの対策）
+    var TTS_KANA_RATIO_MIN = 0.25;
 
     function dscSetTTSVoice(lang, voice) {
         try {
@@ -78,6 +88,9 @@
     var TTS_RE_KANA = /[\u3040-\u309F\u30A0-\u30FF]/g;
     var TTS_RE_CJK = /[\u4E00-\u9FFF]/g;
     var TTS_RE_LATIN = /[A-Za-z]/g;
+    // 中文固有の文法マーカー（日本語ではほとんど使われない漢字）。
+    // 混在文で「中文の文に日本語が 1 語混ざった」ことを見分けるために使う。
+    var TTS_RE_ZH_MARK = /[\u662f\u8fd9\u90a3\u4eec\u5417\u5462\u5427\u7740\u8fc7\u5f97\u4e48\u8bf7\u548b\u5565\u600e\u561b\u5f88\u6ca1\u8bf4\u8ba9\u7ed9\u4e86]/g;
     // フランス語の決め手：固有のアクセント字と、英語には出ない高頻度語
     var TTS_RE_FR_ACCENT = /[\u00E0\u00E2\u00E4\u00E7\u00E9\u00E8\u00EA\u00EB\u00EE\u00EF\u00F4\u00F9\u00FB\u00FC\u00FF\u0153\u00E6]/g;
     var TTS_FR_WORDS = ['le', 'la', 'les', 'des', 'une', 'est', 'dans', 'pour', 'que', 'qui',
@@ -116,8 +129,30 @@
         // 2) キリル文字（ロシア語）
         if (cyr > 0 && cyr >= latin) return 'ru';
 
-        // 3) かな（日本語）
-        if (kana > 0) return 'ja';
+        // 3) かな（日本語）— 出現「比率」で判定する（全文日本語読みバグの修正）
+        //    旧実装は `if (kana > 0) return 'ja'` で、中文の長文に日本語の単語や引用が
+        //    数文字混ざるだけで全文が日本語音声（ja-JP-NanamiNeural）で読まれていた。
+        //    日本語の漢字かな交じり文はかな比率が高く（概ね 4〜5 割）、中文に混ざる
+        //    日本語は数 % 程度なので、比率で切り分ければ誤判定しない。
+        if (kana > 0) {
+            if (cjk === 0) return 'ja';                 // 漢字なし＝かなだけ → 日本語
+            var kanaRatio = kana / (kana + cjk);
+            var kanaRuns = _ttsCountKanaRuns(s);
+            var zhMark = (s.match(TTS_RE_ZH_MARK) || []).length;
+            // 中文の文法標識（是 / 这 / 那 / 了 / 吗 …）を含み、かなブロックが 1 個だけなら、
+            // 「中文の文に日本語の単語が 1 語混ざっただけ」と判断して中文で読む。
+            // 例：「ありがとう是谢谢的意思。」→ 中文で読む（全文日本語読みにしない）
+            if (zhMark >= 1 && kanaRuns <= 1 && kanaRatio < 0.6) {
+                // 中文として扱う（return しない）
+            } else if (kanaRatio >= 0.4) {
+                // かな比率が十分高い＝日本語（漢字かな交じり文は概ね 4 割以上）
+                return 'ja';
+            } else if (kanaRatio >= TTS_KANA_RATIO_MIN && kanaRuns >= 2) {
+                // 比率が中程度でも、かなブロックが複数あれば日本語の文と判断する
+                return 'ja';
+            }
+            // 上記以外＝中文主体に日本語が点在 → 中文として扱う
+        }
 
         // 4) ラテン文字が主なら仏英を判別
         if (latin > cjk) {
@@ -134,6 +169,110 @@
         if (cyr > 0) return 'ru';
 
         return 'zh';
+    }
+
+    // 連続するかな（ひらがな・カタカナ）ブロックの数を数える。
+    // 日本語の文は「漢字＋かな」が交互に現れるためブロック数が増える。
+    // 中文に日本語の単語が 1 個だけ混ざる場合はブロック数 1 になる。
+    function _ttsCountKanaRuns(s) {
+        var runs = 0;
+        var inRun = false;
+        for (var i = 0; i < s.length; i++) {
+            var c = s.charCodeAt(i);
+            var isKana = (c >= 0x3040 && c <= 0x309F) || (c >= 0x30A0 && c <= 0x30FF);
+            if (isKana) {
+                if (!inRun) { runs++; inRun = true; }
+            } else {
+                inRun = false;
+            }
+        }
+        return runs;
+    }
+
+    // 文単位に分割（。！？；!?; と改行で区切る）
+    function _ttsSentenceSplit(s) {
+        var out = [];
+        var buf = '';
+        for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            buf += ch;
+            if (ch === '\n' || ch === '\u3002' || ch === '\uFF01' || ch === '\uFF1F' ||
+                ch === '\uFF1B' || ch === '!' || ch === '?' || ch === ';') {
+                out.push(buf);
+                buf = '';
+            }
+        }
+        if (buf) out.push(buf);
+        return out;
+    }
+
+    // 引用符・括弧の対応表（開き, 閉じ）
+    var TTS_QUOTE_PAIRS = [
+        ['\u300C', '\u300D'],   // 「」
+        ['\u300E', '\u300F'],   // 『』
+        ['\u201C', '\u201D'],   // “”
+        ['\u3010', '\u3011'],   // 【】
+        ['\uFF08', '\uFF09'],   // （）
+        ['(', ')'],
+        ['"', '"']
+    ];
+
+    // 引用された断片を切り出す。引用符そのものは読み上げに不要なので落とす。
+    // 目的：「中文の説明文＋引用された日本語」を分離し、中文部分の言語判定が
+    //       引用内の日本語に引きずられないようにする。
+    function _ttsSplitQuoted(s) {
+        var out = [];
+        var buf = '';
+        var i = 0;
+        var n = s.length;
+        while (i < n) {
+            var ch = s.charAt(i);
+            var close = '';
+            for (var q = 0; q < TTS_QUOTE_PAIRS.length; q++) {
+                if (ch === TTS_QUOTE_PAIRS[q][0]) { close = TTS_QUOTE_PAIRS[q][1]; break; }
+            }
+            if (close) {
+                var j = s.indexOf(close, i + 1);
+                if (j > i) {
+                    if (buf) { out.push(buf); buf = ''; }
+                    out.push({ text: s.substring(i + 1, j), quoted: true });
+                    i = j + 1;
+                    continue;
+                }
+            }
+            buf += ch;
+            i++;
+        }
+        if (buf) out.push(buf);
+        var res = [];
+        for (var k = 0; k < out.length; k++) {
+            var item = out[k];
+            var t = typeof item === 'string' ? item : item.text;
+            if (t && /\S/.test(t)) res.push(t);
+        }
+        return res;
+    }
+
+    // 読み上げ用セグメント分割：文 → 引用句の順に細分化し、各断片の言語を判定して
+    // 同一言語が連続するものを結合する。
+    // 中文と日本語が混在する本文を単一音色で読むと必ず誤読になるため、
+    // 「日本語の部分は日语音声・中文の部分は中文音声」に振り分ける。
+    function splitTTSLangSegments(text) {
+        var sents = _ttsSentenceSplit(String(text == null ? '' : text));
+        var pieces = [];
+        for (var i = 0; i < sents.length; i++) {
+            var parts = _ttsSplitQuoted(sents[i]);
+            for (var j = 0; j < parts.length; j++) pieces.push(parts[j]);
+        }
+        var segs = [];
+        for (var k = 0; k < pieces.length; k++) {
+            var st = pieces[k];
+            var lg = detectTTSLang(st);
+            var last = segs.length > 0 ? segs[segs.length - 1] : null;
+            if (last && last.lang === lg) last.text += st;
+            else segs.push({ lang: lg, text: st });
+        }
+        return segs;
     }
 
     function ttsVoiceFor(lang) {
@@ -5027,7 +5166,7 @@
 
     // ============================================================
     // カスタムモデル管理
-    // 永続化：バックエンド ddsh/data/displaymodels/<モデル名>.sts（1 モデル 1 ファイル）
+    // 永続化：バックエンド kewe/data/displaymodels/<モデル名>.sts（1 モデル 1 ファイル）
     // ブラウザの localStorage はミラーキャッシュ専用 / バックエンド不通時のオフライン代替
     // ============================================================
     var CUSTOM_MODELS_KEY = 'dsc_custom_models';
@@ -5109,7 +5248,7 @@
         var tip = document.createElement('span');
         tip.className = 'dsc-model-hint-label';
         tip.style.opacity = '0.6';
-        tip.title = customModelsFromServer ? dscT('データディレクトリ：ddsh/data/displaymodels') : dscT('バックエンド未同期、現在はローカルキャッシュのみ');
+        tip.title = customModelsFromServer ? dscT('データディレクトリ：kewe/data/displaymodels') : dscT('バックエンド未同期、現在はローカルキャッシュのみ');
         tip.textContent = customModelsFromServer ? dscT('（data/displaymodels/*.sts に保存済み）') : dscT('（ローカルキャッシュ、バックエンド未同期）');
         h.appendChild(tip);
     }
@@ -5122,7 +5261,7 @@
         clearCustomOptions();
         injectCustomModels();
     }
-    // バックエンドから正式な一覧を取得（ddsh/data/displaymodels/*.sts）
+    // バックエンドから正式な一覧を取得（kewe/data/displaymodels/*.sts）
     function loadCustomModelsFromServer() {
         return fetch('/api/displaymodels', { method: 'GET', cache: 'no-cache' })
             .then(function (r) { return r.json(); })
@@ -5399,14 +5538,38 @@
         return chunks;
     }
 
-    async function fetchTTSBlob(text, lang) {
+    // ★ 按语言段打包成合成请求（先整段下载，再无缝拼接播放）
+    //   - 每个语言段整段清洗后按 TTS_PIECE_MAX 硬切
+    //   - 跨语言绝不合并（不同音色必须分开请求，否则又回到整段误读）
+    function planTTSPieces(list) {
+        // 按语言段整段合并（不再把每句切成 320 字的碎片）。
+        // 每个语言段先整段清洗，再按 TTS_PIECE_MAX 硬切（后端 chunk 2500 字）。
+        // 段数大幅减少后，请求次数与 Edge 握手次数都少，播放自然流畅。
+        var out = [];
+        for (var i = 0; i < list.length; i++) {
+            var seg = list[i];
+            if (!seg || !seg.text) continue;
+            var lg = seg.lang || 'zh';
+            var cleaned = cleanTextForTTS(String(seg.text), lg);
+            if (!cleaned) continue;
+            var parts = splitTextIntoChunks(cleaned, TTS_PIECE_MAX);
+            for (var k = 0; k < parts.length; k++) {
+                if (parts[k] && /\S/.test(parts[k])) out.push({ lang: lg, text: parts[k] });
+            }
+        }
+        return out;
+    }
+
+    async function fetchTTSBlob(text, lang, signal) {
         var lastErr = null;
         for (var attempt = 0; attempt <= TTS_MAX_RETRY; attempt++) {
-            var res = await fetch('/api/ds-chat/tts', {
+            var opts = {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(buildTTSBody(text, lang))
-            });
+            };
+            if (signal) opts.signal = signal;
+            var res = await fetch('/api/ds-chat/tts', opts);
             if (!res.ok) {
                 var errData = await res.json().catch(function () { return {}; });
                 lastErr = new Error(errData.error || 'TTS サービス応答: ' + res.status);
@@ -5419,28 +5582,143 @@
         throw lastErr || new Error('TTS 失敗');
     }
 
-    async function playTTSChunks(text, btnElement, originalText, lang) {
-        var chunks = splitTextIntoChunks(text, TTS_CHUNK_SIZE);
-        var total = chunks.length;
+    // 読み上げキューを再生する（流水線：再生しながら次を合成する）。
+    // input は文字列（従来互換＝単一言語）または [{ lang, text }, ...] の配列。
+    // 旧実装は「合成 → 再生 → 合成 → 再生」の完全直列で、各段の間に
+    // Edge TTS のハンドシェイク待ちがそのまま無音として出ていた（体感：遅い／一卡一卡）。
+    // 現在は再生開始前に次のブロックの合成を仕込み、待ち時間を再生時間で覆う。
+    function _ttsWaitOrCancel(promise) {
+        return new Promise(function (resolve, reject) {
+            var settled = false;
+            var timer = setInterval(function () {
+                if (state.ttsCancelled && !settled) {
+                    settled = true;
+                    clearInterval(timer);
+                    reject(new Error('__tts_cancelled__'));
+                }
+            }, 60);
+            promise.then(function (v) {
+                if (settled) return;
+                settled = true; clearInterval(timer); resolve(v);
+            }, function (e) {
+                if (settled) return;
+                settled = true; clearInterval(timer); reject(e);
+            });
+        });
+    }
+
+    async function playTTSChunks(input, btnElement, originalText, lang) {
+        var list;
+        if (typeof input === 'string') {
+            list = [{ lang: lang || detectTTSLang(input), text: input }];
+        } else if (Object.prototype.toString.call(input) === '[object Array]') {
+            list = input;
+        } else {
+            list = [];
+        }
+        var queue = planTTSPieces(list);
+        var total = queue.length;
         if (total === 0) { toast('読み上げる内容がありません', 'info'); return; }
 
-        for (var i = 0; i < total; i++) {
-            if (state.ttsCancelled) break;
-            if (btnElement) {
-                btnElement.textContent = total > 1 ? ('⏸ 再生中 ' + (i + 1) + '/' + total) : '⏸ 再生中';
+        var ac = (typeof AbortController === 'function') ? new AbortController() : null;
+        var blobs = new Array(total);
+        var doneCount = 0;
+
+        // 先全部下载合成好（并行，限并发 3 条，避免 Edge 按 IP 限流）。
+        // 全部落盘到内存后一次性拼接播放，块间零间隙、音色切换也无停顿。
+        var next = 0;
+        async function worker() {
+            while (next < total) {
+                var idx = next++;
+                if (state.ttsCancelled) break;
+                try {
+                    var b = await fetchTTSBlob(queue[idx].text, queue[idx].lang, ac ? ac.signal : null);
+                    blobs[idx] = b;
+                } catch (e) {
+                    if (e && e.name === 'AbortError') break;
+                    console.error('[TTS] 第 ' + (idx + 1) + ' 段合成失败：', e);
+                }
+                doneCount++;
+                if (btnElement && total > 1) {
+                    btnElement.textContent = '⏳ 加载 ' + doneCount + '/' + total;
+                }
             }
-            var blob = await fetchTTSBlob(chunks[i], lang);
-            var url = URL.createObjectURL(blob);
-            if (state.ttsCancelled) { URL.revokeObjectURL(url); break; }
+        }
+        var ws = [];
+        for (var w = 0; w < Math.min(3, total); w++) ws.push(worker());
+        await Promise.all(ws);
+
+        if (state.ttsCancelled) {
+            if (ac) { try { ac.abort(); } catch (e) {} }
+            return;
+        }
+
+        // 拼接所有成功下载的 mp3（去掉各自可能的 ID3 头）为一个连续 mp3
+        var okBlobs = [];
+        for (var bi = 0; bi < total; bi++) {
+            if (blobs[bi] && blobs[bi].size > 0) okBlobs.push(blobs[bi]);
+        }
+        if (okBlobs.length === 0) {
+            throw new Error(dscT('音声合成に失敗しました'));
+        }
+        var merged = await mergeMp3Blobs(okBlobs);
+        if (state.ttsCancelled) return;
+
+        if (btnElement) btnElement.textContent = (total > 1 ? ('▶ 播放中') : '⏸ 播放中');
+
+        // 单个 <audio> 连续播放拼接后的 mp3，无缝衔接
+        var url = URL.createObjectURL(merged);
+        try {
             await new Promise(function (resolve, reject) {
                 var audio = new Audio(url);
                 state.currentAudio = audio;
-                audio.onended = function () { URL.revokeObjectURL(url); state.currentAudio = null; resolve(); };
-                audio.onerror = function () { URL.revokeObjectURL(url); state.currentAudio = null; reject(new Error('音声の再生に失敗')); };
-                audio.play().catch(function (e) { URL.revokeObjectURL(url); state.currentAudio = null; reject(e); });
+                var done = false;
+                var finish = function (err) {
+                    if (done) return;
+                    done = true;
+                    if (state.currentAudio === audio) state.currentAudio = null;
+                    if (err) reject(err); else resolve();
+                };
+                audio.onended = function () { finish(null); };
+                // 停止按钮是 pause 一下，ended 不会来；这里要放行，否则主循环卡死
+                audio.onpause = function () {
+                    if (state.ttsCancelled) finish(null);
+                };
+                audio.onerror = function () { finish(new Error('音声の再生に失敗')); };
+                audio.play().catch(function (e) { finish(e); });
             });
+        } finally {
+            URL.revokeObjectURL(url);
         }
     }
+
+    // 把多个 mp3 blob 二进制拼成一个连续 mp3。
+    // mp3 是帧流格式，去掉每个 blob 开头的 ID3v2 标签后直接首尾相接即可无缝播放。
+    async function mergeMp3Blobs(blobs) {
+        var parts = [];
+        for (var i = 0; i < blobs.length; i++) {
+            var bytes = new Uint8Array(await blobs[i].arrayBuffer());
+            var start = 0;
+            if (bytes.length > 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+                var sz = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) |
+                         ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
+                start = 10 + sz;
+                if (start >= bytes.length) start = 0;
+            }
+            if (start > 0) parts.push(bytes.subarray(start));
+            else parts.push(bytes);
+        }
+        var totalLen = 0;
+        for (var j = 0; j < parts.length; j++) totalLen += parts[j].length;
+        var out = new Uint8Array(totalLen);
+        var off = 0;
+        for (var k = 0; k < parts.length; k++) {
+            out.set(parts[k], off);
+            off += parts[k].length;
+        }
+        return new Blob([out], { type: 'audio/mpeg' });
+    }
+
 
     // ============================================================
     // ★ 翻訳まわり：Markdown を正しく描画し、その下に「今回の翻訳の料金」を出す
@@ -5601,15 +5879,24 @@
             state.currentSpeakBtn.classList.remove('speaking');
             state.currentSpeakBtn = null;
         }
-        var ttsLang = detectTTSLang(text);
-        var cleanedText = cleanTextForTTS(text, ttsLang);
-        if (!cleanedText) { toast('読み上げる内容がありません', 'info'); return; }
+        // ★ 文単位で言語を判定し、言語ごとに正しい音色で読む（全文日本語読みバグの対策）
+        var ttsSegments = splitTTSLangSegments(text);
+        // 注意：这里不先清洗。cleanTextForTTS 会把中文句号换成空格，
+        // 清洗后 planTTSPieces 就切不出句子边界，首块会变成整段、出声变慢。
+        // 清洗改到 planTTSPieces 里——先切句，再逐句清洗。
+        var ttsPlayList = [];
+        for (var sgi = 0; sgi < ttsSegments.length; sgi++) {
+            if (ttsSegments[sgi].text && /\S/.test(ttsSegments[sgi].text)) {
+                ttsPlayList.push({ lang: ttsSegments[sgi].lang, text: ttsSegments[sgi].text });
+            }
+        }
+        if (!ttsPlayList.length) { toast('読み上げる内容がありません', 'info'); return; }
         state.ttsCancelled = false;
         state.currentSpeakBtn = btnElement;
         var originalText = btnElement ? (btnElement.textContent || '🔊 読み上げ') : '🔊 読み上げ';
         if (btnElement) { btnElement.textContent = dscT('⏳ 読み込み中...'); btnElement.classList.add('speaking'); }
         try {
-            await playTTSChunks(cleanedText, btnElement, originalText, ttsLang);
+            await playTTSChunks(ttsPlayList, btnElement, originalText);
         } catch (err) {
             console.error('[DSC] TTS 失敗:', err);
             toast(dscErrText('読み上げに失敗: ', err.message), 'error');

@@ -13,30 +13,30 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:ddsh/src/announcements.dart';
-import 'package:ddsh/src/displaymodels.dart';
-import 'package:ddsh/src/backup.dart';
-import 'package:ddsh/src/chat_handlers.dart';
-import 'package:ddsh/src/chat_send.dart';
-import 'package:ddsh/src/cosplay.dart';
-import 'package:ddsh/src/deepseek_api.dart';
-import 'package:ddsh/src/devtools.dart';
-import 'package:ddsh/src/doubao.dart';
-import 'package:ddsh/src/doubao_tools.dart';
-import 'package:ddsh/src/doubao_realtime.dart';
-import 'package:ddsh/src/files.dart';
-import 'package:ddsh/src/forum.dart';
-import 'package:ddsh/src/globals.dart';
-import 'package:ddsh/src/vocab.dart';
-import 'package:ddsh/src/httpsrv.dart';
-import 'package:ddsh/src/model_router.dart';
-import 'package:ddsh/src/peakvalley.dart';
-import 'package:ddsh/src/search.dart';
-import 'package:ddsh/src/session_ref.dart';
-import 'package:ddsh/src/sessions.dart';
-import 'package:ddsh/src/tools.dart';
-import 'package:ddsh/src/xtweet.dart';
-import 'package:ddsh/src/doubao_translate.dart';
+import 'package:kewe/src/announcements.dart';
+import 'package:kewe/src/displaymodels.dart';
+import 'package:kewe/src/backup.dart';
+import 'package:kewe/src/chat_handlers.dart';
+import 'package:kewe/src/chat_send.dart';
+import 'package:kewe/src/cosplay.dart';
+import 'package:kewe/src/deepseek_api.dart';
+import 'package:kewe/src/devtools.dart';
+import 'package:kewe/src/doubao.dart';
+import 'package:kewe/src/doubao_tools.dart';
+import 'package:kewe/src/doubao_realtime.dart';
+import 'package:kewe/src/files.dart';
+import 'package:kewe/src/forum.dart';
+import 'package:kewe/src/globals.dart';
+import 'package:kewe/src/vocab.dart';
+import 'package:kewe/src/httpsrv.dart';
+import 'package:kewe/src/model_router.dart';
+import 'package:kewe/src/peakvalley.dart';
+import 'package:kewe/src/search.dart';
+import 'package:kewe/src/session_ref.dart';
+import 'package:kewe/src/sessions.dart';
+import 'package:kewe/src/tools.dart';
+import 'package:kewe/src/xtweet.dart';
+import 'package:kewe/src/doubao_translate.dart';
 
 // ------------------------------------------------------------
 // .env 加载（Go: dotenv.go）
@@ -128,6 +128,7 @@ void registerRoutes() {
   _register('/api/doubao/tts', handleDbTts);
   _register("/api/doubao/audio-generate", handleDbAudioGenerate);
   _register('/api/doubao/podcast', handleDbPodcast);
+  _register('/api/doubao/podcast/sse', handleDbPodcastSse);
   _register('/api/doubao/asr', handleDbAsr);
   _register('/api/doubao/voice/turn', handleDbVoiceTurn);
   _register('/api/doubao/chat', handleDbChat);
@@ -135,6 +136,10 @@ void registerRoutes() {
   // 端到端实时语音（Seeduplex）：WebSocket 全双工
   _register('/api/doubao/realtime', handleDbRealtime);
   _register('/api/doubao/realtime/status', handleDbRealtimeStatus);
+  _register('/api/doubao/voice/save', handleDbVoiceSave);
+  _register('/api/doubao/voice/list', handleDbVoiceList);
+  _register('/api/doubao/voice/delete', handleDbVoiceDelete);
+  _register('/api/doubao/voice/clear', handleDbVoiceClear);
   // RTC AI 音视频互动（服务端任务编排）
   _register('/api/doubao/rtc/start', handleDbRtcStart);
   _register('/api/doubao/rtc/stop', handleDbRtcStop);

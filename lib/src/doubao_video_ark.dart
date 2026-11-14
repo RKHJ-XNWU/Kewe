@@ -338,7 +338,7 @@ Future<List<File>> _dbSplitVideo(
   }
 
   final tmpDir = Directory(
-      '${Directory.systemTemp.path}/ddsh_vseg_${DateTime.now().microsecondsSinceEpoch}');
+      '${Directory.systemTemp.path}/kewe_vseg_${DateTime.now().microsecondsSinceEpoch}');
   tmpDir.createSync(recursive: true);
   final pattern = '${tmpDir.path}/part_%04d.mp4';
 
@@ -891,7 +891,7 @@ Future<String> _dbArkUploadLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
   final boundary =
-      '----ddshArk${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
+      '----keweArk${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
   final head = StringBuffer();
   void field(String n, String v) {
     head.write('--$boundary\r\n');
@@ -991,7 +991,7 @@ Future<String> _dbArkUploadFromTos({
   int minFrames = 0,
 }) async {
   final boundary =
-      '----ddshTos${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
+      '----keweTos${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
   final sb = StringBuffer();
   void field(String n, String v) {
     sb.write('--$boundary\r\n');
@@ -1163,7 +1163,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         }
         onProgress?.call({'stage': 'compact_start', 'size': size});
         tmpDir = Directory(
-            '${Directory.systemTemp.path}/ddsh_arkc_${DateTime.now().microsecondsSinceEpoch}');
+            '${Directory.systemTemp.path}/kewe_arkc_${DateTime.now().microsecondsSinceEpoch}');
         tmpDir.createSync(recursive: true);
         final out = File('${tmpDir.path}/compact.mp4');
         await _dbCompressTo(f, dbArkCompactTargetBytes, out);

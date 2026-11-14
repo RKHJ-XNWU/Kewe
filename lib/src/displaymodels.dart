@@ -1,6 +1,6 @@
 // ============================================================
 // displaymodels.dart —— 自定义模型（displaymodels）存储
-//   目录：$DATA_DIR/displaymodels  （即 ddsh/data/displaymodels）
+//   目录：$DATA_DIR/displaymodels  （即 kewe/data/displaymodels）
 //   格式：与 sessions / announcements 同系的明文 .sts
 //     每个模型 ⇔ 一个独立文件，互不混存
 //     #M|modelId|createdAt

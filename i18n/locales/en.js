@@ -1568,3 +1568,163 @@ I18N.add('en', `
 単価（元/百万tokens）：|Unit price (CNY per 1M tokens):
 統一単価（時間帯による変動なし）：|Flat rate (no time-of-day variation):
 `);
+
+
+I18N.add('en', `
+DeepSeek ディメンション|DeepSeek Dimension
+豆包ディメンション|Doubao Dimension
+ポータルを開いています|Opening portal
+主世界へ戻っています|Returning to main world
+チャンクを読み込んでいます…|Loading chunks…
+新しいディメンションを生成しています…|Generating new dimension…
+抖音百科が開いています。先に百科をオフにしてください|Douyin Encyclopedia is on, please turn it off first
+抖音百科のマスタースイッチを先にオンにしてください|Please turn on the Douyin Encyclopedia master switch first
+抖音百科は豆包モードでのみ利用可能です|Douyin Encyclopedia is only available in Doubao mode
+抖音百科をオフにしました|Douyin Encyclopedia turned off
+抖音百科をオンにしました|Douyin Encyclopedia turned on
+抖音百科：オフ（クリックでオン）|Douyin Encyclopedia: Off (click to turn on)
+抖音百科：オン（クリックでオフ）|Douyin Encyclopedia: On (click to turn off)
+豆包オーディオ生成|Doubao Audio Generation
+音声シーン描写を入力してください|Please enter the audio scene description
+生成中…（最大2分ほどかかる場合があります）|Generating… (may take up to 2 minutes)
+対話モデル（DeepSeek）：|Chat model (DeepSeek):
+対話モデル（豆包）：|Chat model (Doubao):
+✅ 送信モデルを豆包に切り替えました：|Switched send model to Doubao:
+✅ 送信モデルを切り替えました：|Switched send model:
+✅ 対話モデルを追加しました：|Added chat model:
+✅ 豆包対話モデルを追加しました：|Added Doubao chat model:
+モデル名を追加（対話モデルのみ）|Add model name (chat models only)
+追加に失敗しました：|Failed to add:
+翻訳専用 API Key を入力|Enter translation API Key
+音声生成 API Key を入力|Enter audio generation API Key
+豆包機械翻訳|Doubao Machine Translation
+対話モデル|Chat model
+現在：|Current:
+DeepSeek 対話モデル|DeepSeek chat model
+豆包対話モデル（火山方舟）|Doubao chat model (Volcano Ark)
+カスタム|Custom
+豆包画像編集|Doubao Photo Edit
+翻訳モデル（テキスト入力）|Translation model (text input)
+歌唱能力（ネイティブ）|Singing ability (native)
+内蔵ウェブ検索|Built-in web search
+ウェブ検索 API Key（融合情報検索）|Web search API Key (fusion info search)
+出力語速|Output speech rate
+融合情報検索 API Key（内蔵ウェブ検索を有効化後に設定）|Fusion info search API Key (required after enabling built-in web search)
+エンドツーエンド音声通話 · 豆包音声通話クォータのみ消費 · Vivi ネイティブ音色|End-to-end voice call · only Doubao voice call quota · Vivi native voice
+⚠️ 先に設定で豆包音声 API Key を入力してください|⚠️ Please enter the Doubao voice API Key in settings first
+マイク|Microphone
+ミュート|Mute
+通話を終了|Hang up
+通話終了|Hang up
+割り込み|Interrupt
+通話を開始|Start call
+モード|Mode
+全二重|Full-duplex
+通話履歴|History
+通話を終了しました|Call ended
+現在の応答を割り込みました|Interrupted the current response
+全二重モードでのみ使用できます|Only available in full-duplex mode
+接続済み（全二重）|Connected (full-duplex)
+接続成功。話しかけてください！|Connected, please speak!
+全二重サービスに接続中…|Connecting to full-duplex service…
+全二重モジュールが読み込まれていません|Full-duplex module not loaded
+接続失敗：|Connection failed:
+接続エラー|Connection error
+待機中|Standby
+マイクON|Mic on
+✅ 通話記録を保存しました：|✅ Call history saved:
+音声合成に失敗：バックエンドが音声アドレスを返しませんでした|Voice synthesis failed: backend returned no audio URL
+音声合成エラー：|Voice synthesis error:
+豆包ネイティブポッドキャスト · 中文双人対談 · 公式音色 · 全画面没入型|Doubao native podcast · Chinese two-person talk · official voices · fullscreen immersive
+豆包ネイティブポッドキャスト · 中文双人 · 音声ポッドキャストクォータのみ消費|Doubao native podcast · Chinese two-person · only podcast quota consumed
+テキスト生成（素材ベース）|Text generation (material-based)
+対話合成|Dialogue synthesis
+話題ウェブ検索生成|Topic web search generation
+ポッドキャストを生成|Generate podcast
+入力テキスト / 素材|Input text / material
+対話テキスト（1行1発話、形式 A:xxx / B:xxx。A/B は音色ペアの2人の話者に対応）|Dialogue text (one line per utterance, format A:xxx / B:xxx; A/B map to the two speakers)
+話題（ウェブ検索生成）|Topic (web search generation)
+目標時間（1〜10分）|Target duration (1-10 min)
+ファイル名（任意）|Filename (optional)
+⚠️ 内容を入力してください|⚠️ Please enter content
+約 {0} 分のポッドキャストを生成し、以下の素材をめぐって議論してください：|Generate a podcast of about {0} minutes discussing the following material:
+約 {0} 分のポッドキャストを生成してください。話題：|Generate a podcast of about {0} minutes. Topic:
+豆包ネイティブポッドキャストを生成中…（音声が長いため約1〜3分かかります。閉じないでください）|Generating Doubao native podcast… (audio is long, about 1-3 min, please keep open)
+音声をダウンロード|Download audio
+もう一度生成|Regenerate
+✅ 豆包ポッドキャストを生成しました|✅ Doubao podcast generated
+ポッドキャスト生成に失敗：{0}|Podcast generation failed: {0}
+閲覧のみ。個別削除・一括削除・全削除に対応（ファイルを実際に削除し、元に戻せません）。|Read-only view. Supports single delete, batch delete, clear all (real file deletion, irreversible).
+すべて選択|Select all
+一括削除|Batch delete
+すべて削除|Clear all
+更新|Refresh
+すべての通話履歴を完全に削除しますか？この操作は元に戻せません。|Clear all call history? This cannot be undone.
+削除する記録を先に選択してください|Please select the records to delete first
+選択した {0} 件の通話記録を削除しますか？この操作は元に戻せません。|Delete the selected {0} call record(s)? This cannot be undone.
+✅ 削除成功：計 {0} 件の通話記録を削除しました|✅ Deleted {0} call record(s)
+✅ {0} 件の通話記録を削除しました|✅ Deleted {0} call record(s)
+自分|Me
+通話履歴がありません|No call history
+（空の記録）|(empty record)
+ 行 · | lines · 
+表示|View
+削除|Delete
+計 {0} 件の記録|{0} record(s) total
+32 言語の相互翻訳に対応。|Supports translation between 32 languages.
+ソース言語（未選択なら自動検出）|Source language (auto-detect if empty)
+自動検出|Auto-detect
+ターゲット言語（必須）|Target language (required)
+翻訳するテキスト（1行1件）|Text to translate (one per line)
+翻訳|Translate
+翻訳中…|Translating…
+コピー|Copy
+読み上げ|Read aloud
+✅ 翻訳成功|✅ Translation succeeded
+翻訳失敗|Translation failed
+コードを畳む|Collapse code
+コードを開く|Expand code
+ネット検索ソース|Web search sources
+詳細を開く|Open details
+音声合成に失敗しました|Voice synthesis failed
+⏳ 方舟が動画を前処理中（抽帧）…|⏳ Ark is preprocessing video (frame extraction)…
+⏳ 方舟が動画を前処理中（抽帧）… {0} 秒|⏳ Ark is preprocessing video (frame extraction)… {0}s
+☁️ TOS 上の動画を参照登録中（{0}）|☁️ Registering video reference on TOS ({0})
+☁️ 方舟へアップロード中 {0}%（{1} / {2}）|☁️ Uploading to Ark {0}% ({1}/{2})
+☁️ 方舟へアップロード開始（{0}）|☁️ Starting upload to Ark ({0})
+♻️ アップロード済みの動画を再利用します|♻️ Reusing uploaded video
+✅ 動画の準備完了。回答を生成します…|✅ Video ready. Generating answer…
+🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります|🎞️ Over 512MB, compressing locally (orig {0})… takes time
+🎞️ 圧縮完了。アップロードを準備中…|🎞️ Compression done. Preparing upload…
+🎬 動画 {0} 件を準備します|🎬 Preparing {0} video(s)
+🎬 動画を準備中…|🎬 Preparing video…
+🔁 前処理モデルを切り替えて再試行中…|🔁 Switching preprocessing model and retrying…
+画面には追加しましたが .sts の書き込みに失敗（バックエンド未コンパイル？）：|Added to UI, but .sts write failed (backend not compiled?):
+`);
+
+
+I18N.add('en', `
+Vivi 2.0（中/日/インドネシア/メキシコ + 30+ 言語）|Vivi 2.0 (zh/ja/id/es-MX + 30+ languages)
+小何 2.0（中国語 + 30+ 言語）|Xiaohe 2.0 (Chinese + 30+ languages)
+云舟 2.0（中国語 + 30+ 言語）|Yunzhou 2.0 (Chinese + 30+ languages)
+小天 2.0（中国語 + 30+ 言語）|Xiaotian 2.0 (Chinese + 30+ languages)
+咪仔 + 大衣先生（既定）|Mizai + Dayi (default)
+刘飞 + 潇磊|Liu Fei + Xiao Lei
+用語集管理|Glossary Management
+用語集はサーバーに保存され、.sts 形式で 1 行 1 用語（id|原語|訳語|ソース言語|ターゲット言語）。|Glossary is stored server-side as .sts, one term per line (id|source|translation|source lang|target lang).
+— 選択してください —|— Please select —
+用語集を選択|Select glossary
+新規用語集名|New glossary name
+作成 / 保存|Create / Save
+用語エントリ（JSON 配列、各項目 {source, target, sourceLang?, targetLang?}）|Term entries (JSON array, each {source, target, sourceLang?, targetLang?})
+用語集の読み込みに失敗：{0}|Failed to load glossary: {0}
+⚠️ 用語集名を入力してください|⚠️ Please enter a glossary name
+⚠️ 用語エントリが有効な JSON ではありません：{0}|⚠️ Term entries are not valid JSON: {0}
+⚠️ 用語エントリは JSON 配列である必要があります|⚠️ Term entries must be a JSON array
+✅ 用語集「{0}」を保存しました。計 {1} 件|✅ Saved glossary "{0}", {1} term(s)
+✅ 用語集を保存しました|✅ Glossary saved
+⚠️ 削除する用語集を先に選択してください|⚠️ Please select a glossary to delete first
+用語集「{0}」を削除しますか？|Delete glossary "{0}"?
+⚠️ 用語集が存在しません|⚠️ Glossary does not exist
+用語集を削除しました|Glossary deleted
+`);

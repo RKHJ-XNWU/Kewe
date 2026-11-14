@@ -4,7 +4,7 @@
  *   2) 暴露 window.dscModelRouteToast(payload)，供 deepseek-chat.js
  * done イベント受信後に「今回のリクエストがルーティングされた」と通知
  * バックエンド：/api/ds-chat/model-router（GET 設定 / POST 保存）
- *   設定ファイル：ddsh/data/deepseek_chat/model_router.sts
+ *   設定ファイル：kewe/data/deepseek_chat/model_router.sts
  * ============================================================ */
 (function () {
     'use strict';

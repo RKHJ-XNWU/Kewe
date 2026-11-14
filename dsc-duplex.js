@@ -32,10 +32,13 @@
         active: false,
         connecting: false,
         micOn: true,
-        // ★ 音色渲染开关：豆包侧没有可用的对话音色，默认由 Edge TTS 流式接管，
-        //   此时不再播放方舟回传的原生 PCM，避免「双声叠在一起」。
-        //   浏览器端如需原生气声，把 edgeVoice 设成 false 即可。
-        edgeVoice: true,
+        // ★ 音色渲染：默认播放豆包端到端回传的原生 PCM（豆包官方原生音色）。
+        //   端到端模型直接生成带情绪语气的语音，不再走 Edge TTS 二次合成。
+        //   只有显式把 edgeVoice 设成 true 才回到 Edge TTS 兜底。
+        edgeVoice: false,
+        // 本轮是否收到过豆包原生音频（output_audio.delta）。
+        // 收到过就用豆包 vivi 音色；没收到则回落到 Edge TTS 兜底，避免 AI 全程哑巴。
+        gotAudio: false,
         stream: null,
         ctx: null,
         src: null,
@@ -57,9 +60,22 @@
         sayTimer: null,
         // 上一条已显示的气泡文本：服务端偶尔把同一句发两遍，界面上也要去重
         lastBubbleText: '',
+        // ★ 打断修复：追踪当前/已作废的 response_id，用于丢弃打断后旧 response
+        //   迟到的音频/文字残留（否则旧音频会在打断后继续响、旧文字被读出来）。
+        activeRid: null,
+        staleRid: null,
         instructions: '',
         sending: 0,
-        reopened: 0
+        reopened: 0,
+        // 通话记录：一次通话 = 一次保存（纯文本），通话结束写入 kewe/data/voice/
+        history: [],
+        callSeq: 0,
+        // 用户语音转文字的流式累计（delta 逐字下发，completed 不带文本字段）
+        userTranscript: '',
+        // 打断后需要丢弃的回声窗口帧数：AI 说话时的回声若继续上行，
+        // 会被服务端 VAD 误判为「还在说话」，导致打断后识别不到用户语音。
+        // 打断后丢弃约 200ms（10 帧 × 20ms）采集，让回声消散再恢复上行。
+        skipFrames: 0
     };
 
     function $(id) { return document.getElementById(id); }
@@ -98,11 +114,23 @@
     }
 
     function uiBubble(kind, text) {
+        // 不画气泡框：改成纯文本字幕行（用户明确要求禁止气泡框）
         var log = $('dscDbCallLog');
-        if (!log) return;
-        var b = el('div', 'dsc-db-bubble ' + kind, text);
-        log.appendChild(b);
-        log.scrollTop = log.scrollHeight;
+        if (log) {
+            var b = el('div', 'dsc-call-line ' + kind, text);
+            log.appendChild(b);
+            log.scrollTop = log.scrollHeight;
+        }
+        // 记录到通话历史（纯文本），通话结束时由上层保存到 kewe/data/voice/*.sts
+        if (text && kind !== 'sys') {
+            D.callSeq++;
+            D.history.push({
+                role: (kind === 'user') ? 'user' : 'ai',
+                text: String(text),
+                seq: D.callSeq,
+                at: Date.now()
+            });
+        }
     }
 
     function newId() {
@@ -177,6 +205,8 @@
     // ------------------------------------------------------------
     function onAudioProcess(ev) {
         if (!D.active || !D.micOn) return;
+        // 打断后的回声窗口：丢弃指定帧数，避免 AI 回声被服务端误判
+        if (D.skipFrames > 0) { D.skipFrames--; return; }
         var input = ev.inputBuffer.getChannelData(0);
         var f32 = downsample(input, D.inRate, IN_RATE);
         for (var i = 0; i < f32.length; i++) D.pend.push(f32[i]);
@@ -232,25 +262,35 @@
         if (D.sayTimer) { clearTimeout(D.sayTimer); D.sayTimer = null; }
         var sayText = String(D.pendingSay || '').trim();
         D.pendingSay = '';
-        if (sayText && D.edgeVoice && window.dscDuplex &&
+        // 有原生音频就用豆包 vivi 音色（已由 playPcm 播放），这里只做兜底：
+        // 只有「整轮都没收到任何音频」时才把文本交给上层用 Edge TTS 朗读，
+        // 避免豆包音色与 Edge 音色叠加读两遍。
+        if (sayText && !D.gotAudio && window.dscDuplex &&
             typeof window.dscDuplex.onText === 'function') {
             try { window.dscDuplex.onText(sayText); } catch (e) {}
         }
+        D.gotAudio = false;
     }
 
     /// 延时兜底：2.5 秒内没等到 response.done，就自己读一次
     function saySoon() {
-        if (!D.edgeVoice) return;
         if (D.sayTimer) clearTimeout(D.sayTimer);
         D.sayTimer = setTimeout(function () {
             D.sayTimer = null;
-            if (D.pendingSay) sayNow();
-        }, 2500);
+            // 兜底：个别情况下服务端只发 output_text.done 不发 response.done / 音频，
+            // 攒到文本 3.5 秒仍未收到音频就自己读一次（Edge TTS），绝不装高冷。
+            if (D.pendingSay && !D.gotAudio) sayNow();
+        }, 3500);
     }
 
     // ------------------------------------------------------------
     // 下行事件
     // ------------------------------------------------------------
+    function _staleEvent(m) {
+        var rid = m && (m.response_id || m.id || '');
+        return !!(rid && D.staleRid && rid === D.staleRid);
+    }
+
     function onMessage(ev) {
         var m;
         try { m = JSON.parse(ev.data); } catch (e) { return; }
@@ -265,16 +305,22 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.started') {
+            D.userTranscript = '';
             uiStatus(T('聞き取り中…'), 'listening');
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.delta') {
             var dt = m.delta || m.text || '';
-            if (dt) uiStatus(T('聞き取り中…') + ' ' + dt, 'listening');
+            if (dt) {
+                D.userTranscript += dt;
+                uiStatus(T('聞き取り中…') + ' ' + dt, 'listening');
+            }
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.completed') {
-            var ut = m.transcript || m.text || '';
+            // 官方协议：completed 事件不带文本字段，文本来自 delta 的流式累计
+            var ut = m.transcript || m.text || D.userTranscript || '';
+            D.userTranscript = '';
             if (ut) uiBubble('user', ut);
             return;
         }
@@ -283,6 +329,7 @@
             return;
         }
         if (t === 'response.output_text.delta') {
+            if (_staleEvent(m)) return;   // 旧 response 残留文字，丢弃
             var dl = m.delta || '';
             if (dl) {
                 if (!D.curText) D.curText = '';
@@ -292,6 +339,7 @@
             return;
         }
         if (t === 'response.output_text.done') {
+            if (_staleEvent(m)) { D.curText = ''; return; }   // 旧 response 残留，丢弃
             var tx = m.text || D.curText || '';
             D.curText = '';
             if (tx) {
@@ -321,12 +369,24 @@
             return;
         }
         if (t === 'response.output_audio.started') {
+            var rid0 = m && (m.response_id || m.id || '');
+            if (rid0) {
+                // 新一轮音频开始：清除作废标记，记录当前 response
+                D.staleRid = null;
+                D.activeRid = rid0;
+            }
             uiStatus(T('読み上げ中…'), 'speaking');
             return;
         }
         if (t === 'response.output_audio.delta') {
-            // Edge 接管音色时不播原生 PCM，否则会出现两路声音重叠
-            if (m.audio && !D.edgeVoice) playPcm(m.audio);
+            if (_staleEvent(m)) return;   // 旧 response 的残留音频，丢弃不播
+            var rid2 = m && (m.response_id || m.id || '');
+            if (rid2 && !D.activeRid) { D.activeRid = rid2; D.staleRid = null; }
+            // 播放豆包端到端回传的原生 PCM（含情绪、语气，官方原生 vivi 音色）
+            // 官方协议：输出音频 Base64 在 delta 字段下行（上行才用 audio 字段）。
+            // 这里兼容 delta / audio 两种字段名，避免因字段名不匹配导致 AI 全程不出声。
+            var audioB64 = m.delta || m.audio || '';
+            if (audioB64) { D.gotAudio = true; playPcm(audioB64); }
             return;
         }
         if (t === 'response.output_audio.done') {
@@ -334,9 +394,17 @@
             return;
         }
         if (t === 'response.done') {
+            if (_staleEvent(m)) return;   // 旧 response 的 done，丢弃
             uiStatus(T('聞き取り中…'), 'listening');
+            D.staleRid = null;
+            D.activeRid = null;
             // 一轮回复彻底结束，把攒好的整段文本交出去朗读（只读一次）。
             sayNow();
+            return;
+        }
+        if (t === 'response.canceled') {
+            // 打断请求的确认（ack）
+            uiStatus(T('聞き取り中…'), 'listening');
             return;
         }
         if (t === 'response.function_call_arguments.done') {
@@ -364,6 +432,9 @@
         if (D.connecting) return;
         D.connecting = true;
         D.curText = '';
+        D.history = [];
+        D.callSeq = 0;
+        D.userTranscript = '';
         uiStatus(T('接続しています…'), 'thinking');
 
         try {
@@ -378,7 +449,10 @@
                 return;
             }
             D.lang = cfg.duplexLang || 'zh';
-            D.voice = cfg.duplexVoice || '';
+            // ★ 修复音色切换失效：startCall() 已通过 setVoice() 把用户所选音色写入 D.voice，
+            //   这里绝不能再用配置值覆盖它，否则切换音色永远回到默认 vivi。
+            //   仅当用户从未选过音色（D.voice 为空）时才回落到配置默认值。
+            if (!D.voice) if (!D.voice) D.voice = cfg.duplexVoice || '';
             D.instructions = cfg.duplexInstructions || '';
         } catch (e) {
             uiBubble('sys', T('設定の読み込みに失敗しました：{0}', e.message || e));
@@ -408,13 +482,16 @@
             D.ctx = new AC();
             D.inRate = D.ctx.sampleRate || 48000;
             D.src = D.ctx.createMediaStreamSource(D.stream);
-            D.proc = D.ctx.createScriptProcessor(4096, 1, 1);
+            D.proc = D.ctx.createScriptProcessor(2048, 1, 1);
             D.proc.onaudioprocess = onAudioProcess;
             D.src.connect(D.proc);
             D.proc.connect(D.ctx.destination);
             D.playCtx = new AC();
             D.nextTime = 0;
             D.sources = [];
+            // 确保两个 AudioContext 都处于 running 状态，否则 playPcm 静默无声（AI 不说话）
+            if (D.ctx && D.ctx.state === 'suspended' && D.ctx.resume) { try { D.ctx.resume(); } catch (e) {} }
+            if (D.playCtx && D.playCtx.state === 'suspended' && D.playCtx.resume) { try { D.playCtx.resume(); } catch (e) {} }
         } catch (e) {
             uiBubble('sys', T('音声処理の初期化に失敗しました：{0}', e.message || e));
             cleanup();
@@ -461,7 +538,7 @@
                             format: { type: 'pcm_s16le', rate: OUT_RATE },
                             // Edge 接管音色时不再指定豆包音色（账号没有该音色权限，
                             // 带上去反而会让 session.create 被拒），留空由服务端给默认值。
-                            voice: (D.edgeVoice ? undefined : (D.voice || undefined))
+                            voice: (D.edgeVoice ? undefined : (D.voice || 'zh_female_vv_uranus_bigtts'))
                         }
                     },
                     instructions: D.instructions || undefined
@@ -506,7 +583,8 @@
     }
 
     function stop() {
-        D.pendingSay = '';   // 断开连接：丢弃未朗读的旧句子
+        D.pendingSay = '';
+        D.gotAudio = false;   // 断开连接：丢弃未朗读的旧句子
         if (D.sayTimer) { clearTimeout(D.sayTimer); D.sayTimer = null; }
         if (D.ws) {
             try { send({ type: 'session.close' }); } catch (e) {}
@@ -531,21 +609,60 @@
     }
 
     function cancel() {
-        D.pendingSay = '';   // 打断：未朗读的旧句子一并作废
+        D.pendingSay = '';
+        D.gotAudio = false;   // 打断：未朗读的旧句子一并作废
         if (D.sayTimer) { clearTimeout(D.sayTimer); D.sayTimer = null; }
+        // ★ 把当前 response 标记为作废，打断后迟到的旧音频/旧文字一律丢弃
+        if (D.activeRid) D.staleRid = D.activeRid;
+        D.activeRid = null;
         stopPlayback();
+        // ★ 清空本地采集残留：AI 说话时的回声残留在 pend 里，打断后继续上行
+        //   会让服务端 VAD 误判为「还在说话」，表现就是打断后识别不到文字。
+        D.pend = [];
+        D.userTranscript = '';
+        // ★ 打断后丢弃约 200ms（10 帧）采集，让 AI 回声消散后再恢复上行。
+        //   否则打断瞬间扬声器里的 AI 声音会经麦克风回灌，服务端 VAD 误判。
+        D.skipFrames = 10;
+        // ★ 打断只发 response.cancel（官方 §2.2.12：取消进行中的响应，便于下一次识别）。
+        //   input_audio_buffer.clear 在 Seeduplex 协议里根本不存在，
+        //   发出去会被服务端 45000000「unknown event name」打回，这就是打断报错的根因。
         send({ type: 'response.cancel', event_id: newId() });
+        // ★ 打断后无条件恢复麦克风（不管之前是否静音），并显式发送取消静音事件，
+        //   让服务端 VAD 回到聆听态，能立即收到新一轮语音。
+        D.micOn = true;
+        send({ type: 'input_audio_unmute.commit', event_id: newId() });
+        try {
+            if (D.stream) D.stream.getAudioTracks().forEach(function (t) { t.enabled = true; });
+        } catch (e) {}
         uiStatus(T('聞き取り中…'), 'listening');
+    }
+
+    // ★ 切换官方音色：通话建立前设置 D.voice；通话中则发送 session.update 即时生效
+    function setVoice(v) {
+        var vid = String(v || '').trim();
+        if (!vid) return;
+        D.voice = vid;
+        if (D.ws && D.ws.readyState === 1) {
+            send({ type: 'session.update', session: { voice: vid }, event_id: newId() });
+        }
     }
 
     function sendText(text) {
         var v = String(text || '').trim();
         if (!v) return false;
         stopPlayback();
+        // ★ 文本输入的正确事件是 conversation.item.create（role=user + input_text），
+        //   模型收到这条 user 消息后会「理解并自动回复」。
+        //   之前的 speech_text_buffer.commit 官方定义是「打招呼 / 直接 TTS 朗读」，
+        //   所以会出现「你发的文字被原样读出来」而不是被理解回复。
         send({
-            type: 'speech_text_buffer.commit',
+            type: 'conversation.item.create',
             event_id: newId(),
-            text: v
+            items: [{
+                type: 'message',
+                role: 'user',
+                content: [{ type: 'input_text', text: v }]
+            }]
         });
         uiBubble('user', v);
         return true;
@@ -559,6 +676,9 @@
         cancel: cancel,
         setMic: setMic,
         sendText: sendText,
+        setVoice: setVoice,
+        getHistory: function () { return D.history; },
+        setVoice: function (v) { D.voice = String(v == null ? '' : v).trim(); },
         isActive: function () { return !!D.active; },
         isConnecting: function () { return !!D.connecting; }
     };
