@@ -3038,14 +3038,14 @@
                                 mpLine = dscT('🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります', dscFmtBytes(obj.size));
                             } else if (mpStage === 'compact_done') {
                                 mpLine = dscT('🎞️ 圧縮完了。アップロードを準備中…');
-                            } else if (mpStage === 'upload_start') {
+                            } else if (mpStage === 'upload_start' || mpStage === 'tos_upload_start') {
                                 mpLine = dscT('☁️ 方舟へアップロード開始（{0}）', dscFmtBytes(obj.size));
-                            } else if (mpStage === 'upload') {
+                            } else if (mpStage === 'upload' || mpStage === 'tos_upload') {
                                 mpLine = dscT('☁️ 方舟へアップロード中 {0}%（{1} / {2}）',
                                     (obj.percent || 0), dscFmtBytes(obj.sent), dscFmtBytes(obj.total));
                             } else if (mpStage === 'upload_retry') {
                                 mpLine = dscT('🔁 前処理モデルを切り替えて再試行中…');
-                            } else if (mpStage === 'tos_reference') {
+                            } else if (mpStage === 'tos_reference' || mpStage === 'tos_upload_done') {
                                 mpLine = dscT('☁️ TOS 上の動画を参照登録中（{0}）', dscFmtBytes(obj.size));
                             } else if (mpStage === 'preprocess_wait' || mpStage === 'preprocess') {
                                 // ★「0 秒のまま固定」表示バグ修正：

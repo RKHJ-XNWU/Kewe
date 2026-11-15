@@ -33,12 +33,14 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'ds_crypto.dart';
 import 'doubao.dart';
 import 'files.dart';
 import 'globals.dart';
 import 'net.dart';
+import 'sha256.dart';
 
 /// 对外承诺的最大视频体积：2GB
 const int dbVideoMaxBytes = 2 * 1024 * 1024 * 1024;
@@ -117,6 +119,18 @@ class DbVideoArkConfig {
   /// 最少抽帧数(透传 preprocess_configs[video][min_frames];0=不传)
   int minFrames;
 
+  /// TOS 通道：对象存储 AccessKey（填了才启用「网站自动上传 TOS」，替代手动 tosutil）
+  String tosAccessKey;
+
+  /// TOS 通道：对象存储 SecretKey
+  String tosSecretKey;
+
+  /// TOS Endpoint（不含 scheme，如 tos-cn-beijing.volces.com）
+  String tosEndpoint;
+
+  /// TOS Region（如 cn-beijing）
+  String tosRegion;
+
   DbVideoArkConfig({
     this.maxBytes = dbVideoMaxBytes,
     this.fps = 1.0,
@@ -128,6 +142,10 @@ class DbVideoArkConfig {
     this.preprocessModel = '',
     this.maxVideoTokens = 0,
     this.minFrames = 0,
+    this.tosAccessKey = '',
+    this.tosSecretKey = '',
+    this.tosEndpoint = 'tos-cn-beijing.volces.com',
+    this.tosRegion = 'cn-beijing',
   });
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -146,6 +164,10 @@ class DbVideoArkConfig {
         'preprocessModel': preprocessModel,
         'maxVideoTokens': maxVideoTokens,
         'minFrames': minFrames,
+        'tosAccessKey': tosAccessKey,
+        'tosSecretKey': tosSecretKey,
+        'tosEndpoint': tosEndpoint,
+        'tosRegion': tosRegion,
       };
 
   static DbVideoArkConfig fromJson(Map<String, dynamic> j) {
@@ -180,6 +202,10 @@ class DbVideoArkConfig {
       preprocessModel: mStr(j, 'preprocessModel').trim(),
       maxVideoTokens: intArgDefault(j, 'maxVideoTokens', 0),
       minFrames: intArgDefault(j, 'minFrames', 0),
+      tosAccessKey: mStr(j, 'tosAccessKey').trim(),
+      tosSecretKey: mStr(j, 'tosSecretKey').trim(),
+      tosEndpoint: trimOr(mStr(j, 'tosEndpoint'), 'tos-cn-beijing.volces.com'),
+      tosRegion: trimOr(mStr(j, 'tosRegion'), 'cn-beijing'),
     );
   }
 }
@@ -813,9 +839,16 @@ String? _dbArkAsciiName(String name, {String fallback = 'video.mp4'}) {
 }
 
 Map<String, dynamic> dbArkVideoPartByFileId(String fileId, {double? fps}) {
-  final v = <String, dynamic>{'file_id': fileId};
-  if (fps != null && fps > 0) v['fps'] = fps;
-  return <String, dynamic>{'type': 'video_url', 'video_url': v};
+  // ★ 方舟 Chat API 引用 Files API 视频 file_id 的正确类型是 video_url：
+  //   {"type":"video_url","video_url":{"file_id":"..."}}
+  //   video_url 对象里只放 file_id，不能放 fps（fps 已在 Files API 预处理阶段
+  //   通过 preprocess_configs[video][fps] 设置）。
+  //   此前误用 file 类型（file 仅用于 pdf 文档抽取），触发
+  //   "The provided file ... type is not pdf"；更早误带 fps 触发 400。
+  return <String, dynamic>{
+    'type': 'video_url',
+    'video_url': <String, dynamic>{'file_id': fileId},
+  };
 }
 
 String get _dbArkCachePath => '$dsChatDir/doubao_ark_files.sts';
@@ -1142,6 +1175,27 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     final tosKey = _dbArkTosKey(cfg, fileName);
     // 强制 TOS:只要配了 tosBucket,任何大小都走 TOS 引用
     if (tosKey != null) {
+      // ★ 网站自动上传 TOS：填了 AK/SK 时，先把本地视频自动上传到 TOS 桶，
+      //   再走方舟 tos:// 引用。用户无需再手动用 tosutil 传一遍。
+      if (cfg.tosAccessKey.isNotEmpty && cfg.tosSecretKey.isNotEmpty) {
+        onProgress?.call({'stage': 'tos_upload_start', 'size': size});
+        await _dbTosUploadFile(
+          file: uploaded,
+          bucket: cfg.tosBucket,
+          objectKey: tosKey,
+          accessKey: cfg.tosAccessKey,
+          secretKey: cfg.tosSecretKey,
+          endpoint: cfg.tosEndpoint,
+          region: cfg.tosRegion,
+          onProgress: (sent, total) => onProgress?.call({
+            'stage': 'tos_upload',
+            'sent': sent,
+            'total': total,
+            'percent': total <= 0 ? 0 : ((sent * 100) ~/ total),
+          }),
+        );
+        onProgress?.call({'stage': 'tos_upload_done', 'size': size});
+      }
       onProgress?.call({'stage': 'tos_reference', 'size': size});
       arkId = await _dbArkUploadFromTos(
         bucket: cfg.tosBucket,
@@ -1221,4 +1275,388 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
       }
     }
   }
+}
+
+// ============================================================
+// 火山引擎 TOS 对象存储上传（网站自动上传，替代手动 tosutil）
+//
+//   用户在网站上选择视频后，后端自动把视频上传到配置的 TOS 桶，
+//   再走方舟 Files API 的 tos:// 引用，实现「一次上传、无需手动传桶」。
+//   签名对齐官方 TOS V4（TOS4-HMAC-SHA256），大文件走分片上传（multipart）。
+// ============================================================
+
+/// 分片大小：16MB（TOS 分片下限 5MB，上限 5GB）
+const int _dbTosPartSize = 16 * 1024 * 1024;
+
+String _dbTosHex(List<int> bytes) {
+  final sb = StringBuffer();
+  for (final b in bytes) {
+    sb.write(b.toRadixString(16).padLeft(2, '0'));
+  }
+  return sb.toString();
+}
+
+/// TOS UriEncode：除 A-Z a-z 0-9 - . _ ~ 外全部编码为 %XX（大写）。
+/// [encodeSlash] 为 false 时保留对象名中的 / 作为路径分隔。
+String _dbTosUriEncode(String s, {bool encodeSlash = true}) {
+  final sb = StringBuffer();
+  for (final code in utf8.encode(s)) {
+    final c = String.fromCharCode(code);
+    final unreserved = (code >= 0x41 && code <= 0x5A) ||
+        (code >= 0x61 && code <= 0x7A) ||
+        (code >= 0x30 && code <= 0x39) ||
+        c == '-' ||
+        c == '.' ||
+        c == '_' ||
+        c == '~';
+    if (unreserved) {
+      sb.write(c);
+    } else if (c == '/' && !encodeSlash) {
+      sb.write('/');
+    } else {
+      sb.write('%${code.toRadixString(16).toUpperCase().padLeft(2, '0')}');
+    }
+  }
+  return sb.toString();
+}
+
+/// 计算 TOS V4 签名头（TOS4-HMAC-SHA256）
+Map<String, String> _dbTosSign({
+  required String accessKey,
+  required String secretKey,
+  required String region,
+  required String method,
+  required String host,
+  required String canonicalUri,
+  required String canonicalQuery,
+  required String payloadHash,
+  String? contentType,
+}) {
+  final now = DateTime.now().toUtc();
+  String p2(int v) => v.toString().padLeft(2, '0');
+  final xTosDate = '${now.year}${p2(now.month)}${p2(now.day)}'
+      'T${p2(now.hour)}${p2(now.minute)}${p2(now.second)}Z';
+  final date = xTosDate.substring(0, 8);
+
+  final headers = <String, String>{
+    'host': host,
+    'x-tos-content-sha256': payloadHash,
+    'x-tos-date': xTosDate,
+    if (contentType != null && contentType.isNotEmpty) 'content-type': contentType,
+  };
+  final sortedKeys = headers.keys.toList()..sort();
+  final canonicalHeaders =
+      sortedKeys.map((k) => '$k:${headers[k]}').join('\n') + '\n';
+  final signedHeaders = sortedKeys.join(';');
+
+  final canonicalRequest = '$method\n$canonicalUri\n$canonicalQuery\n'
+      '$canonicalHeaders\n$signedHeaders\n$payloadHash';
+
+  final credentialScope = '$date/$region/tos/request';
+  final stringToSign = 'TOS4-HMAC-SHA256\n$xTosDate\n$credentialScope\n'
+      '${_dbTosHex(sha256(utf8.encode(canonicalRequest)))}';
+
+  final kDate = hmacSha256(utf8.encode(secretKey), utf8.encode(date));
+  final kRegion = hmacSha256(kDate, utf8.encode(region));
+  final kService = hmacSha256(kRegion, utf8.encode('tos'));
+  final kSigning = hmacSha256(kService, utf8.encode('request'));
+  final signature = _dbTosHex(hmacSha256(kSigning, utf8.encode(stringToSign)));
+
+  final authorization = 'TOS4-HMAC-SHA256 Credential=$accessKey/$credentialScope,'
+      'SignedHeaders=$signedHeaders, Signature=$signature';
+
+  return <String, String>{
+    'Authorization': authorization,
+    'Host': host,
+    'x-tos-date': xTosDate,
+    'x-tos-content-sha256': payloadHash,
+    if (contentType != null && contentType.isNotEmpty) 'Content-Type': contentType,
+  };
+}
+
+class _DbTosResp {
+  final int code;
+  final List<int> bytes;
+  final HttpHeaders headers;
+  _DbTosResp(this.code, this.bytes, this.headers);
+
+  String header(String name) => headers.value(name) ?? '';
+
+  String bodyText() => utf8.decode(bytes, allowMalformed: true);
+}
+
+/// 发送 TOS 请求，返回状态码 + 响应体 + 响应头
+Future<_DbTosResp> _dbTosRequest({
+  required String method,
+  required String url,
+  required Map<String, String> headers,
+  List<int>? body,
+  Duration timeout = const Duration(seconds: 600),
+}) async {
+  final client = globalHTTPClient;
+  final req = await client.openUrl(method, Uri.parse(url));
+  headers.forEach(req.headers.set);
+  if (body != null && body.isNotEmpty) {
+    req.headers.contentLength = body.length;
+    req.add(body);
+  }
+  final resp = await req.close().timeout(timeout);
+  final out = <int>[];
+  await for (final c in resp) {
+    out.addAll(c);
+  }
+  return _DbTosResp(resp.statusCode, out, resp.headers);
+}
+
+String _dbTosBucketHost(String bucket, String endpoint) {
+  var ep = endpoint.trim();
+  if (ep.isEmpty) ep = 'tos-cn-beijing.volces.com';
+  ep = ep.replaceFirst(RegExp(r'^https?://'), '');
+  while (ep.endsWith('/')) {
+    ep = ep.substring(0, ep.length - 1);
+  }
+  return '$bucket.$ep';
+}
+
+String _dbTosObjectUrl(String host, String objectKey) =>
+    'https://$host/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
+
+/// 读满 want 字节（或读到 EOF），返回实际读到的数据
+Future<Uint8List> _dbTosReadFully(RandomAccessFile raf, int want) async {
+  final data = Uint8List(want);
+  var got = 0;
+  while (got < want) {
+    final chunk = await raf.read(want - got);
+    if (chunk.isEmpty) break;
+    data.setRange(got, got + chunk.length, chunk);
+    got += chunk.length;
+  }
+  if (got == want) return data;
+  return Uint8List.sublistView(data, 0, got);
+}
+
+/// Initiate Multipart Upload → 返回 UploadId
+Future<String> _dbTosInitMultipart({
+  required String objectKey,
+  required String bucket,
+  required String accessKey,
+  required String secretKey,
+  required String endpoint,
+  required String region,
+}) async {
+  final host = _dbTosBucketHost(bucket, endpoint);
+  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
+  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  final headers = _dbTosSign(
+    accessKey: accessKey,
+    secretKey: secretKey,
+    region: region,
+    method: 'POST',
+    host: host,
+    canonicalUri: canonicalUri,
+    canonicalQuery: 'uploads=',
+    payloadHash: emptyHash,
+  );
+  final url = '${_dbTosObjectUrl(host, objectKey)}?uploads=';
+  final resp = await _dbTosRequest(method: 'POST', url: url, headers: headers);
+  if (resp.code < 200 || resp.code >= 300) {
+    throw DbVideoArkException(
+        'TOS 初始化分片上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
+        code: 'tos_init_failed');
+  }
+  final bodyText = resp.bodyText();
+  var uploadId = '';
+
+  // TOS 的 CreateMultipartUpload 可能返回 XML（标准）或 JSON 两种格式：
+  // 标准返回 <InitiateMultipartUploadResult><UploadId>...</UploadId></...>，
+  // 部分桶/版本会返回 {"Bucket":...,"Key":...,"UploadId":...}。
+  // 两种都要兼容，否则会出现「TOS 未返回 UploadId」的假报错。
+  try {
+    final j = jsonDecode(bodyText);
+    if (j is Map) {
+      final v = j['UploadId'] ?? j['uploadId'];
+      if (v is String && v.trim().isNotEmpty) uploadId = v.trim();
+    }
+  } catch (_) {
+    // 非 JSON（XML 或其它），走下方 XML 解析
+  }
+  if (uploadId.isEmpty) {
+    final m = RegExp(r'<UploadId>([^<]+)</UploadId>').firstMatch(bodyText);
+    uploadId = m?.group(1)?.trim() ?? '';
+  }
+  if (uploadId.isEmpty) {
+    throw DbVideoArkException('TOS 未返回 UploadId：$bodyText',
+        code: 'tos_init_failed');
+  }
+  return uploadId;
+}
+
+/// Upload Part → 返回 ETag（带引号）
+Future<String> _dbTosUploadPart({
+  required String objectKey,
+  required String bucket,
+  required String accessKey,
+  required String secretKey,
+  required String endpoint,
+  required String region,
+  required String uploadId,
+  required int partNumber,
+  required List<int> data,
+}) async {
+  final host = _dbTosBucketHost(bucket, endpoint);
+  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
+  final q = <String, String>{'partNumber': '$partNumber', 'uploadId': uploadId};
+  final keys = q.keys.toList()..sort();
+  final canonicalQuery =
+      keys.map((k) => '${_dbTosUriEncode(k)}=${_dbTosUriEncode(q[k]!)}').join('&');
+  final payloadHash = _dbTosHex(sha256(data));
+  final headers = _dbTosSign(
+    accessKey: accessKey,
+    secretKey: secretKey,
+    region: region,
+    method: 'PUT',
+    host: host,
+    canonicalUri: canonicalUri,
+    canonicalQuery: canonicalQuery,
+    payloadHash: payloadHash,
+  );
+  final url = '${_dbTosObjectUrl(host, objectKey)}?$canonicalQuery';
+  final resp = await _dbTosRequest(
+      method: 'PUT', url: url, headers: headers, body: data);
+  if (resp.code < 200 || resp.code >= 300) {
+    throw DbVideoArkException(
+        'TOS 分片 $partNumber 上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
+        code: 'tos_part_failed');
+  }
+  final etag = resp.header('etag');
+  if (etag.isEmpty) {
+    throw DbVideoArkException('TOS 分片 $partNumber 未返回 ETag',
+        code: 'tos_part_failed');
+  }
+  return etag;
+}
+
+/// Complete Multipart Upload
+Future<void> _dbTosCompleteMultipart({
+  required String objectKey,
+  required String bucket,
+  required String accessKey,
+  required String secretKey,
+  required String endpoint,
+  required String region,
+  required String uploadId,
+  required List<MapEntry<int, String>> parts,
+}) async {
+  final host = _dbTosBucketHost(bucket, endpoint);
+  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
+  final canonicalQuery = 'uploadId=${_dbTosUriEncode(uploadId)}';
+
+  // TOS 的 CompleteMultipartUpload 请求体是 JSON（非 S3 的 XML）：
+  //   {"Parts":[{"PartNumber":N,"ETag":"..."}]}
+  // 分片上传响应头里的 ETag 带引号，请求体里要去掉引号。
+  final partsJson = parts.map((p) {
+    var etag = p.value;
+    if (etag.startsWith('"') && etag.endsWith('"')) {
+      etag = etag.substring(1, etag.length - 1);
+    }
+    return <String, dynamic>{'PartNumber': p.key, 'ETag': etag};
+  }).toList();
+  final body = utf8.encode(jsonEncode(<String, dynamic>{'Parts': partsJson}));
+  final payloadHash = _dbTosHex(sha256(body));
+
+  final headers = _dbTosSign(
+    accessKey: accessKey,
+    secretKey: secretKey,
+    region: region,
+    method: 'POST',
+    host: host,
+    canonicalUri: canonicalUri,
+    canonicalQuery: canonicalQuery,
+    payloadHash: payloadHash,
+    contentType: 'application/json',
+  );
+  final url =
+      '${_dbTosObjectUrl(host, objectKey)}?uploadId=${_dbTosUriEncode(uploadId)}';
+  final resp = await _dbTosRequest(
+      method: 'POST', url: url, headers: headers, body: body);
+  if (resp.code < 200 || resp.code >= 300) {
+    throw DbVideoArkException(
+        'TOS 完成分片上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
+        code: 'tos_complete_failed');
+  }
+}
+
+/// 主函数：把本地文件分片上传到 TOS（不整文件读入内存）
+Future<void> _dbTosUploadFile({
+  required File file,
+  required String bucket,
+  required String objectKey,
+  required String accessKey,
+  required String secretKey,
+  required String endpoint,
+  required String region,
+  void Function(int sent, int total)? onProgress,
+}) async {
+  final total = await file.length();
+  if (total <= 0) {
+    throw DbVideoArkException('TOS 上传：文件为空', code: 'tos_empty');
+  }
+  final partCount = (total + _dbTosPartSize - 1) ~/ _dbTosPartSize;
+  logp('☁️ TOS への自動アップロード開始: $objectKey '
+      '(${dbFmtSize(total)}, $partCount 分片)');
+
+  final uploadId = await _dbTosInitMultipart(
+    objectKey: objectKey,
+    bucket: bucket,
+    accessKey: accessKey,
+    secretKey: secretKey,
+    endpoint: endpoint,
+    region: region,
+  );
+
+  final raf = await file.open();
+  final parts = <MapEntry<int, String>>[];
+  var sent = 0;
+  try {
+    for (var i = 0; i < partCount; i++) {
+      final partNumber = i + 1;
+      final data = await _dbTosReadFully(raf, _dbTosPartSize);
+      if (data.isEmpty) {
+        throw DbVideoArkException('TOS 上传：读取分片 $partNumber 失败',
+            code: 'tos_read_failed');
+      }
+      final etag = await _dbTosUploadPart(
+        objectKey: objectKey,
+        bucket: bucket,
+        accessKey: accessKey,
+        secretKey: secretKey,
+        endpoint: endpoint,
+        region: region,
+        uploadId: uploadId,
+        partNumber: partNumber,
+        data: data,
+      );
+      parts.add(MapEntry(partNumber, etag));
+      sent += data.length;
+      onProgress?.call(sent, total);
+      logp('☁️ TOS 分片 $partNumber/$partCount 上传完成');
+    }
+  } finally {
+    try {
+      await raf.close();
+    } catch (_) {}
+  }
+
+  parts.sort((a, b) => a.key.compareTo(b.key));
+  await _dbTosCompleteMultipart(
+    objectKey: objectKey,
+    bucket: bucket,
+    accessKey: accessKey,
+    secretKey: secretKey,
+    endpoint: endpoint,
+    region: region,
+    uploadId: uploadId,
+    parts: parts,
+  );
+  logp('✅ TOS 上传完成: $objectKey (${dbFmtSize(total)})');
 }
