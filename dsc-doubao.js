@@ -792,6 +792,12 @@ var EDGE_VOICE_POOL = {
             var sel = $('dscDbChatModel');
             var ov = dbChatModelOverride();
             if (!sel || !ov) return;
+            // ★【修复】以「实际生效的豆包模型」为准显示，即 override 优先。
+            //   旧实现在后端已有 chatModel 时直接 return，结果聊天框下方快捷选择器
+            //   切到 glm / 其它模型后，设置面板里的对话模型仍停在 doubao-seed-2-1-pro-260628，
+            //   用户看到的就是「强制锁死 2.1-pro、根本切不动」。
+            //   override 与后端值的一致性由 saveCfg() 保证：保存成功后会把 override
+            //   同步成刚保存的模型，所以这里优先 override 不会把保存值顶掉。
             var found = false;
             for (var i = 0; i < sel.options.length; i++) {
                 if (sel.options[i].value === ov) { found = true; break; }
@@ -852,12 +858,61 @@ var EDGE_VOICE_POOL = {
         var dr = $('dscDbDuplexRate');
         if (dr) dr.value = (c.duplexSpeechRate == null ? '0' : String(c.duplexSpeechRate));
         renderModelList();
+        // ★ 修复「聊天框下方切换模型后，这里仍显示旧模型」的 bug：
+        //   本行原先读的是后端配置里的 chatModel，而聊天框下方的快捷模型选择器
+        //   （qmApply）出于安全只把选择写进 localStorage 覆盖值，不回写后端
+        //   （避免后端「全量覆盖」把 API Key 清空）。因此切到 B 模型后，
+        //   这里会一直停在 A。改为统一按「实际生效模型」dbChatModel() 渲染。
+        refreshCfgStatus();
+    }
+
+    // 按「当前实际生效的对话模型」刷新豆包配置状态行
+    //   ★ 修复：原先不论当前是豆包模式还是 DeepSeek 模式，一律显示豆包的 chatModel，
+    //     于是在聊天框下方把模型切到 B 之后，这里仍停在旧的 A（例如
+    //     deepseek-v4-1-flash-261017）。现按 isDbMode() 分别取豆包模型 / 当前
+    //     DeepSeek 模型，与快捷按钮 qmSyncBtn() 使用同一来源，切哪个都同步。
+    function refreshCfgStatus() {
         var st = $('dscDbCfgStatus');
-        if (st) {
-            setStatus(st, c.hasKey
-                ? T('✅ 豆包 Key 設定済み · 対話モデル：{0}', c.chatModel)
-                : T('⚠️ 豆包 Key 未設定'), c.hasKey ? 'ok' : 'err');
+        if (!st || !S.cfg) return;
+        // 用下拉框切换模型（不经过快捷选择器）时也要同步状态行，只绑定一次。
+        if (!refreshCfgStatus._bound) {
+            refreshCfgStatus._bound = true;
+            var sel = $('dscModelSelect');
+            if (sel) {
+                sel.addEventListener('change', function () {
+                    setTimeout(function () {
+                        try { refreshCfgStatus(); } catch (e) {}
+                    }, 0);
+                });
+            }
+            // ★ 设置面板里的「对话模型」下拉改动后，状态行必须立刻跟着变，
+            //   不能等保存、也不能被 localStorage 里的旧 override 拉回去。
+            var selCfgChat = $('dscDbChatModel');
+            if (selCfgChat) {
+                selCfgChat.addEventListener('change', function () {
+                    try {
+                        var nv = String(selCfgChat.value || '').trim();
+                        if (nv) setDbChatModelOverride(nv);
+                    } catch (e) {}
+                    setTimeout(function () {
+                        try { refreshCfgStatus(); } catch (e) {}
+                    }, 0);
+                });
+            }
         }
+        var hasKey = !!S.cfg.hasKey;
+        // ★ 本行位于「豆包设置」面板内，必须与设置面板里的对话模型下拉框保持一致。
+        //   旧实现按 isDbMode() 取 DeepSeek 侧当前模型（或 dbChatModel() 被 localStorage
+        //   里的旧 override 压住），于是在设置里把模型改成 glm 等值并保存后，
+        //   本行仍停在 doubao-seed-2-1-pro-260628 这类旧值。
+        //   取值顺序：设置面板下拉当前值 → 后端已保存值 → 生效模型兜底。
+        var selChatEl = $('dscDbChatModel');
+        var selChatVal = (selChatEl && selChatEl.value) ? String(selChatEl.value).trim() : '';
+        var savedChatVal = (S.cfg.chatModel == null ? '' : String(S.cfg.chatModel)).trim();
+        var cur = selChatVal || savedChatVal || dbChatModel();
+        setStatus(st, hasKey
+            ? T('✅ 豆包 Key 設定済み · 対話モデル：{0}', cur)
+            : T('⚠️ 豆包 Key 未設定'), hasKey ? 'ok' : 'err');
     }
 
     async function saveCfg() {
@@ -916,6 +971,11 @@ var EDGE_VOICE_POOL = {
             var d = await api('/config', { method: 'POST', body: body });
             S.cfg = d;
             S.catalog = (d.catalog && d.catalog.models) || S.catalog;
+            // ★ 关键修复：设置在里显式保存了对话模型后，必须让「实际生效模型」跟随保存值，
+            //   并清掉聊天框快捷选择器留下的旧 override。否则 dbChatModel() 仍返回旧模型，
+            //   且 fillCfgForm() 末尾的 override 分支会把下拉框改回旧值，
+            //   造成「设置里改成 glm / 其他模型后，状态行和下拉仍是旧模型」。
+            try { setDbChatModelOverride(String(body.chatModel || '').trim()); } catch (e) {}
             fillCfgForm();
             purgeLegacyChatModels();
             syncDbModeUI();   // 対話モデルを変えたらボタンの title も即時追従
@@ -3401,6 +3461,9 @@ var EDGE_VOICE_POOL = {
         if (on) b.classList.add('db-on'); else b.classList.remove('db-on');
         b.title = (on ? T('対話モデル（豆包）：') : T('対話モデル（DeepSeek）：')) + name;
         b.setAttribute('aria-label', b.title);
+        // 快捷选择器每次同步都顺带刷新设置面板的状态行，
+        // 保证「聊天框下方切模型」与「设置里的对话模型」永远一致。
+        refreshCfgStatus();
     }
 
     function qmEnsurePanel() {
@@ -3504,6 +3567,19 @@ var EDGE_VOICE_POOL = {
         if (!v) return;
         if (kind === 'db') {
             setDbChatModelOverride(v);
+            // ★【修复】把选择持久化到后端。
+            //   旧实现只写 localStorage（override），后端 doubao_config.sts 里的 chatModel
+            //   永远是旧值 doubao-seed-2-1-pro-260628，重开设置 / 换设备 / 清缓存就变回 pro，
+            //   外部表现就是「强制锁死 2.1-pro、怎么切都切不动」。
+            //   后端 /api/doubao/config 对缺省字段一律沿用旧值（apiKey 等不会被清空），
+            //   所以这里只提交 chatModel 是安全的。
+            try {
+                api('/config', { method: 'POST', body: { chatModel: v } }).then(function (d) {
+                    if (d) { S.cfg = d; S.catalog = (d.catalog && d.catalog.models) || S.catalog; }
+                    try { syncDbModeUI(); } catch (e1) {}
+                    try { refreshCfgStatus(); } catch (e2) {}
+                }).catch(function () {});
+            } catch (e) {}
             var needSwitch = !isDbMode();
             if (needSwitch) {
                 if (S.cfg && S.cfg.hasKey === false) {

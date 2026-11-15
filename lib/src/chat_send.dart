@@ -427,6 +427,35 @@ Future<void> handleDsChatSendStream(
       await sse.done();
       return;
     }
+  } else if (dbVideoMessagesNeedResponses(model, apiMessages)) {
+    logp('视频理解：DeepSeek V4 系列走 Responses API');
+    try {
+      await callDbVideoResponsesStream(
+        apiKey,
+        model,
+        apiMessages,
+        maxTokens,
+        (s) {
+          reasoningBuf.write(s);
+          reasoningStart ??= DateTime.now();
+          reasoningPump.push(s);
+        },
+        (s) {
+          if (reasoningStart != null) {
+            reasoningTotalMs += DateTime.now().difference(reasoningStart!).inMilliseconds;
+            reasoningStart = null;
+          }
+          firstContentAt ??= DateTime.now();
+          contentBuf.write(s);
+          sse.send('content', {'delta': s});
+        },
+        usageAcc,
+      );
+    } catch (e) {
+      await sse.send('error', {'message': '$e'});
+      await sse.done();
+      return;
+    }
   } else {
   try {
     await callDsMultiRoundStream(
@@ -1378,6 +1407,17 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         usageAcc: usageAcc,
         baseUrl: dbBaseUrl(null),
         mediaParts: dbMediaParts,
+      );
+      reply = cb.toString();
+      reasoning = rb.toString();
+    } else if (dbVideoMessagesNeedResponses(model, apiMessages)) {
+      final rb = StringBuffer();
+      final cb = StringBuffer();
+      await callDbVideoResponsesStream(
+        callKey, model, apiMessages, maxTokens,
+        (s) => rb.write(s),
+        (s) => cb.write(s),
+        usageAcc,
       );
       reply = cb.toString();
       reasoning = rb.toString();

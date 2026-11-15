@@ -758,6 +758,31 @@
         return state.currentModel || 'deepseek-flash';
     }
 
+    // ★【修复】发送用模型解析 —— 「豆包里切换模型不生效 / 被锁死 2.1-pro」的根因就在这里。
+    //   旧实现：所有发送点都硬用 state.currentModel（DeepSeek 侧的模型），
+    //   而豆包设置里保存的对话模型、聊天框快捷选择器写入的 override 只在 UI 上显示，
+    //   从来不参与实际请求 → 后端 dbIsChatModel(model) 判定成非豆包或成默认 pro，
+    //   于是「怎么改都还是 doubao-seed-2-1-pro-260628」。
+    //   现在：豆包模式下一律用豆包生效模型（dbChatModel：override > 后端 chatModel > 默认）。
+    window.dscSendModel = function () {
+        try {
+            if (window.dscDoubaoModeOn && window.dscDoubaoModeOn()) {
+                if (typeof window.dscDoubaoChatModel === 'function') {
+                    var m = String(window.dscDoubaoChatModel() || '').trim();
+                    if (m) return m;
+                }
+            }
+        } catch (e) {}
+        return state.currentModel || 'deepseek-flash';
+    };
+
+    function dscSendModelOf() {
+        try {
+            if (typeof window.dscSendModel === 'function') return window.dscSendModel();
+        } catch (e) {}
+        return state.currentModel || 'deepseek-flash';
+    }
+
     // ★ 表示対象モデルの決定：
     //   usage 自身がモデル ID を持っている（バックエンドが焼き込む）ため、
     //   後からモデルを切り替えても過去メッセージの金額は変わらない。
@@ -3446,7 +3471,7 @@
                     sessionId: state.currentSessionId,
                     messageId: m.id,
                     baseContent: baseContent,
-                    model: state.currentModel,
+                    model: dscSendModelOf(),
                     deepThink: state.deepThink,
                     reasoningLevel: state.reasoningLevel
                 }),
@@ -3784,7 +3809,7 @@
                     dataStream = await sendMessageStream({
                         sessionId: state.currentSessionId,
                         content: content,
-                        model: state.currentModel,
+                        model: dscSendModelOf(),
                         fileIds: fileIds,
                         webSearch: state.webSearch,
                         deepThink: state.deepThink,
@@ -3856,7 +3881,7 @@
                     body: JSON.stringify({
                         sessionId: state.currentSessionId,
                         content: content,
-                        model: state.currentModel,
+                        model: dscSendModelOf(),
                         fileIds: fileIds,
                         webSearch: state.webSearch,
                         deepThink: state.deepThink,
@@ -4006,7 +4031,7 @@
             var dataStream = await sendMessageStream({
                 sessionId: state.currentSessionId,
                 content: content,
-                model: state.currentModel,
+                model: dscSendModelOf(),
                 novelMode: true,
                 novelTheme: theme,
                 novelTags: tags,
@@ -4596,7 +4621,7 @@
             var payload = {
                 sessionId: callState.sessionId,
                 content: text,
-                model: state.currentModel || 'deepseek-flash',
+                model: dscSendModelOf(),
                 reasoningLevel: 8,
                 deepThink: false,
                 webSearch: false,

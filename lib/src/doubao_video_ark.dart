@@ -41,6 +41,7 @@ import 'files.dart';
 import 'globals.dart';
 import 'net.dart';
 import 'sha256.dart';
+import 'ds_usage.dart';
 
 /// 对外承诺的最大视频体积：2GB
 const int dbVideoMaxBytes = 2 * 1024 * 1024 * 1024;
@@ -1659,4 +1660,326 @@ Future<void> _dbTosUploadFile({
     parts: parts,
   );
   logp('✅ TOS 上传完成: $objectKey (${dbFmtSize(total)})');
+}
+
+
+// ============================================================
+// DeepSeek V4 系列视频理解：走 Responses API（input_video + file_id）
+//
+// 火山方舟客服确认：DeepSeek V4.1 Flash（deepseek-v4 系列）的视频理解
+// 仅支持 Responses API。Chat API 的 video_url 会报 400：
+//   "content must be text or an array of text, image_url, or file content blocks"
+// Responses API 的视频 content 块格式：
+//   {"type":"input_video","file_id":"file-xxx"}
+// ============================================================
+
+/// 该模型做视频理解时是否必须走 Responses API（而非 Chat API）。
+bool dbVideoNeedsResponsesApi(String model) {
+  final m = model.trim().toLowerCase();
+  return m.startsWith('deepseek-v4');
+}
+
+/// 把 Chat 风格 content 数组转成 Responses API 的 content 数组。
+/// 视频 video_url -> input_video；图片 image_url -> input_image；
+/// 文本 text -> input_text；其余（input_audio / input_video 等）原样保留。
+List<Map<String, dynamic>> dbVideoResponsesContent(
+    List<Map<String, dynamic>> parts) {
+  final out = <Map<String, dynamic>>[];
+  for (final p in parts) {
+    final t = (p['type'] ?? '').toString();
+    if (t == 'video_url') {
+      final v = p['video_url'];
+      String fileId = '';
+      if (v is Map) fileId = '${v['file_id'] ?? ''}';
+      if (fileId.isNotEmpty) {
+        // 官方「视频理解」文档（Responses API 示例）原文：
+        //   {"type":"input_video","file_id":"file-20251018****"}
+        // 之前两轮分别试过 input_file 与嵌套 file，都会被方舟按 pdf 文档校验
+        // （报 "The provided file: xxx type is not pdf"），现恢复官方 input_video。
+        out.add({'type': 'input_video', 'file_id': fileId});
+      }
+    } else if (t == 'image_url') {
+      final img = p['image_url'];
+      String url = '';
+      if (img is Map) {
+        url = '${img['url'] ?? ''}';
+      } else if (img is String) {
+        url = img;
+      }
+      if (url.isNotEmpty) {
+        out.add({'type': 'input_image', 'image_url': url});
+      }
+    } else if (t == 'text') {
+      out.add({'type': 'input_text', 'text': '${p['text'] ?? ''}'});
+    } else {
+      out.add(p);
+    }
+  }
+  return out;
+}
+
+/// 把 Chat Completions 风格 messages 转成 Responses API 的 instructions + input，
+/// 保留视频 / 图片 / 文本等全部模态（dbWikiBuildInput 只保留文本，此处不同）。
+({String instructions, List<Map<String, dynamic>> input})
+    dbVideoResponsesBuildInput(List<Map<String, dynamic>> messages) {
+  final sys = <String>[];
+  final input = <Map<String, dynamic>>[];
+  for (final m in messages) {
+    final role = (m['role'] ?? '').toString();
+    final raw = m['content'];
+    var parts = <Map<String, dynamic>>[];
+    if (raw is String) {
+      parts = [
+        {'type': 'text', 'text': raw}
+      ];
+    } else if (raw is List) {
+      parts = raw.whereType<Map<String, dynamic>>().toList();
+    }
+    final conv = dbVideoResponsesContent(parts);
+    if (role == 'system') {
+      final buf = <String>[];
+      for (final c in conv) {
+        if ((c['type'] ?? '').toString() == 'input_text') {
+          buf.add('${c['text'] ?? ''}');
+        }
+      }
+      if (buf.isNotEmpty) sys.add(buf.join('\n'));
+      continue;
+    }
+    if (role == 'assistant') {
+      final abuf = <String>[];
+      if (raw is String) {
+        abuf.add(raw);
+      } else if (raw is List) {
+        for (final p in raw) {
+          if (p is Map && (p['type'] == 'text' || p['type'] == 'output_text')) {
+            abuf.add('${p['text'] ?? ''}');
+          }
+        }
+      }
+      input.add({
+        'type': 'message',
+        'role': 'assistant',
+        // Responses 的 input 里 assistant 历史同样必须用 input_text：
+        // output_text 不在方舟 content 白名单内（白名单对应 text / image_url /
+        // file 三种块），用它会让多轮请求报
+        // "content must be text or an array of text, image_url, or file content blocks"。
+        'content': <Map<String, dynamic>>[
+          {'type': 'input_text', 'text': abuf.join('\n')},
+        ],
+      });
+      continue;
+    }
+    input.add({
+      'type': 'message',
+      'role': 'user',
+      'content': conv.isEmpty
+          ? <Map<String, dynamic>>[
+              {'type': 'input_text', 'text': ''}
+            ]
+          : conv,
+    });
+  }
+  return (instructions: sys.join('\n\n'), input: input);
+}
+
+/// 通过 Responses API 流式发起视频理解（DeepSeek V4 系列）。
+/// 回调语义与 callDbWikiResponsesStream 保持一致。
+Future<void> callDbVideoResponsesStream(
+  String apiKey,
+  String model,
+  List<Map<String, dynamic>> messages,
+  int maxTokens,
+  void Function(String s) onReasoning,
+  void Function(String s) onContent,
+  DsUsageAcc? usageAcc,
+) async {
+  final built = dbVideoResponsesBuildInput(messages);
+  if (built.input.isEmpty) {
+    throw Exception('输入内容为空');
+  }
+
+  var mt = maxTokens;
+  if (mt <= 0) mt = 8192;
+  if (mt > 120000) mt = 120000;
+
+  final body = <String, dynamic>{
+    'model': model,
+    'stream': true,
+    'input': built.input,
+    'max_output_tokens': mt,
+  };
+  if (built.instructions.isNotEmpty) {
+    body['instructions'] = built.instructions;
+  }
+
+  var b = dbBaseUrl(null).trim();
+  if (b.isEmpty) b = 'https://ark.cn-beijing.volces.com/api/v3';
+  while (b.endsWith('/')) {
+    b = b.substring(0, b.length - 1);
+  }
+  final url = '$b/responses';
+  logp('视频理解走 Responses API: $url (model=$model)');
+
+  final client = globalHTTPClient;
+  final req = await client.postUrl(Uri.parse(url));
+  req.headers.set('Content-Type', 'application/json');
+  req.headers.set('Authorization', 'Bearer $apiKey');
+  req.headers.set('Accept', 'text/event-stream');
+  req.headers.set('Accept-Encoding', 'identity');
+  req.add(utf8.encode(jsonEncode(body)));
+
+  final resp = await req.close();
+  if (resp.statusCode != 200) {
+    final txt =
+        utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
+    logp('Responses API HTTP ${resp.statusCode}: $txt');
+    String msg = txt;
+    try {
+      final j = jsonDecode(txt);
+      if (j is Map && j['error'] is Map) {
+        final e = j['error'] as Map;
+        final mm = '${e['message'] ?? ''}';
+        if (mm.isNotEmpty) msg = mm;
+      }
+    } catch (_) {}
+    throw Exception('视频理解请求失败（HTTP ${resp.statusCode}）：$msg');
+  }
+
+  final errBuf = StringBuffer();
+  var lastEvent = '';
+  var gotDelta = false;
+
+  await for (final line
+      in resp.transform(utf8.decoder).transform(const LineSplitter())) {
+    final t = line.trim();
+    if (t.isEmpty) continue;
+    if (t.startsWith(':')) continue;
+    if (t.startsWith('event:')) {
+      lastEvent = t.substring(6).trim();
+      continue;
+    }
+    if (!t.startsWith('data:')) continue;
+    final payload = t.substring(5).trim();
+    if (payload.isEmpty) continue;
+    if (payload == '[DONE]') break;
+
+    Map<String, dynamic> ev;
+    try {
+      final j = jsonDecode(payload);
+      if (j is! Map<String, dynamic>) continue;
+      ev = j;
+    } catch (_) {
+      continue;
+    }
+
+    var type = (ev['type'] ?? '').toString();
+    if (type.isEmpty) type = lastEvent;
+
+    if (type == 'response.output_text.delta' ||
+        type == 'response.output_text.done') {
+      final d = (ev['delta'] ?? '').toString();
+      if (type.endsWith('.delta') && d.isNotEmpty) {
+        gotDelta = true;
+        onContent(d);
+      }
+      continue;
+    }
+
+    if (type == 'response.reasoning_summary_text.delta' ||
+        type == 'response.reasoning_text.delta') {
+      final d = (ev['delta'] ?? '').toString();
+      if (d.isNotEmpty) onReasoning(d);
+      continue;
+    }
+
+    if (type == 'response.completed' || type == 'response.incomplete') {
+      final r = ev['response'];
+      if (r is Map && usageAcc != null) {
+        final u = r['usage'];
+        if (u is Map) {
+          final inTok = _dbVideoAsInt(u['input_tokens']);
+          final outTok = _dbVideoAsInt(u['output_tokens']);
+          final total = _dbVideoAsInt(u['total_tokens']);
+          var cached = 0;
+          final det = u['input_tokens_details'];
+          if (det is Map) cached = _dbVideoAsInt(det['cached_tokens']);
+          usageAcc.model = model;
+          usageAcc.addRaw(RawDsUsage(
+            promptTokens: inTok,
+            completionTokens: outTok,
+            totalTokens: total < inTok + outTok ? inTok + outTok : total,
+            cachedTokens: cached,
+          ));
+        }
+      }
+      if (!gotDelta && r is Map) {
+        final out = r['output'];
+        if (out is List) {
+          final buf = StringBuffer();
+          for (final item in out) {
+            if (item is! Map) continue;
+            if ((item['type'] ?? '').toString() != 'message') continue;
+            final cs = item['content'];
+            if (cs is! List) continue;
+            for (final c in cs) {
+              if (c is! Map) continue;
+              final ct = (c['type'] ?? '').toString();
+              if (ct == 'output_text' || ct == 'text') {
+                buf.write('${c['text'] ?? ''}');
+              }
+            }
+          }
+          if (buf.isNotEmpty) {
+            gotDelta = true;
+            onContent(buf.toString());
+          }
+        }
+      }
+      continue;
+    }
+
+    if (type == 'response.failed' || type == 'error') {
+      final r = ev['response'];
+      String msg = '';
+      if (r is Map && r['error'] is Map) {
+        msg = '${(r['error'] as Map)['message'] ?? ''}';
+      }
+      if (msg.isEmpty && ev['error'] is Map) {
+        msg = '${(ev['error'] as Map)['message'] ?? ''}';
+      }
+      if (msg.isEmpty) msg = '${ev['message'] ?? ''}';
+      if (msg.isEmpty) msg = '视频理解返回失败';
+      errBuf.write(msg);
+      continue;
+    }
+  }
+
+  if (errBuf.isNotEmpty) throw Exception(errBuf.toString());
+}
+
+int _dbVideoAsInt(Object? v) {
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v) ?? 0;
+  return 0;
+}
+
+
+/// 判断这组 Chat 风格 messages 里是否包含视频（video_url）块，
+/// 且目标模型必须走 Responses API 做视频理解（DeepSeek V4 系列）。
+bool dbVideoMessagesNeedResponses(
+    String model, List<Map<String, dynamic>> messages) {
+  if (!dbVideoNeedsResponsesApi(model)) return false;
+  for (final m in messages) {
+    final c = m['content'];
+    if (c is List) {
+      for (final p in c) {
+        if (p is Map && (p['type'] ?? '').toString() == 'video_url') {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
