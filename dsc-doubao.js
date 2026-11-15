@@ -2035,9 +2035,9 @@ var EDGE_VOICE_POOL = {
             action: parseInt(action, 10),
             name: (($('dscDbPodName2') || {}).value || '').trim()
         };
-        // 音色对通过 audio_config.speakers 透传（官方：播客音色 ID 列表，仅支持 2 位发音人）
+        // 音色对通过顶层 speaker_info.speakers 透传（官方：播客音色 ID 列表，仅支持 2 位发音人）
         if (pair && pair.speakers && pair.speakers.length) {
-            body.audio_config = { speaker_info: { speakers: pair.speakers } };
+            body.speaker_info = { speakers: pair.speakers };
         }
         var minutes = parseInt(($('dscDbPodMinutes') || {}).value || '5', 10);
         if (isNaN(minutes) || minutes < 1) minutes = 1;

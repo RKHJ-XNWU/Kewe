@@ -3019,6 +3019,41 @@ Future<void> handleDbPodcastSse(HttpRequest req) async {
   }
 }
 
+/// 将豆包原生播客 PCM（24kHz / 16bit / 单声道）无损封装为 WAV 容器。
+/// 说明：官方 SSE 接口 audio_config.format 仅支持 mp3/ogg_opus/pcm/aac，不直接输出 wav；
+///       pcm 是模型的原生无损输出（无压缩），而 WAV = PCM + 44 字节文件头，
+///       因此「pcm 封装 wav」属于无损容器封装，绝非有损转码，音质与模型输出逐字节一致。
+List<int> _pcmToWav(List<int> pcm, {int sampleRate = 24000, int channels = 1, int bitsPerSample = 16}) {
+  List<int> le(int v, int n) {
+    final o = <int>[];
+    for (var i = 0; i < n; i++) {
+      o.add((v >> (8 * i)) & 0xff);
+    }
+    return o;
+  }
+  final byteRate = sampleRate * channels * (bitsPerSample ~/ 8);
+  final blockAlign = channels * (bitsPerSample ~/ 8);
+  final dataSize = pcm.length;
+  final head = <int>[];
+  void ascii(String s) => head.addAll(utf8.encode(s));
+  void u32(int v) => head.addAll(le(v, 4));
+  void u16(int v) => head.addAll(le(v, 2));
+  ascii('RIFF');
+  u32(36 + dataSize); // 文件总长 - 8
+  ascii('WAVE');
+  ascii('fmt ');
+  u32(16);            // fmt 子块大小
+  u16(1);             // 音频格式：PCM
+  u16(channels);      // 声道数
+  u32(sampleRate);    // 采样率
+  u32(byteRate);      // 字节率
+  u16(blockAlign);    // 块对齐
+  u16(bitsPerSample); // 位深
+  ascii('data');
+  u32(dataSize);      // 数据长度
+  return <int>[...head, ...pcm];
+}
+
 /// 调用豆包原生播客 SSE，收集音频与文本并落盘
 Future<Map<String, dynamic>> dbGeneratePodcastNative(
     Map<String, dynamic> body, String key) async {
@@ -3035,16 +3070,25 @@ Future<Map<String, dynamic>> dbGeneratePodcastNative(
   if (!payload.containsKey('return_audio_url')) {
     payload['return_audio_url'] = true;
   }
-  // 官方默认音频格式是 pcm（前端 <audio> 无法直接播放），强制 mp3
+  // ★ 原生无损 WAV：官方 SSE 接口 format 仅支持 mp3/ogg_opus/pcm/aac（无 wav），
+  //   pcm 是模型的原生无损输出。这里强制请求 pcm，落盘时无损封装成 WAV 容器，
+  //   不做任何有损转码，保证「原生豆包播客」的最佳听感。
+  //   speaker_info 是顶层字段（官方文档），前端可能包在 audio_config 里，这里搬到顶层。
   if (!payload.containsKey('audio_config')) {
-    payload['audio_config'] = <String, dynamic>{'format': 'mp3'};
-  } else {
-    final ac = asMap(payload['audio_config']);
-    if (!ac.containsKey('format')) {
-      ac['format'] = 'mp3';
-      payload['audio_config'] = ac;
-    }
+    payload['audio_config'] = <String, dynamic>{};
   }
+  final ac = asMap(payload['audio_config']);
+  final nestedSpeaker = asMap(ac['speaker_info']);
+  if (nestedSpeaker.isNotEmpty && !payload.containsKey('speaker_info')) {
+    payload['speaker_info'] = nestedSpeaker;
+    ac.remove('speaker_info');
+  }
+  // 强制无损 PCM + 24kHz 原生采样率（原生 WAV，拒绝有损 mp3）
+  ac['format'] = 'pcm';
+  if (!ac.containsKey('sample_rate')) {
+    ac['sample_rate'] = 24000;
+  }
+  payload['audio_config'] = ac;
 
   final client = HttpClient()
     ..connectionTimeout = const Duration(seconds: 30)
@@ -3087,7 +3131,9 @@ Future<Map<String, dynamic>> dbGeneratePodcastNative(
         'doubao_podcast_${fmtStamp14(DateTime.now())}');
     final prompt = trimOr(mStr(body, 'input_text'),
         trimOr(mStr(body, 'topic'), trimOr(mStr(body, 'query'), '')));
-    final meta = saveDbBlob(audioBytes, name, 'audio/mpeg', 'audio',
+    // 无损封装：原生 PCM → WAV 容器（24kHz/16bit/单声道），非转码
+    final wavBytes = _pcmToWav(audioBytes);
+    final meta = saveDbBlob(wavBytes, name, 'audio/wav', 'audio',
         source: 'doubao-podcast-native', prompt: prompt);
     if (meta == null) throw Exception('播客音频保存失败');
 

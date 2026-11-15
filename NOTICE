@@ -1,9 +1,0 @@
-Kewe（聚维）
-Copyright (c) 2026 RKHJ-XNWU <yinghuoshengxia@qq.com>
-
-本项目为「双维度聚合中枢」：一个平行时空般的多模型聚合系统。
-在 DeepSeek 维度下调用 DeepSeek 大模型，或切换到豆包维度调用
-豆包大模型、GLM 大模型、Kimi 大模型，两个维度互不影响。
-
-代码许可：MIT License（详见同目录 LICENSE 文件）。
-提示词资产：属作者作品，可读可用，不可单独抽取分发或转售。
