@@ -892,6 +892,18 @@
         'doubao-seed-2-1-lite-260915': {
             hit: 0.16, miss: 0.8, out: 2.7,
             audio: 12, audioHit: 2.4, flat: true
+        },
+        // ★ 豆包（火山方舟）Seed-Character：入力 token 数（コンテキスト窓）による段階料金
+        //   単位は元 / 100 万 tokens（火山方舟 公式価格ページ）
+        //     入力 ≦ 32K  ：未命中 0.8 / 命中 0.16 / 出力 2.0
+        //     32K 〜 128K ：未命中 1.2 / 命中 0.16 / 出力 6.0
+        //   tier は max 昇順で並べ、入力 prompt <= max の最初の段階を採用する
+        'doubao-seed-character-260628': {
+            flat: true,
+            tier: [
+                { max: 32000,  hit: 0.16, miss: 0.8, out: 2.0, label: '≤32K' },
+                { max: 128000, hit: 0.16, miss: 1.2, out: 6.0, label: '32K~128K' }
+            ]
         }
     };
 
@@ -899,7 +911,8 @@
     var DSC_PRICE_PREFIX = [
         // ハイフン形（方舟の正式 ID）と、ドット形（一部の集約サイト表記）の両方を受ける
         ['doubao-seed-2-1-lite', 'doubao-seed-2-1-lite-260915'],
-        ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915']
+        ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915'],
+        ['doubao-seed-character', 'doubao-seed-character-260628']
     ];
 
     function dscPriceEntry(model) {
@@ -984,37 +997,61 @@
         var price = dscPriceForModel(dscUsageModel(model, u));
         if (!price) return null;
 
+        // ★ 段階（階層）料金：入力 token 数（prompt）で単価を選択する
+        //   （例：doubao-seed-character は 32K を境に単価が切り替わる）
+        //   price.tier = [{ max, hit, miss, out, label }, ...] を max 昇順で並べる。
+        var rate = price;
+        var tiered = false;
+        var tierLabel = '';
+        if (price.tier && price.tier.length) {
+            tiered = true;
+            rate = price.tier[price.tier.length - 1];   // 既定＝最大段階
+            for (var ti = 0; ti < price.tier.length; ti++) {
+                if (t.prompt <= price.tier[ti].max) { rate = price.tier[ti]; break; }
+            }
+            tierLabel = String(rate.label || '');
+        }
+        var rHit  = (rate.hit  != null) ? rate.hit  : price.hit;
+        var rMiss = (rate.miss != null) ? rate.miss : price.miss;
+        var rOut  = (rate.out  != null) ? rate.out  : price.out;
+        var rAudio    = (rate.audio    != null) ? rate.audio    : price.audio;
+        var rAudioHit = (rate.audioHit != null) ? rate.audioHit : price.audioHit;
+        var rFlat = tiered ? true : !!price.flat;
+
         // ★ 音声入力：prompt_tokens に含まれて返るため、そのまま入力単価で
         //   積むと二重計上になる。未命中 → 命中 の順に音声分を差し引いてから
         //   音声単価（未登録なら未命中単価）で計上する。
         if (audio < 0) audio = 0;
         if (audio > t.prompt) audio = t.prompt;
-        var audioRate = (price.audio == null) ? price.miss : price.audio;
-        var audioHitRate = (price.audioHit == null) ? price.hit : price.audioHit;
+        var audioRate = (rAudio == null) ? rMiss : rAudio;
+        var audioHitRate = (rAudioHit == null) ? rHit : rAudioHit;
         // 音声分は「未命中 → 命中」の順に差し引く（テキスト分の単価を食い潰さない）
         var audioMiss = Math.min(audio, miss);
         var audioHit = Math.min(audio - audioMiss, hit);
         var missText = miss - audioMiss;
         var hitText = hit - audioHit;
 
-        // flat=真のモデル（豆包 2.1-lite）は終日同一単価：倍率を掛けない
-        var flat = !!price.flat;
+        // flat=真のモデル（豆包 2.1-lite / seed-character）は終日同一単価：倍率を掛けない
+        var flat = rFlat;
         var peak = flat ? false : dscIsPeakHour();
         var factor = flat ? 1 : (peak ? 2 : 1);
 
         // 4 区分をそれぞれ単価で計算してから合算する（まとめ算すると取りこぼす）
         // 単価は「元 / 100 万 tokens」。ナノ元の整数で累積し、浮動小数の誤差を排除する
         var nano =
-            Math.round(hitText  * price.hit  * factor * 1000) +
-            Math.round(missText * price.miss * factor * 1000) +
+            Math.round(hitText  * rHit  * factor * 1000) +
+            Math.round(missText * rMiss * factor * 1000) +
             Math.round(audioMiss * audioRate    * factor * 1000) +
             Math.round(audioHit  * audioHitRate * factor * 1000) +
-            Math.round(out      * price.out  * factor * 1000);
+            Math.round(out      * rOut  * factor * 1000);
         var cost = nano / 1e9;
 
-        return { cost: cost, peak: peak, flat: flat, hit: hit, miss: miss, out: out,
+        return { cost: cost, peak: peak, flat: flat, tiered: tiered,
+                 tierLabel: tierLabel,
+                 hit: hit, miss: miss, out: out,
                  audio: audio, audioMiss: audioMiss, audioHit: audioHit,
-                 prompt: t.prompt, total: t.total };
+                 prompt: t.prompt, total: t.total,
+                 rHit: rHit, rMiss: rMiss, rOut: rOut };
     }
 
     function dscFmtCost(cost) {
@@ -1032,11 +1069,21 @@
         if (dscHideUsage(model, u)) return '';
         var r = dscCalcCost(u, model);
         if (!r) return '';
-        var tagTxt = r.flat
-            ? dscT('統一単価')
-            : (r.peak ? dscT('ピーク') : dscT('アイドル'));
+        var tagTxt = r.tiered
+            ? (r.tierLabel || dscT('統一単価'))
+            : (r.flat ? dscT('統一単価') : (r.peak ? dscT('ピーク') : dscT('アイドル')));
         var tip;
-        if (r.flat) {
+        if (r.tiered) {
+            // 段階料金：実際に適用された単価と計算式を tooltip に明示する
+            tip = dscT('入力') + ' ' + fmtTokNum(r.prompt) + ' tokens → ' +
+                dscT('単価（元/百万tokens）：') +
+                dscT('未命中') + ' ' + r.rMiss + ' / ' +
+                dscT('キャッシュ命中') + ' ' + r.rHit + ' / ' +
+                dscT('出力') + ' ' + r.rOut;
+            tip += ' · ' + dscT('命中') + ' ' + fmtTokNum(r.hit) +
+                ' / ' + dscT('未命中') + ' ' + fmtTokNum(r.miss) +
+                ' / ' + dscT('出力') + ' ' + fmtTokNum(r.out);
+        } else if (r.flat) {
             tip = dscT('統一単価（時間帯による変動なし）：') +
                 dscT('入力') + ' ' + fmtTokNum(r.hit + r.miss) +
                 ' / ' + dscT('出力') + ' ' + fmtTokNum(r.out);
@@ -1060,9 +1107,12 @@
         if (r.audio > 0) {
             tip += ' · ' + dscT('音声入力') + ' ' + fmtTokNum(r.audio);
         }
+        var costTxt = r.tiered
+            ? (r.cost.toFixed(6) + ' 元')
+            : dscFmtCost(r.cost);
         return '<span class="dsc-cost-chip" title="' + escapeHtml(tip) + '">' +
             '<span class="ic">💰</span>' +
-            '<span>' + dscFmtCost(r.cost) + '</span>' +
+            '<span>' + costTxt + '</span>' +
             '<span class="dsc-cost-tag">' + tagTxt + '</span>' +
             '</span>';
     }
