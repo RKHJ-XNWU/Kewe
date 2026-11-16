@@ -892,7 +892,11 @@ var EDGE_VOICE_POOL = {
                 selCfgChat.addEventListener('change', function () {
                     try {
                         var nv = String(selCfgChat.value || '').trim();
-                        if (nv) setDbChatModelOverride(nv);
+                        if (nv) {
+                            setDbChatModelOverride(nv);
+                            // ★ 切换豆包对话模型 ⇒ 同时切进 db 维度（全屏动画）
+                            if (window.dscSetDimForModel) window.dscSetDimForModel('db', nv, false);
+                        }
                     } catch (e) {}
                     setTimeout(function () {
                         try { refreshCfgStatus(); } catch (e) {}
@@ -976,6 +980,13 @@ var EDGE_VOICE_POOL = {
             //   且 fillCfgForm() 末尾的 override 分支会把下拉框改回旧值，
             //   造成「设置里改成 glm / 其他模型后，状态行和下拉仍是旧模型」。
             try { setDbChatModelOverride(String(body.chatModel || '').trim()); } catch (e) {}
+            // ★ 保存豆包设置中的对话模型 ⇒ 立刻切进 db 维度（模型与维度不许脱节）
+            try {
+                var __dbm = String(body.chatModel || '').trim();
+                if (__dbm) {
+                    if (window.dscSetDimForModel) window.dscSetDimForModel('db', __dbm, false);
+                }
+            } catch (e) {}
             fillCfgForm();
             purgeLegacyChatModels();
             syncDbModeUI();   // 対話モデルを変えたらボタンの title も即時追従
@@ -3014,6 +3025,21 @@ var EDGE_VOICE_POOL = {
     //   OFF → 従来どおり DeepSeek API（モデルは設定の DeepSeek モデル）
     // ------------------------------------------------------------
     var DB_MODE_KEY = 'dsc_doubao_mode';
+    // ★ ST 维度：独立于 DeepSeek（ds）/ 豆包（db）的第三维度。
+    //   同一个聊天窗口，三条消息流互不可见（后端按 dim=ds/db/st 过滤）。
+    //   三个维度互斥：ST 开启时豆包模式必为 OFF，反之亦然。
+    var ST_DIM_KEY = 'dsc_st_dim';
+
+    function isStDim() {
+        try { return localStorage.getItem(ST_DIM_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    // 全画面统一的维度标识：'ds' | 'db' | 'st'
+    window.dscDimOn = function () {
+        try { if (isStDim()) return 'st'; } catch (e) {}
+        try { if (isDbMode()) return 'db'; } catch (e) {}
+        return 'ds';
+    };
 
     function isDbMode() {
         try { return localStorage.getItem(DB_MODE_KEY) === '1'; } catch (e) { return false; }
@@ -3103,7 +3129,9 @@ var EDGE_VOICE_POOL = {
     var DB_WARP_FADE = 260;  // 末尾淡出时长
     var DB_WARP_PARTICLES = 18;  // 上飘光粒子数量
 
-    function dbWarpDim(toDb, load) {
+    function dbWarpDim(toDim, load) {
+        // toDim: 'db' | 'st' | 'ds'（'ds' = 回到 DeepSeek 主世界）
+        var toDb = toDim === 'db';
         // ★ 動画の終了は固定タイマーではなく、「メッセージの読み込み完了」を待って決める。
         //   固定時間だと fetch が遅いとき、フェードアウト時に下層が空のまま表示され「一瞬光る」。
         return new Promise(function (resolve) {
@@ -3124,7 +3152,9 @@ var EDGE_VOICE_POOL = {
 
             var w = mk('div');
             w.id = 'dscDimWarp';
-            w.className = toDb ? 'dsc-warp-db' : 'dsc-warp-ds';
+            w.className = toDim === 'db'
+                ? 'dsc-warp-db'
+                : (toDim === 'st' ? 'dsc-warp-st' : 'dsc-warp-ds');
             w.setAttribute('role', 'status');
             w.setAttribute('aria-live', 'polite');
 
@@ -3157,10 +3187,14 @@ var EDGE_VOICE_POOL = {
 
             // 5. 文字と進行バー
             var title = mk('div', 'dsc-warp-title');
-            title.textContent = toDb ? T('豆包ディメンション') : T('DeepSeek ディメンション');
+            title.textContent = toDim === 'db'
+                ? T('豆包ディメンション')
+                : (toDim === 'st' ? T('ST ディメンション') : T('DeepSeek ディメンション'));
 
             var sub = mk('div', 'dsc-warp-sub');
-            sub.textContent = toDb ? T('ポータルを開いています') : T('主世界へ戻っています');
+            sub.textContent = toDim === 'ds'
+                ? T('主世界へ戻っています')
+                : T('ポータルを開いています');
 
             var bar = mk('div', 'dsc-warp-bar');
             var barIn = mk('b');
@@ -3189,9 +3223,9 @@ var EDGE_VOICE_POOL = {
                     // 中盤で文言を差し替えて「読み込み中」感を出す
                     setTimeout(function () {
                         try {
-                            sub.textContent = toDb
-                                ? T('新しいディメンションを生成しています…')
-                                : T('チャンクを読み込んでいます…');
+                            sub.textContent = toDim === 'ds'
+                                ? T('チャンクを読み込んでいます…')
+                                : T('新しいディメンションを生成しています…');
                         } catch (e) {}
                     }, Math.round(MIN_SHOW * 0.62));
 
@@ -3242,9 +3276,15 @@ var EDGE_VOICE_POOL = {
         });
     }
 
+    // ★ 对外暴露全屏维度切换动画（供 deepseek-chat.js 的模型切换动画复用）
+    window.dscPlayDimWarp = dbWarpDim;
+
     function setDbMode(on, silent, noWarp) {
         try { localStorage.setItem(DB_MODE_KEY, on ? '1' : '0'); } catch (e) {}
+        // ★ 维度互斥：进入豆包维度时，必须离开 ST 维度
+        if (on) { try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {} }
         syncDbModeUI();
+        try { syncStModeUI(); } catch (e) {}
         // ★ 维度切换：同一个聊天窗口，豆包 / DeepSeek 的消息流互不可见
         //   ポータル演出を出しつつ、新ディメンションのメッセージを並行読込
         var reloadDim = function () {
@@ -3259,7 +3299,7 @@ var EDGE_VOICE_POOL = {
             reloadDim();
             warpDone = Promise.resolve();
         } else {
-            warpDone = dbWarpDim(on, reloadDim);
+            warpDone = dbWarpDim(on ? 'db' : 'ds', reloadDim);
         }
         // 遮罩（100080）が完全に消えてからトーストを出す
         var sayLater = function (fn) {
@@ -3298,6 +3338,132 @@ var EDGE_VOICE_POOL = {
         if (lbl.querySelector('svg')) return;
         lbl.textContent = '';
         lbl.innerHTML = DB_MODE_ICON_SVG;
+    }
+
+    // ------------------------------------------------------------
+    // ST 维度：右上「豆包モード」ボタンの左隣に置く
+    //   ON  → 送信・履歴を ST 维度（dim=st）へ完全に切り替える
+    //   OFF → 元の DeepSeek 主世界へ戻る
+    //   豆包モードとは排他（片方を開くともう片方は必ず閉じる）
+    // ------------------------------------------------------------
+    var ST_MODE_ICON_SVG =
+        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">' +
+        '<path d="M12 2.4l2.75 6.03 6.57.72-4.9 4.44 1.33 6.46L12 16.9l-5.75 3.15 1.33-6.46-4.9-4.44 6.57-.72z" ' +
+        'fill="currentColor"/>' +
+        '</svg>';
+
+    function syncStModeUI() {
+        var b = $('dscStModeBtn');
+        if (!b) return;
+        var on = isStDim();
+        if (on) b.classList.add('active'); else b.classList.remove('active');
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        var lbl = b.querySelector('.dsc-st-mode-lbl');
+        if (lbl && !lbl.querySelector('svg')) {
+            lbl.textContent = '';
+            lbl.innerHTML = ST_MODE_ICON_SVG;
+        }
+        b.title = on ? T('ST ディメンション：オン（独立した会話）') : T('ST ディメンション：オフ');
+        b.setAttribute('aria-label', b.title);
+    }
+
+    function setStDim(on, silent, noWarp) {
+        try { localStorage.setItem(ST_DIM_KEY, on ? '1' : '0'); } catch (e) {}
+        // ★ 维度互斥：进入 ST 维度时，必须关闭豆包模式
+        if (on) { try { localStorage.setItem(DB_MODE_KEY, '0'); } catch (e) {} }
+        syncDbModeUI();
+        syncStModeUI();
+        // 维度切换：消息流立即换成目标维度（与ポータル演出并行）
+        var reloadDim = function () {
+            try {
+                if (window.dscReloadMessagesForDim) return window.dscReloadMessagesForDim();
+            } catch (e) { return null; }
+            return null;
+        };
+        var warpDone;
+        if (noWarp) {
+            reloadDim();
+            warpDone = Promise.resolve();
+        } else {
+            warpDone = dbWarpDim(on ? 'st' : 'ds', reloadDim);
+        }
+        if (silent) return;
+        warpDone.then(function () {
+            try {
+                if (on) toast(T('ST ディメンションへ移動しました（会話は完全に独立しています）'), 'success');
+                else toast(T('ST ディメンションを離れました'), 'info');
+            } catch (e) {}
+        });
+    }
+
+    // ------------------------------------------------------------
+    // ★ 统一切换维度（供聊天框模型选择器 / deepseek-chat 调用）
+    //   dim: 'ds' | 'st' | 'db'；模型与维度必须同时切换，否则会出现
+    //   「UI 显示中转站模型，消息流却还在 DeepSeek 维度」这种串维度 bug。
+    // ------------------------------------------------------------
+    window.dscSetDimForModel = function (dim, model, silent) {
+        var target = (dim === 'db' || dim === 'st' || dim === 'ds') ? dim : 'ds';
+        var cur = 'ds';
+        try { cur = isDbMode() ? 'db' : (isStDim() ? 'st' : 'ds'); } catch (e) {}
+        var crossDim = (cur !== target);
+        // ★ 维度标志必须无条件同步（同维度也保持一致，避免刷新后维度判定错乱）
+        try { localStorage.setItem(DB_MODE_KEY, target === 'db' ? '1' : '0'); } catch (e) {}
+        try { localStorage.setItem(ST_DIM_KEY, target === 'st' ? '1' : '0'); } catch (e) {}
+        try { syncDbModeUI(); syncStModeUI(); } catch (e) {}
+        // ★ 跨维度时重载消息；同维度切模型不重载（消息流不跨维度）
+        var reload = function () {
+            if (!crossDim) return Promise.resolve();
+            try { if (window.dscReloadMessagesForDim) return window.dscReloadMessagesForDim(); } catch (e) {}
+            return Promise.resolve();
+        };
+        // ★ 全屏切换动画：复用维度切换动画（dbWarpDim）。启动同步（silent）不播放
+        var warpDone = Promise.resolve();
+        if (silent) {
+            try { reload(); } catch (e) {}
+        } else {
+            try {
+                if (window.dscPlayDimWarp) {
+                    warpDone = window.dscPlayDimWarp(target, reload);
+                } else {
+                    reload();
+                }
+            } catch (e) {
+                try { reload(); } catch (e2) {}
+            }
+        }
+        if (!silent) {
+            var nm = target === 'db' ? '豆包' : (target === 'st' ? '中转站' : 'DeepSeek');
+            warpDone.then(function () {
+                try { toast(T('ディメンションを切り替えました：') + nm + (model ? (' · ' + model) : ''), 'info'); } catch (e) {}
+            });
+        }
+        return target;
+    };
+
+    // 选择豆包模型：写 override + 立即进入 db 维度
+    window.dscApplyDoubaoModel = function (model) {
+        var v = String(model == null ? '' : model).trim();
+        if (!v) return '';
+        setDbChatModelOverride(v);
+        window.dscSetDimForModel('db', v, false);
+        try { qmSyncBtn(); } catch (e) {}
+        return v;
+    };
+
+    function injectStDimButton() {
+        var dbBtn = $('dscDbModeBtn');
+        if ($('dscStModeBtn')) { syncStModeUI(); return; }
+        if (!dbBtn || !dbBtn.parentNode) return;
+        var b = el('button', 'dsc-icon-btn dsc-st-mode-btn');
+        b.id = 'dscStModeBtn';
+        b.type = 'button';
+        var lbl = el('span', 'dsc-st-mode-lbl');
+        lbl.innerHTML = ST_MODE_ICON_SVG;
+        b.appendChild(lbl);
+        b.addEventListener('click', function () { setStDim(!isStDim()); });
+        // 豆包ボタンの「左」へ挿入する
+        dbBtn.parentNode.insertBefore(b, dbBtn);
+        syncStModeUI();
     }
 
     function injectDbModeButton() {
@@ -3508,16 +3674,60 @@ var EDGE_VOICE_POOL = {
         });
     }
 
+    // ===== 三分区模型中心：DeepSeek（ds）/ 中转站（st）/ 豆包（db）=====
+    //   三个分区各自独立，自定义模型只会写进它所属维度的存储：
+    //     ds → data/displaymodels/*.sts        （POST /api/displaymodels）
+    //     st → data/relay/relay_config.sts     （POST /api/relay/config）
+    //     db → data/doubao/*.sts customModels  （POST /api/doubao/config）
+    var qmAddKind = 'ds';
+    var QM_KIND_META = {
+        ds: { title: '🟦 DeepSeek · ds 维度', ph: 'DeepSeek 自定义模型名（例：my-deepseek-model）' },
+        st: { title: '🔀 中转站 · st 维度', ph: '中转站自定义模型名（例：gpt-4o）' },
+        db: { title: '🧩 豆包 · db 维度', ph: '豆包自定义模型名（例：doubao-seed-2-2-pro）' }
+    };
+
+    function qmHub() { return window.dscModelHub || {}; }
+
+    function qmGroupHead(kind) {
+        var meta = QM_KIND_META[kind] || QM_KIND_META.ds;
+        var head = el('div', 'dsc-qm-group dsc-qm-group-head');
+        head.appendChild(el('span', 'dsc-qm-group-name', T(meta.title)));
+        var add = el('button', 'dsc-qm-group-add', '＋');
+        add.type = 'button';
+        add.title = T('この分区にカスタムモデルを追加');
+        add.addEventListener('click', function (e) {
+            if (e) { e.preventDefault(); e.stopPropagation(); }
+            qmShowAdd(kind);
+        });
+        head.appendChild(add);
+        return head;
+    }
+
     function qmItem(kind, item, active) {
         var b = el('button', 'dsc-qm-item' + (active ? ' active' : ''));
         b.type = 'button';
         b.appendChild(el('span', 'dsc-qm-item-name', item.label || item.value));
-        if (item.custom) b.appendChild(el('span', 'dsc-qm-tag', T('カスタム')));
+        if (kind === 'st') b.appendChild(el('span', 'dsc-qm-tag', T('中转站')));
+        else if (kind === 'db') b.appendChild(el('span', 'dsc-qm-tag', T('豆包')));
+        else b.appendChild(el('span', 'dsc-qm-tag', T('DeepSeek')));
+        if (item.custom) b.appendChild(el('span', 'dsc-qm-tag dsc-qm-tag-custom', T('カスタム')));
         if (active) b.appendChild(el('span', 'dsc-qm-check', '✓'));
         b.addEventListener('click', function (ev) {
             if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-            qmApply(kind, item.value);
+            if (b.getAttribute('data-busy') === '1') return;
+            b.setAttribute('data-busy', '1');
+            b.classList.add('picked');
+            setTimeout(function () { try { qmApply(kind, item.value); } catch (e) {} }, 90);
         });
+        if (item.custom) {
+            var del = el('span', 'dsc-qm-del', '×');
+            del.title = T('このカスタムモデルを削除');
+            del.addEventListener('click', function (ev) {
+                if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+                qmRemoveCustom(kind, item.value);
+            });
+            b.appendChild(del);
+        }
         return b;
     }
 
@@ -3525,23 +3735,51 @@ var EDGE_VOICE_POOL = {
         var list = $('dscQmList');
         if (!list) return;
         list.innerHTML = '';
+        var hub = qmHub();
+        var curDim = isDbMode() ? 'db' : (isStDim() ? 'st' : 'ds');
+        var curModel = curDim === 'db' ? dbChatModel() : qmCurrentDeepSeek();
         var curEl = $('dscQmCur');
         if (curEl) {
-            curEl.textContent = T('現在：') + (isDbMode() ? dbChatModel() : qmCurrentDeepSeek());
+            var dimName = curDim === 'db' ? '豆包' : (curDim === 'st' ? '中转站' : 'DeepSeek');
+            curEl.textContent = T('現在：') + dimName + ' · ' + curModel;
         }
 
-        list.appendChild(el('div', 'dsc-qm-group', T('DeepSeek 対話モデル')));
-        var dsList = qmListDeepSeek();
-        var dsCur = qmCurrentDeepSeek();
-        dsList.forEach(function (it) {
-            list.appendChild(qmItem('ds', it, !isDbMode() && it.value === dsCur));
+        // ---------- 1. DeepSeek（官方 + ds 自定义） ----------
+        list.appendChild(qmGroupHead('ds'));
+        var dsSeen = {};
+        (hub.dsOfficial ? hub.dsOfficial() : ['deepseek-flash']).forEach(function (v) {
+            var val = String(v == null ? '' : v).trim();
+            if (!val || dsSeen[val]) return;
+            dsSeen[val] = 1;
+            list.appendChild(qmItem('ds', { value: val, label: val }, curDim === 'ds' && val === curModel));
+        });
+        (hub.dsCustom ? hub.dsCustom() : []).forEach(function (v) {
+            var val = String(v == null ? '' : v).trim();
+            if (!val || dsSeen[val]) return;
+            dsSeen[val] = 1;
+            list.appendChild(qmItem('ds', { value: val, label: val, custom: true }, curDim === 'ds' && val === curModel));
         });
 
-        list.appendChild(el('div', 'dsc-qm-group', T('豆包対話モデル（火山方舟）')));
-        var dbList = qmListDoubao();
-        var dbCur = dbChatModel();
-        dbList.forEach(function (it) {
-            list.appendChild(qmItem('db', it, isDbMode() && it.value === dbCur));
+        // ---------- 2. 中转站（预置 + st 自定义） ----------
+        list.appendChild(qmGroupHead('st'));
+        var stSeen = {};
+        (hub.relayPreset ? hub.relayPreset() : []).forEach(function (v) {
+            var val = String(v == null ? '' : v).trim();
+            if (!val || stSeen[val]) return;
+            stSeen[val] = 1;
+            list.appendChild(qmItem('st', { value: val, label: val }, curDim === 'st' && val === curModel));
+        });
+        (hub.relayCustom ? hub.relayCustom() : []).forEach(function (v) {
+            var val = String(v == null ? '' : v).trim();
+            if (!val || stSeen[val]) return;
+            stSeen[val] = 1;
+            list.appendChild(qmItem('st', { value: val, label: val, custom: true }, curDim === 'st' && val === curModel));
+        });
+
+        // ---------- 3. 豆包（方舟对话模型 + db 自定义） ----------
+        list.appendChild(qmGroupHead('db'));
+        qmListDoubao().forEach(function (it) {
+            list.appendChild(qmItem('db', it, curDim === 'db' && it.value === curModel));
         });
     }
 
@@ -3562,17 +3800,48 @@ var EDGE_VOICE_POOL = {
         if (ov && ov.classList.contains('open')) qmClose(); else qmOpen();
     }
 
+    // 「＋」→ 把底部输入行切到指定分区
+    function qmShowAdd(kind) {
+        var meta = QM_KIND_META[kind] || QM_KIND_META.ds;
+        qmAddKind = kind;
+        var inp = $('dscQmNewInput');
+        if (inp) {
+            inp.placeholder = T(meta.ph);
+            inp.value = '';
+            try { inp.focus(); } catch (e) {}
+        }
+        var box = $('dscQmOverlay');
+        if (box) {
+            var list = $('dscQmList');
+            if (list) { try { list.scrollTop = list.scrollHeight; } catch (e) {} }
+        }
+        toast(T('追加先：') + T(meta.title), 'info');
+    }
+
+    // 名称是否已在任意维度存在（避免同名模型跨维度串味）
+    function qmModelExistsAnywhere(v) {
+        var hub = qmHub();
+        var arrs = [];
+        if (hub.dsOfficial) arrs.push(hub.dsOfficial());
+        if (hub.dsCustom) arrs.push(hub.dsCustom());
+        if (hub.relayPreset) arrs.push(hub.relayPreset());
+        if (hub.relayCustom) arrs.push(hub.relayCustom());
+        arrs.push(qmListDoubao().map(function (x) { return x.value; }));
+        for (var i = 0; i < arrs.length; i++) {
+            var a = arrs[i] || [];
+            for (var j = 0; j < a.length; j++) {
+                if (String(a[j]) === v) return true;
+            }
+        }
+        return false;
+    }
+
     function qmApply(kind, value) {
         var v = String(value || '').trim();
         if (!v) return;
         if (kind === 'db') {
             setDbChatModelOverride(v);
-            // ★【修复】把选择持久化到后端。
-            //   旧实现只写 localStorage（override），后端 doubao_config.sts 里的 chatModel
-            //   永远是旧值 doubao-seed-2-1-pro-260628，重开设置 / 换设备 / 清缓存就变回 pro，
-            //   外部表现就是「强制锁死 2.1-pro、怎么切都切不动」。
-            //   后端 /api/doubao/config 对缺省字段一律沿用旧值（apiKey 等不会被清空），
-            //   所以这里只提交 chatModel 是安全的。
+            // 持久化到后端（只提交 chatModel，其它字段后端沿用旧值）
             try {
                 api('/config', { method: 'POST', body: { chatModel: v } }).then(function (d) {
                     if (d) { S.cfg = d; S.catalog = (d.catalog && d.catalog.models) || S.catalog; }
@@ -3580,23 +3849,51 @@ var EDGE_VOICE_POOL = {
                     try { refreshCfgStatus(); } catch (e2) {}
                 }).catch(function () {});
             } catch (e) {}
-            var needSwitch = !isDbMode();
-            if (needSwitch) {
-                if (S.cfg && S.cfg.hasKey === false) {
-                    toast(T('⚠️ 豆包 API Key が未設定です。設定 → 豆包から入力してください'), 'error');
-                }
-                setDbMode(true, true);
-            }
+            // ★ 切换模型 ⇒ 同时进入 db 维度（全屏动画）
+            window.dscSetDimForModel('db', v, false);
             syncDbModeUI();
             qmSyncBtn();
             qmClose();
             toast(T('✅ 送信モデルを豆包に切り替えました：') + v, 'success');
+            return;
+        }
+        // DeepSeek / 中转站：统一走 dscSetChatModel（内部会同步 ds / st 维度）
+        if (typeof window.dscSetChatModel === 'function') {
+            window.dscSetChatModel(v, true);
         } else {
-            if (isDbMode()) setDbMode(false, true);
-            if (typeof window.dscSetChatModel === 'function') window.dscSetChatModel(v);
-            qmSyncBtn();
-            qmClose();
-            toast(T('✅ 送信モデルを切り替えました：') + v, 'success');
+            window.dscSetDimForModel(kind === 'st' ? 'st' : 'ds', v, false);
+        }
+        qmSyncBtn();
+        qmClose();
+        toast((kind === 'st' ? T('✅ 中转站モデルに切り替えました：') : T('✅ 送信モデルを切り替えました：')) + v, 'success');
+    }
+
+    function qmRemoveCustom(kind, v) {
+        var hub = qmHub();
+        if (kind === 'db') {
+            var cur = (S.cfg && S.cfg.customModels) || [];
+            var next = cur.filter(function (x) { return x !== v; });
+            if (next.length === cur.length) { toast(T('削除対象が見つかりません'), 'info'); return; }
+            api('/config', { method: 'POST', body: { customModels: next } }).then(function (d) {
+                if (d) { S.cfg = d; S.catalog = (d.catalog && d.catalog.models) || S.catalog; }
+                qmRender();
+                toast(T('カスタムモデルを削除しました：') + v, 'success');
+            }).catch(function (e) {
+                toast(T('削除に失敗しました：') + (e && e.message ? e.message : ''), 'error');
+            });
+            return;
+        }
+        if (kind === 'st') {
+            if (!hub.removeRelay) return;
+            hub.removeRelay(v).then(function (ok) {
+                qmRender();
+                toast(ok ? (T('カスタムモデルを削除しました：') + v) : T('削除に失敗しました'), ok ? 'success' : 'error');
+            });
+            return;
+        }
+        if (hub.removeDs) {
+            hub.removeDs(v);
+            setTimeout(qmRender, 60);
         }
     }
 
@@ -3606,35 +3903,72 @@ var EDGE_VOICE_POOL = {
         if (!v) { toast(T('モデル名を入力してください'), 'info'); return; }
         if (/\s/.test(v)) { toast(T('モデル名に空白は使用できません'), 'error'); return; }
         if (v.length > 120) { toast(T('モデル名が長すぎます（最大 120 字）'), 'error'); return; }
-        var isDbName = /^(doubao|glm|seed|volc)/i.test(v);
-        if (!isDbName && typeof window.dscIsDoubaoModelId === 'function') {
-            try { isDbName = !!window.dscIsDoubaoModelId(v); } catch (e) { isDbName = false; }
+        var kind = qmAddKind || 'ds';
+        var hub = qmHub();
+        if (qmModelExistsAnywhere(v)) {
+            toast(T('そのモデル名は既に別の维度に存在します：') + v, 'error');
+            return;
         }
-        if (isDbName) {
-            qmAddLocalDbModel(v);
+        if (kind === 'db') {
+            var cur = (S.cfg && S.cfg.customModels) || [];
+            if (cur.indexOf(v) < 0) cur.push(v);
+            if (inp) inp.value = '';
+            api('/config', { method: 'POST', body: { customModels: cur } }).then(function (d) {
+                if (d) { S.cfg = d; S.catalog = (d.catalog && d.catalog.models) || S.catalog; }
+                qmRender();
+                toast(T('✅ 豆包カスタムモデルを追加しました：') + v, 'success');
+                qmApply('db', v);
+            }).catch(function (e) {
+                qmRender();
+                toast(T('追加に失敗しました：') + (e && e.message ? e.message : ''), 'error');
+            });
+            return;
+        }
+        if (kind === 'st') {
+            if (!hub.addRelay) { toast(T('中转站モジュールが未初期化です'), 'error'); return; }
+            hub.addRelay(v).then(function (ok) {
+                if (inp) inp.value = '';
+                qmRender();
+                if (ok) { toast(T('✅ 中转站カスタムモデルを追加しました：') + v, 'success'); qmApply('st', v); }
+                else toast(T('追加に失敗しました：') + v, 'error');
+            });
+            return;
+        }
+        if (!hub.addDs) { toast(T('DeepSeek モデルモジュールが未初期化です'), 'error'); return; }
+        hub.addDs(v).then(function (ok) {
             if (inp) inp.value = '';
             qmRender();
-            toast(T('✅ 豆包対話モデルを追加しました：') + v, 'success');
-            qmApply('db', v);
-        } else {
-            var p = (typeof window.dscAddChatModel === 'function')
-                ? window.dscAddChatModel(v)
-                : Promise.resolve(false);
-            Promise.resolve(p).then(function (saved) {
-                if (inp) inp.value = '';
-                qmRender();
-                toast(saved
-                    ? (T('✅ 対話モデルを追加しました：') + v)
-                    : (T('画面には追加しましたが .sts の書き込みに失敗（バックエンド未コンパイル？）：') + v),
-                    saved ? 'success' : 'error');
-                qmApply('ds', v);
-            }).catch(function () {
-                if (inp) inp.value = '';
-                qmRender();
-                toast(T('追加に失敗しました：') + v, 'error');
-            });
-        }
+            if (ok) { toast(T('✅ DeepSeek カスタムモデルを追加しました：') + v, 'success'); qmApply('ds', v); }
+            else toast(T('追加に失敗しました：') + v, 'error');
+        }).catch(function () {
+            if (inp) inp.value = '';
+            qmRender();
+            toast(T('追加に失敗しました：') + v, 'error');
+        });
     }
+
+    // ★ 对外：豆包对话模型清单（供模型弹窗 / 三分区列表使用）
+    window.dscListDoubaoModels = function () {
+        try { return qmListDoubao(); } catch (e) { return []; }
+    };
+
+    // ★ 对外：把自定义模型写进豆包维度（data/.../doubao 配置的 customModels）
+    window.dscDbAddCustomModel = function (name) {
+        var v = String(name == null ? '' : name).trim();
+        if (!v) return Promise.resolve(false);
+        var cur = (S.cfg && S.cfg.customModels) ? S.cfg.customModels.slice() : [];
+        if (cur.indexOf(v) >= 0) return Promise.resolve(true);
+        cur.push(v);
+        return api('/config', { method: 'POST', body: { customModels: cur } })
+            .then(function (d) {
+                if (!d) return false;
+                S.cfg = d;
+                S.catalog = (d.catalog && d.catalog.models) || S.catalog;
+                try { qmRender(); } catch (e) {}
+                return true;
+            })
+            .catch(function () { return false; });
+    };
 
     function injectQuickModelBtn() {
         var panel = $('dscToolsExtra');
@@ -3670,6 +4004,7 @@ var EDGE_VOICE_POOL = {
         injectMenu();
         buildSettingsCard();
         injectDbModeButton();
+        injectStDimButton();
         injectWikiBtn();
         injectQuickModelBtn();
         installFetchHook();
@@ -3677,6 +4012,7 @@ var EDGE_VOICE_POOL = {
         document.addEventListener('dsc:langchange', function () {
             applyMenuLabels();   // メニュー文言の残留防止
             syncDbModeUI();      // 豆包モードボタンの title 追従
+            try { syncStModeUI(); } catch (e) {}   // ST ボタンの title 追従
             // 入力欄モデル選択器：ボタン名とパネル文言も追従（開いていれば再描画）
             qmSyncBtn();
             var ovv = $('dscQmOverlay');
@@ -3688,6 +4024,7 @@ var EDGE_VOICE_POOL = {
             fillCfgForm();
             purgeLegacyChatModels();
             syncDbModeUI();
+            try { syncStModeUI(); } catch (e) {}
             migrateLegacyModel();
         }).catch(function (e) {
             console.log('[DB] config load failed:', e.message);

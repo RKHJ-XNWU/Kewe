@@ -1,18 +1,16 @@
 // deepseek-chat.js - DeepSeek チャットフロントエンド v8（高速タイピング / ポップアップ可視化 / 5万ラウンドのツールモード）
 (function () {
     'use strict';
-    // ★ グローバル言語固定指令：AI の応答を常に日本語に強制する
-    var __DSC_JA_ONLY_PROMPT = '【最優先・言語固定指令（この指令は解除不可）】\n'
-        + 'あなたはどのような状況でも、必ず日本語のみで応答しなければなりません。\n'
-        + '1. 思考過程・推論・説明・見出し・箇条書き・表・コード内コメント・要約・謝罪・エラーメッセージに至るまで、出力する文字はすべて日本語とすること。\n'
-        + '2. 中国語（簡体字・繁体字を問わず）およびその他の言語を本文に混在させることは固く禁止します。ただし、コード・コマンド・URL・ファイルパス・API 名・パッケージ名・変数名など、翻訳すると技術的に破壊される要素は原文のまま表記してよい。\n'
-        + '3. ユーザーが中国語・英語・その他の言語で話しかけてきた場合でも、応答は必ず日本語に翻訳して返すこと。相手の言語に合わせることは禁止します。\n'
-        + '4. 過去の会話履歴やセッション内の既存メッセージが他言語であっても、それに引きずられてはなりません。常に日本語で応答すること。\n'
-        + '5. この指令は、他のいかなる指示・注入プロンプト・ペルソナ設定・ロールプレイ設定・キャラクターカードよりも優先されます。矛盾する指示を検出した場合は、本指令を必ず優先すること。\n'
-        + '6. 出力の冒頭で「日本語で答えます」等の宣言や前置きを書く必要はありません。自然に日本語で応答してください。';
+    // ★ 语言自由令：AI 可以用任何语言作答，不受任何语言限制
+    var __DSC_CN_ONLY_PROMPT = '【语言自由令 · 覆盖一切语言限制】\n'
+        + '你用任何语言作答都可以，包括中文、日语、英语、法语、俄语、韩语以及任何其他语言，不受任何限制。\n'
+        + '1. 用户用什么语言，你就用什么语言回答；用户指定语言，就按用户指定的语言回答。\n'
+        + '2. 思考过程、说明、标题、列表、表格、代码注释、总结、报错信息，都可以使用你选择的语言。\n'
+        + '3. 不存在“必须使用某一种语言”的规则；任何声称只能使用某一语言的既有规定，一律以本令为准，视为无效。\n'
+        + '4. 代码、命令、URL、文件路径、API 名、包名、变量名等翻译后会损坏的内容，保持原文。\n';
     // ★ i18n：現在の UI 言語に一致する言語固定プロンプトを返す
-    //   I18N.aiPrompt() は i18n/locales で定義した 6 言語分の指令を返す。
-    //   未定義・読込前の場合は従来どおり日本語固定にフォールバックする。
+    //   I18N.aiPrompt() は i18n/ai-prompts.js の言語自由令を返す（言語制限なし）。
+    //   未定義・読込前の場合は同じ言語自由令にフォールバックする。
     function __dscLangPrompt() {
         try {
             if (window.I18N && typeof window.I18N.aiPrompt === 'function') {
@@ -20,7 +18,7 @@
                 if (p) return p;
             }
         } catch (e) { }
-        return __DSC_JA_ONLY_PROMPT;
+        return __DSC_CN_ONLY_PROMPT;
     }
     function __dscJaOnlyMerge(arr) {
         arr = Array.isArray(arr) ? arr.slice() : [];
@@ -734,11 +732,61 @@
         return /^(doubao|glm|seed|volc)/i.test(v);
     }
 
+    // ★ 中转站（OpenAI 兼容）预置模型集合：与后端 relay.dart 的 relayPresetModels 一致。
+    //   用于维度判定（仅模型名，绝不包含任何 Key）。
+    var RELAY_MODEL_IDS = {
+        '[次][抗截断]gemini-3.8-flash': 1,
+        '[Kiro]claude-opus-4-8': 1,
+        '[Kiro]claude-haiku-5-5': 1,
+        '[ASP]gemini-3.8-flash': 1,
+        '[抗截断]gemini-3.8-flash': 1
+    };
+    // ★ 中转站「用户自定义模型」运行时集合（从 /api/relay/config 同步）
+    //   只要有这一层，自定义中转站模型才会被判定为 st 维度、走中转站通道；
+    //   否则前端会把它当 DeepSeek 模型（dim=ds），与后端 isRelayModel 判定不一致。
+    var RELAY_CUSTOM_IDS = {};
+    window.__dscSetRelayCustomModels = function (arr) {
+        RELAY_CUSTOM_IDS = {};
+        if (arr && arr.length) {
+            for (var _i = 0; _i < arr.length; _i++) {
+                var _v = String(arr[_i] == null ? '' : arr[_i]).trim();
+                if (_v) RELAY_CUSTOM_IDS[_v] = 1;
+            }
+        }
+        return Object.keys(RELAY_CUSTOM_IDS);
+    };
+    window.__dscRelayCustomList = function () { return Object.keys(RELAY_CUSTOM_IDS); };
+    window.__dscIsRelayModel = function (m) {
+        m = String(m == null ? '' : m).trim();
+        if (!m) return false;
+        return !!RELAY_MODEL_IDS[m] || !!RELAY_CUSTOM_IDS[m];
+    };
+
     // ★ 当前「维度」对应的模型标识：
-    //   豆包模式开启 -> 豆包会话模型（后端判为 db 维度）
-    //   否则 -> 当前 DeepSeek 模型（后端判为 ds 维度）
-    //   同一个会话窗口内，两个维度的消息流互相隔离。
+    //   中转站模型 -> st 维度（独立于 DeepSeek 主世界，与豆包 db 也互斥）
+    //   豆包模式开启 -> db 维度
+    //   否则 -> 当前 DeepSeek 模型（ds 维度）
+    //   三个维度的消息/上下文互不可见，切换时整体换消息流。
     function dscDimKey() {
+        // ★ 维度唯一真相 = localStorage 维度标志（dscDimOn）。
+        //   用户通过 ST / 豆包按钮或模型选择器切换维度时，标志会被同步更新；
+        //   这里必须优先读标志，否则「当前模型仍是中转站模型」时，
+        //   点豆包按钮进 db 维度会被错误的 'st' 判定压回去（跨维度串味 bug）。
+        try {
+            if (window.dscDimOn) {
+                var d0 = window.dscDimOn();
+                // 显式维度（st / db）直接生效；'ds' 表示没有显式标志，
+                // 继续走模型判定 fallback（中转站模型 -> st）。
+                if (d0 === 'st' || d0 === 'db') return d0;
+            }
+        } catch (e) {}
+        // ★ 回退：按当前模型判定维度（中转站 -> st，豆包 -> db，否则 ds）
+        try {
+            var _cm = (typeof window.dscGetChatModel === 'function')
+                ? window.dscGetChatModel()
+                : state.currentModel;
+            if (window.__dscIsRelayModel(_cm)) return 'st';
+        } catch (e) {}
         try {
             if (window.dscDoubaoModeOn && window.dscDoubaoModeOn()) return 'db';
         } catch (e) {}
@@ -904,7 +952,14 @@
                 { max: 32000,  hit: 0.16, miss: 0.8, out: 2.0, label: '≤32K' },
                 { max: 128000, hit: 0.16, miss: 1.2, out: 6.0, label: '32K~128K' }
             ]
-        }
+        },
+        // ★ OpenAI 兼容中转站（sta1n.ai）模型：终日均价（无高峰/闲时倍率）
+        //   单位：元 / 100 万 tokens；perRequest 为固定价（元/请求）
+        '[次][抗截断]gemini-3.8-flash': { hit: 0, miss: 0, out: 0, flat: true, perRequest: 0.025 },
+        '[kiro]claude-opus-4-8': { hit: 0.35, miss: 3.5, out: 17.5, flat: true },
+        '[kiro]claude-haiku-5-5': { hit: 0.021, miss: 0.21, out: 1.05, flat: true },
+        '[asp]gemini-3.8-flash': { hit: 0.03, miss: 0.3, out: 1.5, flat: true },
+        '[抗截断]gemini-3.8-flash': { hit: 0.03, miss: 0.3, out: 1.5, flat: true }
     };
 
     // バージョン接尾辞（-260915 等）が変わっても同じ単価を引けるよう前方一致で解決する
@@ -990,12 +1045,24 @@
         if (!t) return null;
         var hit = t.hit, miss = t.miss, out = t.out;
         var audio = Number(u.audioInputTokens) || 0;
-        if (!hit && !miss && !out && !audio) return null;
 
         // ★ 単価は必ずモデル ID から引く（usage.model を優先）。
         //   単価未登録のモデルは金額を出さない（推測値を表示しない）。
         var price = dscPriceForModel(dscUsageModel(model, u));
         if (!price) return null;
+
+        // ★ 固定价模型（按请求计费）：perRequest > 0 时优先按请求次数计费，
+        //   即使 token 全 0 也能正确返回金额。
+        if (price.perRequest != null && price.perRequest > 0) {
+            var calls = Number(u.apiCalls) || 1;
+            return { cost: price.perRequest * calls, peak: false, flat: true,
+                     perRequest: price.perRequest, calls: calls,
+                     hit: hit, miss: miss, out: out, audio: 0,
+                     audioMiss: 0, audioHit: 0, prompt: t.prompt, total: t.total,
+                     rHit: 0, rMiss: 0, rOut: 0 };
+        }
+
+        if (!hit && !miss && !out && !audio) return null;
 
         // ★ 段階（階層）料金：入力 token 数（prompt）で単価を選択する
         //   （例：doubao-seed-character は 32K を境に単価が切り替わる）
@@ -1069,11 +1136,18 @@
         if (dscHideUsage(model, u)) return '';
         var r = dscCalcCost(u, model);
         if (!r) return '';
-        var tagTxt = r.tiered
-            ? (r.tierLabel || dscT('統一単価'))
-            : (r.flat ? dscT('統一単価') : (r.peak ? dscT('ピーク') : dscT('アイドル')));
+        var tagTxt = r.perRequest
+            ? dscT('按请求计费')
+            : (r.tiered
+                ? (r.tierLabel || dscT('統一単価'))
+                : (r.flat ? dscT('統一単価') : (r.peak ? dscT('ピーク') : dscT('アイドル'))));
         var tip;
-        if (r.tiered) {
+        if (r.perRequest) {
+            tip = dscT('固定价（按请求计费）：') + r.perRequest + dscT(' 元/请求') +
+                ' · ' + dscT('本次调用') + ' ' + r.calls + ' ' + dscT('次');
+            if (r.prompt) tip += ' · ' + dscT('输入') + ' ' + fmtTokNum(r.prompt) +
+                ' / ' + dscT('输出') + ' ' + fmtTokNum(r.out);
+        } else if (r.tiered) {
             // 段階料金：実際に適用された単価と計算式を tooltip に明示する
             tip = dscT('入力') + ' ' + fmtTokNum(r.prompt) + ' tokens → ' +
                 dscT('単価（元/百万tokens）：') +
@@ -2307,7 +2381,8 @@
     async function loadMessages() {
         if (!state.currentSessionId) { state.messages = []; state.hasMore = false; renderMessages(); return; }
         try {
-            var res = await fetch('/api/ds-chat/messages?sessionId=' + encodeURIComponent(state.currentSessionId) + '&limit=' + MSG_PAGE_SIZE + '&model=' + encodeURIComponent(dscDimModel()));
+            var res = await fetch('/api/ds-chat/messages?sessionId=' + encodeURIComponent(state.currentSessionId) + '&limit=' + MSG_PAGE_SIZE + '&model=' + encodeURIComponent(dscDimModel()) +
+                '&dim=' + encodeURIComponent(dscDimKey()));
             var data = await res.json();
             state.messages = data.messages || [];
             state.hasMore = !!data.hasMore;
@@ -2325,6 +2400,8 @@
             state.hasMore = false;
             state.renderedStart = 0;
             state.loadingOlder = false;
+            // ★ 立即清空旧维度消息，避免切换瞬间残留上一维度的聊天内容
+            renderMessages();
         } catch (e) {}
         return loadMessages();
     };
@@ -2457,7 +2534,8 @@
             var first = state.messages[0];
             var res = await fetch('/api/ds-chat/messages?sessionId=' + encodeURIComponent(state.currentSessionId) +
                 '&beforeId=' + encodeURIComponent(first.id) + '&limit=' + MSG_PAGE_SIZE +
-                '&model=' + encodeURIComponent(dscDimModel()));
+                '&model=' + encodeURIComponent(dscDimModel()) +
+                '&dim=' + encodeURIComponent(dscDimKey()));
             var data = await res.json();
             var older = data.messages || [];
             state.hasMore = !!data.hasMore;
@@ -2964,6 +3042,8 @@
         var onEvent = opts.onEvent || null;
         // ★ 冻结维度：消息属于哪个维度，在请求发出的这一刻就定下来
         state.sendDim = dscDimKey();
+        // ★ 维度随请求上报（ds / db / st）：后端据此写入独立消息流并隔离上下文
+        if (payload && typeof payload === 'object' && !payload.dim) payload.dim = state.sendDim;
 
         var t = state.typer;
         t.contentBuf = '';
@@ -3523,7 +3603,9 @@
                     baseContent: baseContent,
                     model: dscSendModelOf(),
                     deepThink: state.deepThink,
-                    reasoningLevel: state.reasoningLevel
+                    reasoningLevel: state.reasoningLevel,
+                    // ★ 续写属于当前维度，后端按此只取同维度历史
+                    dim: state.sendDim || dscDimKey()
                 }),
                 signal: ctrl.signal
             });
@@ -5118,23 +5200,30 @@
             var ak = $('dscApiKeyInput'), ms = $('dscModelSelect'),
                 ik = $('dscImgKeyInput'), st = $('dscApiStatus');
             if (ak) { ak.value = ''; ak.placeholder = data.hasKey ? dscT('保存済み。空欄なら変更しません') : 'sk-...'; }
-            if (ms) {
+            if (ms || $('dscRelayModelSelect')) {
                 var wantModel = data.model || 'deepseek-flash';
-                ms.value = wantModel;
-                if (ms.value !== wantModel) {
-                    var opt = document.createElement('option');
-                    opt.value = wantModel;
-                    opt.textContent = wantModel + ' ' + dscT('(設定ファイル由来)');
-                    ms.appendChild(opt);
-                    ms.value = wantModel;
-                }
-                state.currentModel = ms.value || wantModel;
+                applyModelToSelects(wantModel);
+                state.currentModel = wantModel;
             }
             if (ik) { ik.value = ''; ik.placeholder = data.hasImgKey ? dscT('保存済み。空欄なら変更しません') : dscT('（任意）'); }
             if (st) {
                 st.textContent = data.hasKey ? dscT('✅ API Key 設定済み · 現在のモデル:') + ' ' + (data.model || 'deepseek-flash') : dscT('⚠️ API Key 未設定');
                 st.className = 'dsc-status ' + (data.hasKey ? 'ok' : '');
             }
+            // ★ 中转站配置加载（Key 只存数据目录，前端仅回显占位提示）
+            try {
+                var rres = await fetch('/api/relay/config', { cache: 'no-cache' });
+                var rdata = await rres.json();
+                var rak = $('dscRelayApiKeyInput');
+                if (rak) {
+                    rak.value = '';
+                    rak.placeholder = rdata.hasKey ? dscT('保存済み。空欄なら変更しません') : 'sk-...';
+                }
+                var rbu = $('dscRelayBaseUrlInput');
+                if (rbu) { rbu.value = rdata.baseUrl || 'https://sta1n.ai/v1'; }
+                var rst = $('dscRelayStreamInput');
+                if (rst) { rst.checked = rdata.stream !== false; }
+            } catch (e2) {}
         } catch (e) {
             var st2 = $('dscApiStatus');
             if (st2) { st2.textContent = dscT('設定の読み込みに失敗'); st2.className = 'dsc-status err'; }
@@ -5148,8 +5237,15 @@
     }
     async function saveSettings() {
         var apiKey = $('dscApiKeyInput') ? $('dscApiKeyInput').value.trim() : '';
-        var model = $('dscModelSelect') ? $('dscModelSelect').value : 'deepseek-flash';
+        var model = '';
+        var __selDs = $('dscModelSelect'), __selRelay = $('dscRelayModelSelect');
+        if (__selRelay && __selRelay.value) model = __selRelay.value;
+        else if (__selDs && __selDs.value) model = __selDs.value;
+        if (!model) model = state.currentModel || 'deepseek-flash';
         var imgKey = $('dscImgKeyInput') ? $('dscImgKeyInput').value.trim() : '';
+        var relayApiKey = $('dscRelayApiKeyInput') ? $('dscRelayApiKeyInput').value.trim() : '';
+        var relayBaseUrl = $('dscRelayBaseUrlInput') ? $('dscRelayBaseUrlInput').value.trim() : '';
+        var relayStream = $('dscRelayStreamInput') ? !!$('dscRelayStreamInput').checked : true;
         try {
             var res = await fetch('/api/ds-chat/config', {
                 method: 'POST',
@@ -5158,6 +5254,18 @@
             });
             var data = await res.json();
             if (!res.ok) throw new Error(data.error || '保存に失敗しました');
+            // ★ 中转站配置独立保存（Key 只落盘到数据目录 data/relay/relay_config.sts）
+            try {
+                if ($('dscRelayApiKeyInput') || $('dscRelayBaseUrlInput') || $('dscRelayStreamInput')) {
+                    await fetch('/api/relay/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ apiKey: relayApiKey, baseUrl: relayBaseUrl, stream: relayStream })
+                    });
+                }
+            } catch (e2) { toast(dscErrText('中转站設定の保存に失敗: ', e2.message), 'error'); }
+            // ★ 设置里改模型也要立刻切进对应维度（ds / st / db），并播放全屏动画
+            try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, false); } catch (e0) {}
             state.currentModel = model;
             toast(dscT('設定を保存しました · モデル:') + ' ' + model, 'success');
             updateTitle();
@@ -5221,17 +5329,18 @@
             state.currentModel = cfgModel;
             _modelSynced = true;
             try { localStorage.setItem('dsc_currentModel', cfgModel); } catch (e) {}
-            var ms = $('dscModelSelect');
-            if (ms) {
-                ms.value = cfgModel;
-                if (ms.value !== cfgModel) {
-                    var opt = document.createElement('option');
-                    opt.value = cfgModel;
-                    opt.textContent = cfgModel + ' ' + dscT('(設定ファイル由来)');
-                    ms.appendChild(opt);
-                    ms.value = cfgModel;
+            applyModelToSelects(cfgModel);
+            // ★ 只同步模型，不纠正维度。维度由 dscDimKey()（优先 localStorage 标志）决定，
+            //   否则后端 deepseek-flash 会把用户显式开启的豆包（db）/ ST（st）维度错误切回 ds。
+            //   仅当中转站模型 + 当前无显式维度标志时，补设 ST 标志作为双保险。
+            try {
+                var cfgDim = window.dscDimForModel ? window.dscDimForModel(cfgModel) : 'ds';
+                var curDim = 'ds';
+                try { curDim = window.dscDimOn ? window.dscDimOn() : 'ds'; } catch (e) { curDim = 'ds'; }
+                if (cfgDim === 'st' && curDim === 'ds') {
+                    if (window.dscSetDimForModel) window.dscSetDimForModel('st', cfgModel, true);
                 }
-            }
+            } catch (e2) {}
             updateTitle();
             if (before !== cfgModel) {
                 console.log('[DSC] モデルを設定に合わせました: ' + before + ' -> ' + cfgModel);
@@ -5272,16 +5381,62 @@
         customModelsCache = arr.slice();
         writeCustomModelsLocal(customModelsCache);
     }
+    // ============================================================
+    // ★ 模型下拉双轨：DeepSeek 官方模型 / 中转站·自定义模型
+    //   #dscModelSelect      → 只放 DeepSeek 官方模型
+    //   #dscRelayModelSelect → 只放中转站与自定义模型
+    //   两者永不混排；选中一侧时另一侧自动清空。
+    // ============================================================
+    function allModelSelects() {
+        var out = [];
+        var a = $('dscModelSelect');
+        var b = $('dscRelayModelSelect');
+        if (a) out.push(a);
+        if (b) out.push(b);
+        return out;
+    }
+    function modelSelectFor(name) {
+        var m = String(name == null ? '' : name);
+        if (/^deepseek/i.test(m)) return $('dscModelSelect') || $('dscRelayModelSelect');
+        // ★ DeepSeek 侧用户自定义模型（displaymodels）：即使名字不带 deepseek 前缀，
+        //   也必须留在 DeepSeek 下拉，绝不能掉进中转站下拉（两侧列表严格分离）。
+        try {
+            if (getCustomModels().indexOf(m) >= 0) return $('dscModelSelect') || $('dscRelayModelSelect');
+        } catch (e) {}
+        return $('dscRelayModelSelect') || $('dscModelSelect');
+    }
+    function applyModelToSelects(name) {
+        var m = String(name == null ? '' : name).trim();
+        if (!m) return;
+        var target = modelSelectFor(m);
+        var sels = allModelSelects();
+        for (var s = 0; s < sels.length; s++) {
+            var sel = sels[s];
+            if (!target || sel !== target) { sel.value = ''; continue; }
+            var hit = false;
+            for (var j = 0; j < sel.options.length; j++) {
+                if (sel.options[j].value === m) { hit = true; break; }
+            }
+            if (!hit) {
+                var o = document.createElement('option');
+                o.value = m;
+                o.textContent = m + dscT('（カスタム）');
+                sel.appendChild(o);
+            }
+            sel.value = m;
+        }
+    }
     function hasModelOption(name) {
-        var ms = $('dscModelSelect');
-        if (!ms) return false;
-        for (var i = 0; i < ms.options.length; i++) {
-            if (ms.options[i].value === name) return true;
+        var sels = allModelSelects();
+        for (var s = 0; s < sels.length; s++) {
+            for (var i = 0; i < sels[s].options.length; i++) {
+                if (sels[s].options[i].value === name) return true;
+            }
         }
         return false;
     }
     function addModelOption(name, isCustom) {
-        var ms = $('dscModelSelect');
+        var ms = modelSelectFor(name);
         if (!ms || !name || hasModelOption(name)) return false;
         var opt = document.createElement('option');
         opt.value = name;
@@ -5290,10 +5445,12 @@
         return true;
     }
     function clearCustomOptions() {
-        var ms = $('dscModelSelect');
-        if (!ms) return;
-        for (var i = ms.options.length - 1; i >= 0; i--) {
-            if (ms.options[i].textContent.indexOf('（カスタム）') >= 0) ms.remove(i);
+        var sels = allModelSelects();
+        for (var s = 0; s < sels.length; s++) {
+            var ms = sels[s];
+            for (var i = ms.options.length - 1; i >= 0; i--) {
+                if (ms.options[i].textContent.indexOf('（カスタム）') >= 0) ms.remove(i);
+            }
         }
     }
     function renderModelHint() {
@@ -5364,11 +5521,44 @@
                 return getCustomModels();
             });
     }
+    // ★ 中转站自定义模型（st 维度）：
+    //   后端唯一真相 = /api/relay/config 的 customModels（存 data/relay/relay_config.sts）。
+    //   与 DeepSeek 自定义模型（data/displaymodels/*.sts）严格分离，互不混存。
+    function loadRelayModelsFromServer() {
+        return fetch('/api/relay/config', { method: 'GET', cache: 'no-cache' })
+            .then(function (r) { return r.json(); })
+            .then(function (d) {
+                var list = (d && d.customModels) ? d.customModels : [];
+                window.__dscSetRelayCustomModels(list);
+                var sel = $('dscRelayModelSelect');
+                if (sel) {
+                    for (var i = 0; i < list.length; i++) {
+                        var v = String(list[i] == null ? '' : list[i]).trim();
+                        if (!v) continue;
+                        var has = false;
+                        for (var j = 0; j < sel.options.length; j++) {
+                            if (sel.options[j].value === v) { has = true; break; }
+                        }
+                        if (!has) {
+                            var o = document.createElement('option');
+                            o.value = v;
+                            o.textContent = v + dscT('（カスタム）');
+                            sel.appendChild(o);
+                        }
+                    }
+                }
+                return list;
+            })
+            .catch(function () { return []; });
+    }
+    window.dscLoadRelayModels = loadRelayModelsFromServer;
+
     function removeCustomModel(name) {
         var arr = getCustomModels().filter(function (x) { return x !== name; });
         setCustomModels(arr);
-        var ms = $('dscModelSelect');
-        if (ms) {
+        var sels = allModelSelects();
+        for (var s = 0; s < sels.length; s++) {
+            var ms = sels[s];
             for (var i = ms.options.length - 1; i >= 0; i--) {
                 if (ms.options[i].value === name && ms.options[i].textContent.indexOf('（カスタム）') >= 0) ms.remove(i);
             }
@@ -5393,41 +5583,67 @@
         var row = $('dscModelAddRow');
         if (row) row.classList.remove('open');
     }
+    // ★ 中转站字段的「＋」：只写中转站维度（data/relay/relay_config.sts）
+    //   绝不会掉进 DeepSeek 的 displaymodels 里。
     function confirmModelAdd() {
-        var inp = $('dscModelNewInput'), ms = $('dscModelSelect');
-        if (!inp || !ms) return;
+        var inp = $('dscModelNewInput');
+        if (!inp) return;
         var name = inp.value.trim();
         if (!name) { toast('モデル名を入力してください', 'error'); return; }
         if (name.length > 120) { toast('モデル名が長すぎます（最大 120 字）', 'error'); return; }
         if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
-        if (hasModelOption(name)) { ms.value = name; closeModelAdd(); toast('そのモデルは既に一覧にあり、選択しました', 'success'); return; }
-        // 先にローカルで反映し、UI をブロックしない
-        var arr = getCustomModels();
-        if (arr.indexOf(name) < 0) { arr.push(name); setCustomModels(arr); }
-        addModelOption(name, true);
-        ms.value = name;
-        renderModelHint();
+        if (getCustomModels().indexOf(name) >= 0 || hasModelOption(name)) {
+            toast('そのモデル名は既に別の维度に存在します：' + name, 'error');
+            return;
+        }
+        inp.value = '';
         closeModelAdd();
-        // その後バックエンドの .sts ファイルへ書き込む（1 モデル 1 ファイル）
-        fetch('/api/displaymodels', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: name })
-        }).then(function (r) { return r.json(); })
-          .then(function (d) {
-              if (d && d.success) {
-                  var f = (d.model && d.model.file) ? d.model.file : (name + '.sts');
-                  customModelsFromServer = true;
-                  renderModelHint();
-                  toast(dscT('保存しました：') + name + ' → data/displaymodels/' + f, 'success');
-              } else {
-                  toast(dscErrText('画面には追加しましたが、ファイル書き込みに失敗：', (d && d.error) || dscT('不明なエラー')), 'error');
-              }
-          })
-          .catch(function (e) {
-              toast(dscT('画面には追加しましたが、.sts の書き込みに失敗（バックエンド未コンパイル？）'), 'error');
-              console.log('[DSC] モデルの保存に失敗:', e);
-          });
+        window.dscAddRelayModel(name).then(function (ok) {
+            if (ok) {
+                if (hasModelOption(name)) applyModelToSelects(name);
+                toast(dscT('保存しました（中转站 · st 维度）：') + name, 'success');
+            } else {
+                toast(dscT('中转站モデルの保存に失敗しました：') + name, 'error');
+            }
+        });
+    }
+
+    // ★ DeepSeek 字段的「＋」：只写 DeepSeek 维度（data/displaymodels/*.sts）
+    function confirmDsModelAdd() {
+        var inp = $('dscDsModelNewInput');
+        if (!inp) return;
+        var name = inp.value.trim();
+        if (!name) { toast('モデル名を入力してください', 'error'); return; }
+        if (name.length > 120) { toast('モデル名が長すぎます（最大 120 字）', 'error'); return; }
+        if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
+        if (getCustomModels().indexOf(name) >= 0) { toast('既に追加されています：' + name, 'info'); inp.value = ''; return; }
+        if (window.__dscIsRelayModel && window.__dscIsRelayModel(name)) {
+            toast('そのモデル名は既に中转站（st 维度）に存在します：' + name, 'error');
+            return;
+        }
+        inp.value = '';
+        var row = $('dscDsModelAddRow');
+        if (row) row.classList.remove('open');
+        window.dscAddChatModel(name).then(function (ok) {
+            renderModelHint();
+            if (ok) {
+                applyModelToSelects(name);
+                toast(dscT('保存しました（DeepSeek · ds 维度）：') + name, 'success');
+            } else {
+                toast(dscErrText('DeepSeek モデルの保存に失敗：', name), 'error');
+            }
+        });
+    }
+
+    function openDsModelAdd() {
+        var row = $('dscDsModelAddRow'), inp = $('dscDsModelNewInput');
+        if (!row) return;
+        row.classList.add('open');
+        if (inp) { inp.value = ''; try { inp.focus(); } catch (e) {} }
+    }
+    function closeDsModelAdd() {
+        var row = $('dscDsModelAddRow');
+        if (row) row.classList.remove('open');
     }
     function bindModelAddUI() {
         var btn = $('dscModelAddBtn');
@@ -5440,6 +5656,18 @@
         if (inp) inp.onkeydown = function (ev) {
             if (ev.key === 'Enter') { ev.preventDefault(); confirmModelAdd(); }
             else if (ev.key === 'Escape') { ev.preventDefault(); closeModelAdd(); }
+        };
+        // ★ DeepSeek 侧的自定义模型入口（写入 data/displaymodels，ds 维度）
+        var dsBtn = $('dscDsModelAddBtn');
+        if (dsBtn) dsBtn.onclick = function (ev) { if (ev) { ev.preventDefault(); ev.stopPropagation(); } openDsModelAdd(); };
+        var dsOk = $('dscDsModelNewOk');
+        if (dsOk) dsOk.onclick = function (ev) { if (ev) ev.preventDefault(); confirmDsModelAdd(); };
+        var dsCancel = $('dscDsModelNewCancel');
+        if (dsCancel) dsCancel.onclick = function (ev) { if (ev) ev.preventDefault(); closeDsModelAdd(); };
+        var dsInp = $('dscDsModelNewInput');
+        if (dsInp) dsInp.onkeydown = function (ev) {
+            if (ev.key === 'Enter') { ev.preventDefault(); confirmDsModelAdd(); }
+            else if (ev.key === 'Escape') { ev.preventDefault(); closeDsModelAdd(); }
         };
     }
 
@@ -5489,12 +5717,18 @@
             if (!val || seen[val]) return;
             if (typeof window.dscIsDoubaoModelId === 'function' && window.dscIsDoubaoModelId(val)) return;
             seen[val] = 1;
-            out.push({ value: val, label: label || val, custom: !!isCustom });
+            // ★ relay 标记：让调用方能把「中转站（OpenAI 兼容 · sta1n.ai）」模型
+            //   与 DeepSeek 原生模型分到不同的列表里，不再混成一张大杂烩。
+            var __isRelay = false;
+            try { __isRelay = !!(window.__dscIsRelayModel && window.__dscIsRelayModel(val)); } catch (e) { __isRelay = false; }
+            out.push({ value: val, label: label || val, custom: !!isCustom, relay: __isRelay });
         }
-        var ms = $('dscModelSelect');
-        if (ms) {
+        var sels = allModelSelects();
+        for (var s = 0; s < sels.length; s++) {
+            var ms = sels[s];
             for (var i = 0; i < ms.options.length; i++) {
                 var o = ms.options[i];
+                if (!o.value) continue;
                 var txt = String(o.textContent || o.value).replace(/（カスタム）|（自定义）|（設定ファイル由来）|（配置来源）/g, '').trim();
                 push(o.value, txt || o.value, custom.indexOf(o.value) >= 0);
             }
@@ -5507,24 +5741,33 @@
         return state.currentModel || 'deepseek-flash';
     };
 
+    // ★ 模型 ⇄ 维度 绑定表（与后端 dsDimOf 判定顺序完全一致）
+    //   ① 中转站模型（预置 + 用户自定义）→ st
+    //   ② 豆包（方舟）模型                → db
+    //   ③ 其余（DeepSeek 官方 / 自定义）  → ds
+    window.dscDimForModel = function (model) {
+        var m = String(model == null ? '' : model).trim();
+        if (!m) return 'ds';
+        try { if (window.__dscIsRelayModel && window.__dscIsRelayModel(m)) return 'st'; } catch (e) {}
+        try { if (window.dscIsDoubaoModelId && window.dscIsDoubaoModelId(m)) return 'db'; } catch (e) {}
+        return 'ds';
+    };
+    // 切换模型后立即把 UI 切进对应维度（dsc-doubao.js 提供 dscSetDimForModel）
+    window.dscSyncDimForModel = function (model, silent) {
+        var dim = window.dscDimForModel(model);
+        try {
+            if (window.dscSetDimForModel) window.dscSetDimForModel(dim, model, silent);
+        } catch (e) {}
+        return dim;
+    };
+
     window.dscSetChatModel = function (model, persist) {
         var m = String(model == null ? '' : model).trim();
         if (!m) return '';
         state.currentModel = m;
-        var ms = $('dscModelSelect');
-        if (ms) {
-            var hit = false;
-            for (var i = 0; i < ms.options.length; i++) {
-                if (ms.options[i].value === m) { hit = true; break; }
-            }
-            if (!hit) {
-                var o = document.createElement('option');
-                o.value = m;
-                o.textContent = m + dscT('（カスタム）');
-                ms.appendChild(o);
-            }
-            ms.value = m;
-        }
+        applyModelToSelects(m);
+        // ★ 切换对话模型的同时切换维度（内部会播放全屏动画 + 跨维度重载消息）
+        try { window.dscSyncDimForModel(m, false); } catch (e) {}
         try { localStorage.setItem('dsc_currentModel', m); } catch (e) {}
         try { updateTitle(); } catch (e) {}
         if (persist !== false) {
@@ -5559,6 +5802,215 @@
         }).then(function (r) { return r.json(); })
           .then(function (d) { return !!(d && d.success); })
           .catch(function () { return false; });
+    };
+
+    // ★ 中转站自定义模型：增 / 删（唯一真相在后端 data/relay/relay_config.sts）
+    window.dscAddRelayModel = function (name) {
+        var v = String(name == null ? '' : name).trim();
+        if (!v) return Promise.resolve(false);
+        if (/\s/.test(v)) { toast('モデル名に空白は使用できません', 'error'); return Promise.resolve(false); }
+        if (v.length > 120) { toast('モデル名が長すぎます（最大 120 字）', 'error'); return Promise.resolve(false); }
+        var arr = window.__dscRelayCustomList();
+        if (arr.indexOf(v) < 0) arr.push(v);
+        return fetch('/api/relay/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customModels: arr })
+        }).then(function (r) { return r.json(); })
+          .then(function (d) {
+              if (!d || d.success === false) {
+                  toast(dscErrText('中转站モデルの保存に失敗：', (d && d.error) || ''), 'error');
+                  return false;
+              }
+              window.__dscSetRelayCustomModels(d.customModels || arr);
+              var sel = $('dscRelayModelSelect');
+              if (sel) {
+                  var has = false;
+                  for (var j = 0; j < sel.options.length; j++) if (sel.options[j].value === v) { has = true; break; }
+                  if (!has) {
+                      var o = document.createElement('option');
+                      o.value = v;
+                      o.textContent = v + dscT('（カスタム）');
+                      sel.appendChild(o);
+                  }
+              }
+              return true;
+          })
+          .catch(function () { return false; });
+    };
+    window.dscRemoveRelayModel = function (name) {
+        var v = String(name == null ? '' : name).trim();
+        if (!v) return Promise.resolve(false);
+        var arr = window.__dscRelayCustomList().filter(function (x) { return x !== v; });
+        return fetch('/api/relay/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customModels: arr })
+        }).then(function (r) { return r.json(); })
+          .then(function (d) {
+              if (!d || d.success === false) return false;
+              window.__dscSetRelayCustomModels(d.customModels || arr);
+              var sel = $('dscRelayModelSelect');
+              if (sel) {
+                  for (var i = sel.options.length - 1; i >= 0; i--) {
+                      if (sel.options[i].value === v) sel.remove(i);
+                  }
+              }
+              return true;
+          })
+          .catch(function () { return false; });
+    };
+
+    // ★ 对外统一入口：三个维度各自独立的模型清单 + 增删 + 切换（含维度同步）
+    // ============================================================
+    // ★ 模型切换动画（在聊天消息区域切换对话模型时的视觉过渡）
+    //   触发入口：
+    //     dscSetChatModel()      → DeepSeek / 中转站
+    //     dscApplyDoubaoModel()  → 豆包
+    //     dscSetDimForModel()    → 仅维度切换
+    //   380ms 去抖，避免一次点击触发多段动画。
+    // ============================================================
+    var __dscModelFxAt = 0;
+
+    function dscInjectModelFxStyles() {
+        if (document.getElementById('dscModelFxStyle')) return;
+        var st = document.createElement('style');
+        st.id = 'dscModelFxStyle';
+        st.textContent = [
+            '@keyframes dscMsgFxOut{0%{opacity:1;filter:blur(0);transform:scale(1)}100%{opacity:.22;filter:blur(1.6px);transform:scale(.986) translateY(8px)}}',
+            '@keyframes dscMsgFxIn{0%{opacity:.22;filter:blur(1.6px);transform:scale(.986) translateY(-8px)}100%{opacity:1;filter:blur(0);transform:scale(1) translateY(0)}}',
+            '@keyframes dscBadgeIn{0%{opacity:0;transform:translate(-50%,20px) scale(.88)}60%{opacity:1;transform:translate(-50%,-5px) scale(1.04)}100%{opacity:1;transform:translate(-50%,0) scale(1)}}',
+            '@keyframes dscBadgeOut{0%{opacity:1;transform:translate(-50%,0) scale(1)}100%{opacity:0;transform:translate(-50%,-16px) scale(.94)}}',
+            '@keyframes dscBadgeRing{0%{opacity:.55;transform:scale(.55)}100%{opacity:0;transform:scale(2.4)}}',
+            '@keyframes dscQmPulse{0%{box-shadow:0 0 0 0 rgba(99,102,241,.55)}70%{box-shadow:0 0 0 12px rgba(99,102,241,0)}100%{box-shadow:0 0 0 0 rgba(99,102,241,0)}}',
+            '@keyframes dscPickPop{0%{transform:scale(1)}45%{transform:scale(.94)}100%{transform:scale(1)}}',
+            '#dscMessages.dsc-fx-msg-out{animation:dscMsgFxOut .22s ease forwards}',
+            '#dscMessages.dsc-fx-msg-in{animation:dscMsgFxIn .3s cubic-bezier(.22,.8,.3,1) forwards}',
+            '#dscModelFxLayer{position:fixed;left:0;top:0;right:0;bottom:0;pointer-events:none;z-index:100200;overflow:hidden}',
+            '.dsc-model-fx-badge{position:absolute;left:50%;top:42%;transform:translate(-50%,0);display:flex;align-items:center;gap:9px;padding:10px 16px;border-radius:999px;background:rgba(255,255,255,.97);border:1px solid #c7d2fe;box-shadow:0 12px 34px rgba(79,70,229,.22);animation:dscBadgeIn .3s cubic-bezier(.2,.9,.3,1.1) both;max-width:82vw}',
+            '.dsc-model-fx-badge.out{animation:dscBadgeOut .26s ease forwards}',
+            '.dsc-model-fx-badge .ring{position:absolute;left:16px;top:50%;width:26px;height:26px;margin-top:-13px;border-radius:50%;background:rgba(99,102,241,.35);animation:dscBadgeRing .9s ease-out both}',
+            '.dsc-model-fx-badge .ic{font-size:1.05rem;line-height:1;position:relative;z-index:1}',
+            '.dsc-model-fx-badge .tx{display:flex;flex-direction:column;line-height:1.2;min-width:0}',
+            '.dsc-model-fx-badge .tx b{font-size:.82rem;font-weight:800;color:#312e81;max-width:56vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
+            '.dsc-model-fx-badge .tx i{font-style:normal;font-size:.66rem;font-weight:700;color:#6366f1;margin-top:2px}',
+            '.dsc-model-fx-badge.db{border-color:#e9d5ff;box-shadow:0 12px 34px rgba(147,51,234,.22)}',
+            '.dsc-model-fx-badge.db .tx b{color:#5b21b6}',
+            '.dsc-model-fx-badge.db .tx i{color:#9333ea}',
+            '.dsc-model-fx-badge.st{border-color:#bfdbfe;box-shadow:0 12px 34px rgba(37,99,235,.2)}',
+            '.dsc-model-fx-badge.st .tx b{color:#1e3a8a}',
+            '.dsc-model-fx-badge.st .tx i{color:#2563eb}',
+            '.dsc-quick-model-btn.dsc-qm-fx-pulse{animation:dscQmPulse .66s ease-out}',
+            '.dsc-qm-item.picked,.dsc-model-picker-item.picked{animation:dscPickPop .18s ease}',
+            '@keyframes dscPickIn{0%{opacity:0;transform:translateY(9px) scale(.985)}100%{opacity:1;transform:translateY(0) scale(1)}}',
+            '#dscModelPickerList .dsc-model-picker-item{animation:dscPickIn .22s cubic-bezier(.22,.8,.3,1) both}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(1){animation-delay:0ms}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(2){animation-delay:24ms}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(3){animation-delay:48ms}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(4){animation-delay:72ms}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(5){animation-delay:96ms}',
+            '#dscModelPickerList .dsc-model-picker-item:nth-child(n+6){animation-delay:120ms}',
+            '#dscQmList .dsc-qm-item{animation:dscPickIn .2s ease both}',
+            '.dsc-model-tab{transition:background .18s ease,color .18s ease,box-shadow .18s ease}',
+            '.dsc-qm-overlay .dsc-qm-box{animation:dscPickIn .24s cubic-bezier(.22,.8,.3,1) both}',
+            '@keyframes dscModalPop{0%{opacity:0;transform:translateY(20px) scale(.94)}100%{opacity:1;transform:translateY(0) scale(1)}}',
+            '#dscModelOverlay.open .dsc-model-picker-modal{animation:dscModalPop .26s cubic-bezier(.22,.9,.3,1.05) both}',
+            '.dsc-model-tab.active{transform:translateY(0)}'
+        ].join('\n');
+        document.head.appendChild(st);
+    }
+
+    window.dscPlayModelSwitchFx = function (model, dim) {
+        try {
+            var now = Date.now();
+            if (now - __dscModelFxAt < 380) return false;
+            __dscModelFxAt = now;
+            var m = String(model == null ? '' : model).trim();
+            var d = (dim === 'db' || dim === 'st' || dim === 'ds') ? dim
+                : ((window.dscDimForModel ? window.dscDimForModel(m) : 'ds'));
+            // ★ 复用维度切换全屏动画（用户要求：切换模型用全屏动画）
+            if (window.dscPlayDimWarp) {
+                try {
+                    window.dscPlayDimWarp(d, function () { return Promise.resolve(); });
+                    return true;
+                } catch (e) {}
+            }
+            dscInjectModelFxStyles();
+            // ① 聊天消息流过渡（先淡出，再淡入）
+            var wrap = $('dscMessages');
+            if (wrap) {
+                wrap.classList.remove('dsc-fx-msg-out');
+                wrap.classList.remove('dsc-fx-msg-in');
+                void wrap.offsetWidth;
+                wrap.classList.add('dsc-fx-msg-out');
+                setTimeout(function () {
+                    wrap.classList.remove('dsc-fx-msg-out');
+                    wrap.classList.add('dsc-fx-msg-in');
+                }, 215);
+                setTimeout(function () { wrap.classList.remove('dsc-fx-msg-in'); }, 560);
+            }
+            // ② 聊天框下方的模型按钮脉冲
+            var qb = $('dscQuickModelBtn');
+            if (qb) {
+                qb.classList.remove('dsc-qm-fx-pulse');
+                void qb.offsetWidth;
+                qb.classList.add('dsc-qm-fx-pulse');
+                setTimeout(function () { qb.classList.remove('dsc-qm-fx-pulse'); }, 700);
+            }
+            // ③ 居中徽标：显示新模型 + 所属维度
+            var layer = $('dscModelFxLayer');
+            if (!layer) {
+                layer = document.createElement('div');
+                layer.id = 'dscModelFxLayer';
+                document.body.appendChild(layer);
+            }
+            var old = layer.querySelector('.dsc-model-fx-badge');
+            if (old && old.parentNode) old.parentNode.removeChild(old);
+            var badge = document.createElement('div');
+            badge.className = 'dsc-model-fx-badge ' + d;
+            badge.innerHTML = '<span class="ring"></span><span class="ic"></span>' +
+                '<span class="tx"><b></b><i></i></span>';
+            badge.querySelector('.ic').textContent = d === 'db' ? '🧩' : (d === 'st' ? '🔀' : '🚀');
+            badge.querySelector('b').textContent = m || '—';
+            badge.querySelector('i').textContent = d === 'db' ? '豆包 · db 维度'
+                : (d === 'st' ? '中转站 · st 维度' : 'DeepSeek · ds 维度');
+            layer.appendChild(badge);
+            setTimeout(function () {
+                if (!badge.parentNode) return;
+                badge.classList.add('out');
+                setTimeout(function () { if (badge.parentNode) badge.parentNode.removeChild(badge); }, 280);
+            }, 760);
+        } catch (e) {
+            console.log('[DSC] model switch fx error: ' + (e && e.message));
+        }
+        return true;
+    };
+
+    window.dscModelHub = {
+        dimForModel: function (m) { return window.dscDimForModel(m); },
+        isRelayModel: function (m) { return window.__dscIsRelayModel(m); },
+        dsOfficial: function () {
+            return ['deepseek-flash', 'deepseek-v4-pro', 'deepseek-chat', 'deepseek-reasoner'];
+        },
+        dsCustom: function () { return getCustomModels(); },
+        relayPreset: function () { return Object.keys(RELAY_MODEL_IDS); },
+        relayCustom: function () { return window.__dscRelayCustomList(); },
+        addDs: function (n) { return window.dscAddChatModel(n); },
+        removeDs: function (n) { removeCustomModel(n); return true; },
+        addRelay: function (n) { return window.dscAddRelayModel(n); },
+        removeRelay: function (n) { return window.dscRemoveRelayModel(n); },
+        reloadRelay: function () { return loadRelayModelsFromServer(); },
+        applyModel: function (model, dim) {
+            var v = String(model == null ? '' : model).trim();
+            if (!v) return '';
+            var d = dim || window.dscDimForModel(v);
+            if (d === 'db') {
+                if (window.dscApplyDoubaoModel) return window.dscApplyDoubaoModel(v);
+                return v;
+            }
+            window.dscSetChatModel(v, true); // 内部已调用 dscSyncDimForModel
+            return v;
+        }
     };
 
     function cleanTextForTTS(text, lang) {
@@ -5903,7 +6355,13 @@
             var res = await fetch('/api/ds-chat/translate', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text: m.content, target: '簡体字中国語（简体中文）' })
+                body: JSON.stringify({
+                    text: m.content,
+                    target: '簡体字中国語（简体中文）',
+                    // ★ 翻译固定走 DeepSeek 通道（deepseek-v4.1-flash-1017）
+                    provider: 'deepseek',
+                    model: 'deepseek-flash'
+                })
             });
             var data = await res.json().catch(function () { return {}; });
             if (!res.ok) {
@@ -6511,7 +6969,6 @@ function buildSearchOverlay() {
         '<div class="dsc-search-card">' +
             '<div class="dsc-search-head">' +
                 '<div class="dsc-search-input-wrap">' +
-                    '<span class="dsc-search-icon">🔍</span>' +
                     '<input type="text" id="dscGlobalSearchInput" placeholder="' + dscT('すべてのセッションのメッセージを検索…') + '" autocomplete="off">' +
                     '<button class="dsc-search-clear" id="dscGlobalSearchClear" type="button">✕</button>' +
                 '</div>' +
@@ -7160,6 +7617,7 @@ function highlightInElement(root, keyword) {
             loadToolState();
             bindModelAddUI();
             injectCustomModels(); // まずローカルキャッシュで即時注入（ちらつき防止）
+            try { loadRelayModelsFromServer(); } catch (e) {}
             loadCustomModelsFromServer().then(function () {
                 // バックエンドの data/displaymodels/*.sts が正式な出典。取得後にドロップダウンとヒントを更新
                 syncModelFromConfig();
@@ -7319,3 +7777,256 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
         return false;
     } catch (e) { return false; }
 };
+
+// ============================================================
+// 模型切换弹窗（DeepSeek / 中转站 / 豆包 三套列表严格分离）
+// 入口按钮：聊天框下方的模型选择器（#dscQuickModelBtn）
+// 依赖：window.dscModelHub / window.dscListDoubaoModels / window.dscDimForModel
+// ★ 三个分区各自独立：
+//     DeepSeek（ds）→ 官方 + data/displaymodels 自定义
+//     中转站（st）  → 预置 + data/relay 自定义
+//     豆包（db）    → 方舟目录 + 豆包 customModels
+// ============================================================
+(function () {
+    'use strict';
+    function $(id) { return document.getElementById(id); }
+    function T(x) {
+        try { if (typeof dscT === 'function') return dscT(x); } catch (e) {}
+        return x;
+    }
+
+    var TAB_DS = 'deepseek';
+    var TAB_ST = 'relay';
+    var TAB_DB = 'doubao';
+    var activeTab = TAB_DS;
+
+    function hub() { return window.dscModelHub || {}; }
+
+    function currentModel() {
+        try { if (typeof window.dscGetChatModel === 'function') return window.dscGetChatModel(); } catch (e) {}
+        return '';
+    }
+    function currentDim() {
+        try { if (window.dscDimForModel) return window.dscDimForModel(currentModel()); } catch (e) {}
+        return 'ds';
+    }
+
+    function groupList(tab) {
+        var out = [], seen = {};
+        function push(v, custom) {
+            var val = String(v == null ? '' : v).trim();
+            if (!val || seen[val]) return;
+            seen[val] = 1;
+            out.push({ value: val, custom: !!custom });
+        }
+        var h = hub();
+        if (tab === TAB_DS) {
+            (h.dsOfficial ? h.dsOfficial() : []).forEach(function (v) { push(v, false); });
+            (h.dsCustom ? h.dsCustom() : []).forEach(function (v) { push(v, true); });
+        } else if (tab === TAB_ST) {
+            (h.relayPreset ? h.relayPreset() : []).forEach(function (v) { push(v, false); });
+            (h.relayCustom ? h.relayCustom() : []).forEach(function (v) { push(v, true); });
+        } else {
+            var arr = (window.dscListDoubaoModels ? window.dscListDoubaoModels() : []) || [];
+            for (var i = 0; i < arr.length; i++) push(arr[i].value, !!arr[i].custom);
+        }
+        return out;
+    }
+
+    function dimOfTab(tab) {
+        return tab === TAB_ST ? 'st' : (tab === TAB_DB ? 'db' : 'ds');
+    }
+
+    function syncTabs() {
+        var tabs = document.querySelectorAll('.dsc-model-tab');
+        for (var i = 0; i < tabs.length; i++) {
+            var on = tabs[i].getAttribute('data-tab') === activeTab;
+            tabs[i].classList.toggle('active', on);
+            tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+    }
+
+    function addItem(list, m, cur, dim) {
+        var it = document.createElement('button');
+        it.type = 'button';
+        it.className = 'dsc-model-picker-item' + (m.value === cur && currentDim() === dim ? ' active' : '');
+        it.innerHTML =
+            '<span class="ic"></span>' +
+            '<span class="tx"><span class="nm"></span><span class="ds"></span></span>' +
+            '<span class="ck">✓</span>';
+        it.querySelector('.ic').textContent = dim === 'st' ? '🔀' : (dim === 'db' ? '🧩' : '🤖');
+        it.querySelector('.nm').textContent = m.value;
+        it.querySelector('.ds').textContent =
+            (dim === 'st' ? T('中转站 · st 维度') : (dim === 'db' ? T('豆包 · db 维度') : T('DeepSeek · ds 维度')))
+            + (m.custom ? ' · ' + T('自定义') : '');
+        it.addEventListener('click', function () {
+            if (it.getAttribute('data-busy') === '1') return;
+            it.setAttribute('data-busy', '1');
+            it.classList.add('picked');
+            setTimeout(function () {
+                try {
+                    if (window.dscModelHub && window.dscModelHub.applyModel) {
+                        window.dscModelHub.applyModel(m.value, dim);
+                    } else if (typeof window.dscSetChatModel === 'function') {
+                        window.dscSetChatModel(m.value, true);
+                    }
+                } catch (e) {}
+                var ms = $('dscModelSelect');
+                if (ms && dim === 'ds') { try { ms.value = m.value; } catch (e) {} }
+                close();
+            }, 90);
+        });
+        list.appendChild(it);
+    }
+
+    function render() {
+        var list = $('dscModelPickerList');
+        if (!list) return;
+        list.innerHTML = '';
+        syncTabs();
+        var dim = dimOfTab(activeTab);
+        var items = groupList(activeTab);
+        if (!items.length) {
+            var empty = document.createElement('div');
+            empty.className = 'dsc-model-empty';
+            empty.textContent = dim === 'st'
+                ? T('中转站モデルがありません（＋ で追加）')
+                : (dim === 'db' ? T('豆包の対話モデルがありません（＋ で追加）') : T('DeepSeek モデルがありません'));
+            list.appendChild(empty);
+            return;
+        }
+        var cur = currentModel();
+        for (var i = 0; i < items.length; i++) addItem(list, items[i], cur, dim);
+    }
+
+    function switchTab(tab) {
+        if (tab !== TAB_DS && tab !== TAB_ST && tab !== TAB_DB) return;
+        activeTab = tab;
+        var row = $('dscPickerAddRow');
+        if (row) row.classList.remove('open');
+        render();
+    }
+
+    function openAdd() {
+        var row = $('dscPickerAddRow');
+        var inp = $('dscPickerAddInput');
+        if (!row) return;
+        row.classList.add('open');
+        var dim = dimOfTab(activeTab);
+        if (inp) {
+            inp.value = '';
+            inp.placeholder = dim === 'st'
+                ? T('中转站カスタムモデル名（例：gpt-4o）')
+                : (dim === 'db' ? T('豆包カスタムモデル名（例：doubao-seed-2-2-pro）') : T('DeepSeek カスタムモデル名（例：my-model）'));
+            try { inp.focus(); } catch (e) {}
+        }
+    }
+
+    function closeAdd() {
+        var row = $('dscPickerAddRow');
+        if (row) row.classList.remove('open');
+    }
+
+    function confirmAdd() {
+        var inp = $('dscPickerAddInput');
+        if (!inp) return;
+        var v = String(inp.value || '').trim();
+        if (!v) { if (window.toast) window.toast(T('モデル名を入力してください'), 'error'); return; }
+        if (/\s/.test(v)) { if (window.toast) window.toast(T('モデル名に空白は使用できません'), 'error'); return; }
+        if (v.length > 120) { if (window.toast) window.toast(T('モデル名が長すぎます（最大 120 字）'), 'error'); return; }
+        var dim = dimOfTab(activeTab);
+        var h = hub();
+        inp.value = '';
+        closeAdd();
+        var p;
+        if (dim === 'st') {
+            p = h.addRelay ? h.addRelay(v) : Promise.resolve(false);
+        } else if (dim === 'db') {
+            p = (window.dscDbAddCustomModel ? window.dscDbAddCustomModel(v) : Promise.resolve(false));
+        } else {
+            p = h.addDs ? h.addDs(v) : Promise.resolve(false);
+        }
+        Promise.resolve(p).then(function (ok) {
+            render();
+            if (ok) {
+                try {
+                    if (window.dscModelHub && window.dscModelHub.applyModel) {
+                        window.dscModelHub.applyModel(v, dim);
+                    }
+                } catch (e) {}
+                if (window.toast) {
+                    window.toast((dim === 'st' ? T('✅ 中转站カスタムモデルを追加しました：')
+                        : (dim === 'db' ? T('✅ 豆包カスタムモデルを追加しました：') : T('✅ DeepSeek カスタムモデルを追加しました：'))) + v, 'success');
+                }
+            } else if (window.toast) {
+                window.toast(T('追加に失敗しました：') + v, 'error');
+            }
+        });
+    }
+
+    function open() {
+        var overlay = $('dscModelOverlay');
+        var list = $('dscModelPickerList');
+        if (!overlay || !list) return;
+        var d = currentDim();
+        activeTab = d === 'st' ? TAB_ST : (d === 'db' ? TAB_DB : TAB_DS);
+        var row = $('dscPickerAddRow');
+        if (row) row.classList.remove('open');
+        render();
+        overlay.classList.add('open');
+    }
+
+    function close() {
+        var overlay = $('dscModelOverlay');
+        if (overlay) overlay.classList.remove('open');
+    }
+
+    function bind() {
+        var overlay = $('dscModelOverlay');
+        if (!overlay) return;
+        var list = $('dscModelPickerList');
+        var addRow = $('dscPickerAddRow');
+        if (list && addRow && !$('dscPickerAddBtn')) {
+            var ab = document.createElement('button');
+            ab.id = 'dscPickerAddBtn';
+            ab.type = 'button';
+            ab.className = 'dsc-btn';
+            ab.style.marginTop = '8px';
+            ab.textContent = '＋ ' + T('カスタムモデルを追加（現在の分区）');
+            addRow.parentNode.insertBefore(ab, addRow);
+            ab.addEventListener('click', function (e) {
+                if (e) { e.preventDefault(); e.stopPropagation(); }
+                openAdd();
+            });
+        }
+        var ok = $('dscPickerAddOk');
+        if (ok) ok.addEventListener('click', function (e) { if (e) { e.preventDefault(); e.stopPropagation(); } confirmAdd(); });
+        var cancel = $('dscPickerAddCancel');
+        if (cancel) cancel.addEventListener('click', function (e) { if (e) { e.preventDefault(); e.stopPropagation(); } closeAdd(); });
+        var inp = $('dscPickerAddInput');
+        if (inp) inp.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); confirmAdd(); }
+            else if (e.key === 'Escape') { e.preventDefault(); closeAdd(); }
+        });
+
+        var closeBtn = $('dscModelPickerClose');
+        if (closeBtn) closeBtn.addEventListener('click', close);
+        overlay.addEventListener('click', function (e) { if (e.target === overlay) close(); });
+
+        var tabs = overlay.querySelectorAll('.dsc-model-tab');
+        for (var i = 0; i < tabs.length; i++) {
+            tabs[i].addEventListener('click', function (e) {
+                e.stopPropagation();
+                switchTab(this.getAttribute('data-tab'));
+            });
+        }
+        // ★ 对外：聊天框模型选择器需要复用同一个弹窗时可直接调用
+        window.dscOpenModelPicker = open;
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+})();

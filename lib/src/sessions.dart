@@ -23,6 +23,8 @@ const int DS_MAX_OUTPUT_TOKENS = 120000;
 ///   旧数据没有第 9 字段 -> 解析为 DS_DIM_DS，与历史 100% 兼容。
 const String DS_DIM_DS = 'ds';
 const String DS_DIM_DB = 'db';
+/// ST 维度：独立于 DeepSeek（ds）/ 豆包（db）的第三条消息流，三者互不可见。
+const String DS_DIM_ST = 'st';
 const int DS_NORMAL_OUTPUT_TOKENS = 8192;
 const int DS_TARGET_CHARS_5M = 5000000;
 const int DS_TTS_MAX_RUNES = 1000000;

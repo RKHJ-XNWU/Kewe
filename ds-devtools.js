@@ -185,18 +185,65 @@
             '<button class="dsdt-enter-btn" id="dsdtEnterBtn" type="button">' +
                 '<span class="ic">💉</span><span>プロンプトを注入</span>' +
             '</button>' +
+            '<button class="dsdt-enter-btn" id="dsdtInjectAllTopBtn" type="button" style="margin-top:8px;">' +
+                '<span class="ic">⚡</span><span>一键注入全部提示词</span>' +
+            '</button>' +
+            '<button class="dsdt-enter-btn" id="dsdtClearInjectTopBtn" type="button" style="margin-top:8px;">' +
+                '<span class="ic">🚫</span><span>一键取消全部提示词注入</span>' +
+            '</button>' +
             '<div class="dsdt-hint">' +
-                '開いたあとプロンプトをタップで注入／もう一度タップで解除<br>' +
-                '追加・編集・削除・一括削除・すべて削除に対応' +
+                '开いたあとプロンプトをタップで注入／もう一度タップで解除<br>' +
+                '追加・編集・削除・一括削除・すべて削除・一键注入全部・一键取消全部に対応' +
             '</div>';
 
         var btn = $('dsdtEnterBtn');
         if (btn) btn.addEventListener('click', enterListMode);
+
+        var injAllTop = $('dsdtInjectAllTopBtn');
+        if (injAllTop) injAllTop.addEventListener('click', injectAllPrompts);
+
+        // ★ 一键取消全部注入（入口视图）
+        var clrInjTop = $('dsdtClearInjectTopBtn');
+        if (clrInjTop) clrInjTop.addEventListener('click', function () { clearAllInjections(true); });
     }
 
     function enterListMode() {
         state.inListMode = true;
         loadPrompts();
+    }
+
+    // ★ 一键注入全部：拉取全量列表后把所有提示词一次性标记为「注入済み」
+    function injectAllPrompts() {
+        api('GET', API_BASE + '/prompts').then(function (data) {
+            state.prompts = data.prompts || [];
+            state.loaded = true;
+            if (state.prompts.length === 0) { toast('プロンプトなし', 'info'); return; }
+            state.prompts.forEach(function (p) { state.activeIds[p.id] = true; });
+            pruneActiveIds();
+            saveActiveIds();
+            toast('💉 已一键注入全部 ' + state.prompts.length + ' 条提示词', 'success');
+            state.inListMode = true;
+            renderList();
+        }).catch(function (e) {
+            toast('注入失败: ' + e.message, 'error');
+        });
+    }
+
+    // ★ 一键取消全部注入：清空所有「注入済み」标记。
+    //   只取消注入状态，不删除任何提示词正文（与「すべて削除」严格区分）。
+    //   清空后 window.__dsDevToolsGetInjectedContents() 立即返回空数组，
+    //   下一次发送不再携带任何注入段。
+    function clearAllInjections(fromEntry) {
+        var activeCount = Object.keys(state.activeIds || {}).length;
+        if (activeCount === 0) {
+            toast('取消する注入はありません', 'info');
+            if (fromEntry) renderEntry(); else renderList();
+            return;
+        }
+        state.activeIds = {};
+        saveActiveIds();
+        if (fromEntry) renderEntry(); else renderList();
+        toast('🚫 已一键取消全部提示词注入（' + activeCount + ' 条）', 'success');
     }
 
     // ============================================================
@@ -237,6 +284,9 @@
 
         html += '<div class="dsdt-toolbar">';
         html += '<button class="dsdt-btn primary" id="dsdtAddBtn" type="button">＋ 追加</button>';
+        html += '<button class="dsdt-btn primary" id="dsdtInjectAllBtn" type="button">💉 一键注入全部</button>';
+        html += '<button class="dsdt-btn" id="dsdtClearInjectBtn" type="button">🚫 一键取消全部注入' +
+                    (activeCount > 0 ? '（' + activeCount + '）' : '') + '</button>';
         html += '<button class="dsdt-btn" id="dsdtSelectBtn" type="button">' +
                     (state.selectMode ? '✕ 複数選択を終了' : '☑️ 複数選択') + '</button>';
         if (state.selectMode) {
@@ -304,6 +354,20 @@
     function bindListEvents() {
         var addBtn = $('dsdtAddBtn');
         if (addBtn) addBtn.addEventListener('click', function () { renderEditor(null); });
+
+        // ★ 一键注入全部：把当前列表里的所有提示词全部标记为「注入済み」
+        var injectAllBtn = $('dsdtInjectAllBtn');
+        if (injectAllBtn) injectAllBtn.addEventListener('click', function () {
+            if (!state.prompts || state.prompts.length === 0) { toast('プロンプトなし', 'info'); return; }
+            state.prompts.forEach(function (p) { state.activeIds[p.id] = true; });
+            saveActiveIds();
+            renderList();
+            toast('💉 已一键注入全部 ' + state.prompts.length + ' 条提示词', 'success');
+        });
+
+        // ★ 一键取消全部注入（列表视图）
+        var clearInjectBtn = $('dsdtClearInjectBtn');
+        if (clearInjectBtn) clearInjectBtn.addEventListener('click', function () { clearAllInjections(false); });
 
         var backBtn = $('dsdtBackBtn');
         if (backBtn) backBtn.addEventListener('click', renderEntry);

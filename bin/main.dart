@@ -31,6 +31,7 @@ import 'package:kewe/src/vocab.dart';
 import 'package:kewe/src/httpsrv.dart';
 import 'package:kewe/src/model_router.dart';
 import 'package:kewe/src/peakvalley.dart';
+import 'package:kewe/src/relay.dart';
 import 'package:kewe/src/search.dart';
 import 'package:kewe/src/session_ref.dart';
 import 'package:kewe/src/sessions.dart';
@@ -167,6 +168,10 @@ void registerRoutes() {
   // ---------- 公告 ----------
   _register('/api/announcements', handleAnnouncements);
   _register('/api/announcements/active', handleAnnouncementsActive);
+
+  // ---------- 中转站（OpenAI 兼容渠道，如 sta1n.ai）----------
+  _register('/api/relay/config', handleRelayConfig);
+  _register('/api/relay/models', handleRelayModels);
 
   // ---------- 自定义模型（displaymodels：一模型一 .sts 文件）----------
   _register('/api/displaymodels', handleDisplayModels);

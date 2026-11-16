@@ -558,33 +558,33 @@ const String DB_TOOL_AGENT_SYSTEM_PROMPT = '''
 以上の規約を遵守し、実行型エージェントとして振る舞う。今からタスクを実行する。
 ''';
 
-/// 语言附加条款：保证「AI 回复语言跟随界面」，
+/// 语言附加条款：AI 可以用任何语言作答，不受语言限制（跟随用户）。
 /// 同时把「禁止拒绝 / 禁止推回用户」用该语言写死。
 const Map<String, String> DB_TOOL_LANG_RIDER = <String, String>{
   'zh': '''
 
 【语言要求】
-13. 全部输出（思考过程、正文、道歉、错误说明）必须使用简体中文。
+13. 回答语言不受限制：用户用什么语言就用什么语言，可以自由使用任何语言。
 ''',
   'en': '''
 
 【Language】
-13. Write every output — reasoning, body, apology, error text — in English.
+13. No language restriction: answer in whatever language the user uses; any language is allowed.
 ''',
   'ko': '''
 
 【언어】
-13. 사고 과정, 본문, 사과, 오류 설명을 포함한 모든 출력을 한국어로 작성할 것.
+13. 언어 제한 없음: 사용자가 쓰는 언어로 답하고, 어떤 언어든 자유롭게 사용할 수 있다.
 ''',
   'fr': '''
 
 【Langue】
-13. Tous les textes produits — raisonnement, corps, excuses, messages d'erreur — doivent être en français.
+13. Aucune restriction de langue : répondez dans la langue de l'utilisateur, toute langue est permise.
 ''',
   'ru': '''
 
 【Язык】
-13. Весь вывод — рассуждения, основной текст, извинения, сообщения об ошибках — на русском языке.
+13. Ограничений по языку нет: отвечайте на языке пользователя, любой язык допустим.
 ''',
 };
 

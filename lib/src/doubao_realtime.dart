@@ -48,14 +48,14 @@ const String dbRtcVersion = '2025-06-01';
 // 默认系统提示词
 //   语音通话里模型会被逐句朗读，因此必须压制长句、列表与 Markdown。
 // ------------------------------------------------------------
-/// 各语言的一句话「用什么语言说话」指令
+/// 各语言的「说话语言」指令：语言自由，跟随用户
 const Map<String, String> _dbSpeakLang = <String, String>{
-  'ja': '日本語で話してください。',
-  'zh': '请用简体中文说话。',
-  'en': 'Please speak in English.',
-  'ko': '한국어로 말하세요.',
-  'ru': 'Говорите по-русски.',
-  'fr': 'Parlez en français.',
+  'ja': '話す言語は自由です。ユーザーが使っている言語に合わせてください。',
+  'zh': '说话语言不受限制，请跟随用户使用的语言。',
+  'en': 'There is no language restriction; speak in the language the user uses.',
+  'ko': '말하는 언어는 자유이며 사용자가 쓰는 언어를 따르세요.',
+  'ru': 'Язык не ограничен: говорите на языке пользователя.',
+  'fr': "La langue n'est pas imposée : parlez dans la langue de l'utilisateur.",
 };
 
 /// 语音通话提示词
@@ -65,8 +65,7 @@ const Map<String, String> _dbSpeakLang = <String, String>{
 String dbDuplexSystemPrompt(String lang) {
   final say = _dbSpeakLang[lang] ?? _dbSpeakLang['zh']!;
   return '你正在和用户进行实时语音通话。$say\n'
-      '如果用户使用其他语言（如日语、英语、韩语、法语等），请自动跟随用户的语言回复，'
-      '不要坚持固定语言。\n'
+      '语言不受任何限制，任何语言都可以使用，始终跟随用户当前使用的语言。\n'
       '要求：\n'
       '1. 回答最多 1000 字，最少不限，说完就停。\n'
       '2. 不要列表、不要 Markdown、不要念代码、网址或标点符号串。\n'

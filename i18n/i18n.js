@@ -12,10 +12,11 @@
     'use strict';
 
     // ---------- 基本定義 ----------
-    var STORAGE_KEY = 'dsc_ui_lang';
+    // 语言记忆键：换代一次，抹掉历史遗留的日语偏好，让默认语言（简体中文）真正生效
+    var STORAGE_KEY = 'dsc_ui_lang2';
     // 言語切替が成立したらページを再読込する（辞書適用漏れを確実に消す）
     var RELOAD_ON_LANG_CHANGE = true;
-    var DEFAULT_LANG = 'ja';
+    var DEFAULT_LANG = 'zh';
     var LANGS = ['ja', 'zh', 'en', 'ko', 'ru', 'fr'];
     var LANG_LABEL = {
         ja: '日本語', zh: '中文', en: 'English',

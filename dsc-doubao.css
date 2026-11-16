@@ -574,6 +574,11 @@
     --wp-rgb: 168, 85, 247;
     --wp-dim: #1a0b33;
 }
+#dscDimWarp.dsc-warp-st {
+    --wp: #2dd4bf;
+    --wp-rgb: 45, 212, 191;
+    --wp-dim: #05232b;
+}
 #dscDimWarp.dsc-warp-ds {
     --wp: #38bdf8;
     --wp-rgb: 56, 189, 248;
@@ -1919,3 +1924,104 @@
     word-break: break-word;
     white-space: pre-wrap;
 }
+
+
+/* ============================================================
+ * ST 维度ボタン（右上・豆包モードボタンの左隣）
+ *   ON：ST 维度（dim=st）へ移動。豆包 / DeepSeek とは会話も文脈も完全独立。
+ * ============================================================ */
+.dsc-st-mode-btn {
+    position: relative;
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: #0f766e;
+    border-color: #99f6e4;
+    background: #f0fdfa;
+}
+.dsc-st-mode-btn .dsc-st-mode-lbl {
+    line-height: 1;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: #0f766e;
+}
+.dsc-st-mode-btn .dsc-st-mode-lbl svg {
+    display: block;
+    width: 18px;
+    height: 18px;
+}
+.dsc-st-mode-btn.active {
+    background: linear-gradient(135deg, #0d9488 0%, #0ea5e9 55%, #6366f1 100%);
+    border-color: #0d9488;
+    color: #ffffff;
+    box-shadow: 0 3px 10px rgba(13, 148, 136, 0.38);
+}
+.dsc-st-mode-btn.active .dsc-st-mode-lbl { color: #ffffff; }
+.dsc-st-mode-btn.active::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 2px #ffffff;
+}
+
+/* ===== 三分区模型中心（DeepSeek / 中转站 / 豆包 严格分离）===== */
+.dsc-qm-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 6px 6px;
+}
+.dsc-qm-group-name {
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #9ca3af;
+    letter-spacing: 0.04em;
+}
+.dsc-qm-group-add {
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    border: 1px solid #e0e7ff;
+    background: #eef2ff;
+    color: #4f46e5;
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+    padding: 0;
+}
+.dsc-qm-group-add:active { transform: scale(0.94); }
+.dsc-qm-tag-custom {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fed7aa;
+}
+.dsc-qm-del {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fee2e2;
+    color: #ef4444;
+    font-size: 0.85rem;
+    font-weight: 900;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.dsc-qm-del:active { transform: scale(0.9); }

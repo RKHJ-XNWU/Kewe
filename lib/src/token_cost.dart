@@ -23,6 +23,7 @@ class TokenPrice {
   final double? audio;   // 音声输入单价（未命中）
   final double? audioHit; // 音声输入单价（命中）
   final bool flat;       // 终日均价（无高峰/闲时倍率）
+  final double? perRequest; // 固定价（元/请求），>0 时优先按请求计费
 
   const TokenPrice({
     required this.hit,
@@ -31,6 +32,7 @@ class TokenPrice {
     this.audio,
     this.audioHit,
     this.flat = false,
+    this.perRequest,
   });
 }
 
@@ -47,6 +49,13 @@ const Map<String, TokenPrice> _PRICE = {
   // 豆包 Seed-2.1-lite：终日均价（无高峰/闲时倍率）
   //   输入（未命中）0.8 / 输入（命中）0.16 / 输出 2.7
   //   音声输入（未命中）12 / 音声输入（命中）2.4
+  // OpenAI 兼容中转站（sta1n.ai）模型：终日均价（无高峰/闲时倍率）
+  //   单位：元 / 100 万 tokens；perRequest 为固定价（元/请求）
+  '[次][抗截断]gemini-3.8-flash': TokenPrice(hit: 0, miss: 0, out: 0, flat: true, perRequest: 0.025),
+  '[kiro]claude-opus-4-8': TokenPrice(hit: 0.35, miss: 3.5, out: 17.5, flat: true),
+  '[kiro]claude-haiku-5-5': TokenPrice(hit: 0.021, miss: 0.21, out: 1.05, flat: true),
+  '[asp]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
+  '[抗截断]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
   'doubao-seed-2-1-lite-260915': TokenPrice(
     hit: 0.16, miss: 0.8, out: 2.7,
     audio: 12, audioHit: 2.4, flat: true,
@@ -188,10 +197,30 @@ class TokenCostCalculator {
     var audio = u.audioInputTokens;
     if (audio < 0) audio = 0;
     if (audio > t.prompt) audio = t.prompt;
-    if (t.hit == 0 && t.miss == 0 && t.out == 0 && audio == 0) return null;
-
     final price = priceFor(u.model.isEmpty ? 'deepseek-flash' : u.model);
     if (price == null) return null;
+
+    // ★ 固定价模型（按请求计费）：perRequest > 0 时优先按请求次数计费，
+    //   即使 token 全 0 也能正确返回金额。
+    final perReq = price.perRequest;
+    if (perReq != null && perReq > 0) {
+      final calls = u.apiCalls > 0 ? u.apiCalls : 1;
+      return TokenCostResult(
+        cost: perReq * calls,
+        peak: false,
+        flat: true,
+        hit: t.hit,
+        miss: t.miss,
+        out: t.out,
+        audio: audio,
+        audioMiss: 0,
+        audioHit: 0,
+        prompt: t.prompt,
+        total: t.total,
+      );
+    }
+
+    if (t.hit == 0 && t.miss == 0 && t.out == 0 && audio == 0) return null;
 
     final audioRate = price.audio ?? price.miss;
     final audioHitRate = price.audioHit ?? price.hit;

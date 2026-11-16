@@ -16,6 +16,7 @@ import 'ds_usage.dart';
 import 'files.dart';
 import 'globals.dart';
 import 'httpsrv.dart';
+import 'relay.dart';
 import 'sessions.dart';
 import 'tools.dart' show runProcess;
 import 'tts_edge.dart';
@@ -216,7 +217,7 @@ Future<void> handleDsChatSessionsBatchDelete(HttpRequest req) async {
 ///   都不传时回退 DS_DIM_DS，与历史数据的语义保持一致。
 String dsDimFromReq(HttpRequest req, [String bodyModel = '']) {
   final d = qp(req, 'dim').trim();
-  if (d == DS_DIM_DB || d == DS_DIM_DS) return d;
+  if (d == DS_DIM_DB || d == DS_DIM_DS || d == DS_DIM_ST) return d;
   var m = bodyModel.trim();
   if (m.isEmpty) m = qp(req, 'model').trim();
   if (m.isEmpty) return DS_DIM_DS;
@@ -341,18 +342,28 @@ Future<void> handleDsChatTest(HttpRequest req) async {
   }
   var apiKey = mStr(body, 'apiKey').trim();
   final cfg = getDsConfig();
-  if (apiKey.isEmpty) apiKey = cfg.apiKey;
+  var model = mStr(body, 'model').trim();
+  if (model.isEmpty) model = cfg.model;
+  if (model.isEmpty) model = DS_DEFAULT_MODEL;
+  final relayCfg = getRelayConfig();
+  final useRelay = isRelayModel(model);
+  var callUrl = DS_API_URL;
+  if (apiKey.isEmpty) {
+    if (useRelay) {
+      apiKey = relayCfg.apiKey;
+      callUrl = relayChatEndpoint();
+    } else {
+      apiKey = cfg.apiKey;
+    }
+  }
   if (apiKey.isEmpty) {
     await dsJSONErr(res, 400, '缺少 API Key');
     return;
   }
-  var model = mStr(body, 'model').trim();
-  if (model.isEmpty) model = cfg.model;
-  if (model.isEmpty) model = DS_DEFAULT_MODEL;
   try {
     final r = await callDsChatAPI(apiKey, model, [
       {'role': 'user', 'content': 'こんにちは'}
-    ], 8192, 1.0, null);
+    ], 8192, 1.0, null, apiUrl: callUrl);
     await dsJSONOk(
         res, 200, {'success': true, 'reply': r.content, 'model': model});
   } catch (e) {
@@ -646,7 +657,9 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
   // ★ 优先采用前端在「发送时」冻结的维度：
   //   用户中途切换模式后才触发 abort-save 时，model 已不代表原维度。
   final abortDimReq = mStr(body, 'dim').trim();
-  final abortDim = (abortDimReq == DS_DIM_DB || abortDimReq == DS_DIM_DS)
+  final abortDim = (abortDimReq == DS_DIM_DB ||
+          abortDimReq == DS_DIM_DS ||
+          abortDimReq == DS_DIM_ST)
       ? abortDimReq
       : (dbIsChatModel(abortModel) ? DS_DIM_DB : DS_DIM_DS);
 
@@ -768,9 +781,15 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   final cfg = getDsConfig();
   final model = trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model);
 
+  // ★ 维度：ST も含めてリクエストから確定させる（モデル名では区別できない）
+  final contDim = dsDimFromReq(req, model);
+
+  // 通道判定：中转站 > 豆包（方舟）> DeepSeek。
   // 豆包模型の継続生成は方舟へ送る（DeepSeek の Key と用量には一切触れない）
-  final useDoubao = dbIsChatModel(model);
   final dbCfg = getDbConfig();
+  final relayCfg = getRelayConfig();
+  final useRelay = isRelayModel(model);
+  final useDoubao = !useRelay && dbIsChatModel(model);
   if (useDoubao) {
     if (dbCfg.apiKey.trim().isEmpty) {
       await dsJSONErr(
@@ -779,18 +798,27 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
           dbLocalized(dsRequestLang(req, body), 'keyMissingForModel'));
       return;
     }
+  } else if (useRelay) {
+    if (relayCfg.apiKey.trim().isEmpty) {
+      await dsJSONErr(res, 400, '已选择中转站模型，但中转站 API Key 未填写');
+      return;
+    }
   } else if (cfg.apiKey.isEmpty) {
     await dsJSONErr(res, 400, '先に DeepSeek API Key を設定してください');
     return;
   }
-  final callKey = useDoubao ? dbCfg.apiKey : cfg.apiKey;
-  final callUrl = useDoubao ? dbChatEndpoint() : DS_API_URL;
+  final callKey = useDoubao
+      ? dbCfg.apiKey
+      : (useRelay ? relayCfg.apiKey : cfg.apiKey);
+  final callUrl = useDoubao
+      ? dbChatEndpoint()
+      : (useRelay ? relayChatEndpoint() : DS_API_URL);
   // 豆包モデルの継続生成でも「考えてから書く」を維持する
   final extraBody = useDoubao ? dbThinkingEnableParam(model) : null;
 
   // ★ 只把「同一维度」的历史发给模型，豆包与 DeepSeek 互不可见
   final history = getDsMessages(sessionID,
-      dim: useDoubao ? DS_DIM_DB : DS_DIM_DS);
+      dim: contDim);
   var oldReasoning = '';
   if (messageID.isNotEmpty) {
     for (final m in history) {
@@ -881,7 +909,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   if (messageID.isNotEmpty) {
     final upd = updateDsMessageContent(sessionID, messageID, merged,
         finalReasoning, usageAcc.snapshot(),
-        dim: useDoubao ? DS_DIM_DB : DS_DIM_DS);
+        dim: contDim);
     if (upd != null) {
       aiMsg = upd;
       final sess = getDsSession(sessionID);
@@ -898,7 +926,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
       createdAt: rfc3339(DateTime.now()),
       reasoning: finalReasoning,
       usage: usageAcc.snapshot(),
-      dim: useDoubao ? DS_DIM_DB : DS_DIM_DS,
+      dim: contDim,
     );
     appendDsMessage(a);
     aiMsg = a;
@@ -981,16 +1009,17 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
     await dsJSONErr(res, 400, '翻訳するテキストが空です');
     return;
   }
-  // ★ 翻訳ボタンは常に doubao-seed-2-1-lite-260915（方舟）を使う
-  const String translateModel = 'doubao-seed-2-1-lite-260915';
-  final dbCfg = getDbConfig();
-  if (dbCfg.apiKey.trim().isEmpty) {
-    await dsJSONErr(res, 400, '先に豆包 API Key を設定してください');
+  // ★ 翻訳ボタンは必ず DeepSeek 公式チャンネル（模型：deepseek-v4.1-flash-1017）
+  //   豆包（方舟）は一切使わない：翻訳の課金・応答は DeepSeek 側に固定する。
+  const String translateModel = 'deepseek-flash';
+  final dsCfg = getDsConfig();
+  if (dsCfg.apiKey.trim().isEmpty) {
+    await dsJSONErr(res, 400, '先に DeepSeek API Key を設定してください');
     return;
   }
   var model = translateModel;
-  final callKey = dbCfg.apiKey;
-  final callUrl = dbChatEndpoint();
+  final callKey = dsCfg.apiKey;
+  final callUrl = DS_API_URL;
 
   // ★ Markdown を 1 文字も壊さないための厳格プロンプト
   const systemPrompt = 'あなたは Markdown に精通した優秀な翻訳者です。入力テキストを指定された言語へ翻訳します。\n'
