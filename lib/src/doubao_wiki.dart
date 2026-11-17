@@ -242,7 +242,7 @@ Future<void> callDbWikiResponsesStream(
     throw Exception('输入内容为空');
   }
   if (mediaParts.isNotEmpty) {
-    logp('🖼️ 联网内容插件：附帯画像 ${wikiMedia.length} 枚を input_image として送信');
+    logp('🖼️ 联网内容插件：把附带的 ${wikiMedia.length} 张图片作为 input_image 发送');
   }
 
   var mt = maxTokens;
@@ -273,7 +273,7 @@ Future<void> callDbWikiResponsesStream(
   req.headers.set('Content-Type', 'application/json');
   req.headers.set('Authorization', 'Bearer $apiKey');
   req.headers.set('Accept', 'text/event-stream');
-  // ★ 上流圧縮の無効化（思考チェーンが数フレーム分まとめて届くのを防ぐ）
+  // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
   req.headers.set('Accept-Encoding', 'identity');
   req.add(utf8.encode(jsonEncode(body)));
 
@@ -394,12 +394,12 @@ Future<void> callDbWikiResponsesStream(
           final det = u['input_tokens_details'];
           if (det is Map) {
             cached = _asInt(det['cached_tokens']);
-            // ★ 音声入力 token（Responses 形式）。豆包 2.1-lite の音声単価は
-            //   入力と別建てなので、ここで拾わないと過少計上になる。
+            // ★ 语音输入 token（Responses 形式）。豆包 2.1-lite 的语音单价为
+            //   与输入分开计，这里不取就会少计。
             audioIn = _asInt(det['audio_tokens']);
             if (audioIn == 0) audioIn = _asInt(det['input_audio_tokens']);
           }
-          // 料金表はモデル毎に違うため、usage 自身にモデルを焼き込んで永続化する
+          // 价目表因模型而异，故把模型烧进 usage 本身并持久化
           usageAcc.model = model;
           usageAcc.addRaw(RawDsUsage(
             promptTokens: inTok,
@@ -622,7 +622,7 @@ Future<DbWikiRound> _dbWikiStreamRound({
   req.headers.set('Content-Type', 'application/json');
   req.headers.set('Authorization', 'Bearer $apiKey');
   req.headers.set('Accept', 'text/event-stream');
-  // ★ 上流圧縮の無効化（思考チェーンが数フレーム分まとめて届くのを防ぐ）
+  // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
   req.headers.set('Accept-Encoding', 'identity');
   req.add(utf8.encode(jsonEncode(body)));
 
@@ -771,11 +771,11 @@ Future<DbWikiRound> _dbWikiStreamRound({
             final det = u['input_tokens_details'];
             if (det is Map) {
               cached = _asInt(det['cached_tokens']);
-              // ★ 音声入力 token（Responses 形式・入力単価と別建て）
+              // ★ 语音输入 token（Responses 形式・与输入单价分开计）
               audioIn = _asInt(det['audio_tokens']);
               if (audioIn == 0) audioIn = _asInt(det['input_audio_tokens']);
             }
-            // 料金表はモデル毎に違うため usage にモデルを焼き込む
+            // 价目表因模型而异，故把模型烧进 usage
             usageAcc.model = model;
             usageAcc.addRaw(RawDsUsage(
               promptTokens: inTok,
@@ -872,7 +872,7 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
   final built = dbWikiBuildInput(messages, mediaParts: wikiMedia);
   if (built.input.isEmpty) throw Exception('输入内容为空');
   if (wikiMedia.isNotEmpty) {
-    logp('🖼️ 工具混用：附帯画像 ${wikiMedia.length} 枚を input_image として送信');
+    logp('🖼️ 工具混用：把附带的 ${wikiMedia.length} 张图片作为 input_image 发送');
   }
 
   // 这里只需要「非 DeepSeek 通道」这一信息，故直接传 ark 标记，
@@ -882,7 +882,7 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
     {'type': 'web_search', 'sources': src},
     ...fnTools,
   ];
-  logp('🔧🌐 ツール混用モード: web_search(${src.join(",")}) + function ${fnTools.length} 個');
+  logp('🔧🌐 工具混用模式: web_search(${src.join(",")}) + function ${fnTools.length} 个');
 
   final input = <Map<String, dynamic>>[...built.input];
   final allContent = StringBuffer();
@@ -927,7 +927,7 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
       final result = await dsSafeExecTool(name, args);
       await onToolCall?.call('end', name, args, result);
 
-      final logLine = '🔧 ツール呼び出し: $name\n'
+      final logLine = '🔧 工具调用: $name\n'
           '参数: ${truncateRunes(args, 60000)}\n'
           '結果: ${truncateRunes(result, 120000)}\n';
       toolLogs.add(logLine);

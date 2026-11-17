@@ -38,28 +38,28 @@ class DbModelSpec {
 
 const List<DbModelSpec> dbModelCatalog = <DbModelSpec>[
   DbModelSpec('Doubao_scene_SLM_Doubao_realtime_voice_model',
-      '豆包リアルタイム音声対話（Doubao-リアルタイム音声対話）', 'realtime'),
-  DbModelSpec('Doubao_Seed_ASR_AUC_2.0', '豆包録音ファイル認識（Doubao-録音ファイル認識2.0）', 'asr'),
+      '豆包实时语音对话（Doubao-实时语音对话）', 'realtime'),
+  DbModelSpec('Doubao_Seed_ASR_AUC_2.0', '豆包录音文件识别（Doubao-录音文件识别2.0）', 'asr'),
   DbModelSpec(
-      'Doubao_Seed_ASR_Streaming_2.0', 'Doubao-ストリーミング音声認識（ストリーミング認識）', 'asr'),
+      'Doubao_Seed_ASR_Streaming_2.0', 'Doubao-流式语音识别（流式识别）', 'asr'),
   DbModelSpec('Doubao_scene_SLM_Doubao_Podcast_model',
-      'Doubao-音声ポッドキャスト（音声ポッドキャスト）', 'podcast'),
+      'Doubao-语音播客（语音播客）', 'podcast'),
   DbModelSpec('SeedAudio1.0', 'Doubao-音声生成-1.0（音声生成）', 'tts'),
-  DbModelSpec('doubao-seedream-4-5-251128', 'Doubao-Seedream-4.5（画像生成モデル4K）', 'image'),
+  DbModelSpec('doubao-seedream-4-5-251128', 'Doubao-Seedream-4.5（图像生成模型4K）', 'image'),
   DbModelSpec(
       'doubao-seedream-5-0-260128', 'Doubao-Seedream-5.0-Lite（軽量画像生成）', 'image'),
   DbModelSpec(
       'doubao-seedream-5-0-pro-260628', 'Doubao-Seedream-5.0-pro（高精度画像生成）', 'image'),
   DbModelSpec('doubao-seededit-3-0-i2i-250628',
-      '豆包 SeedEdit 3.0（画像編集・P图モデル）', 'imageedit'),
+      '豆包 SeedEdit 3.0（图像编辑・修图模型）', 'imageedit'),
   DbModelSpec('doubao-seedance-2-5-260628',
-      'Doubao-Seedance-2.5（次世代動画生成・4-30秒・4K対応）', 'video'),
+      'Doubao-Seedance-2.5（新一代视频生成・4-30秒・支持 4K）', 'video'),
   DbModelSpec('doubao-seedance-2-0-mini-260615', 'Doubao-Seedance-2.0-mini（動画生成）',
       'video'),
   DbModelSpec('doubao-seedance-2-0-fast-260128',
       'Doubao-Seedance-2.0-fast（高速動画生成）', 'video'),
   DbModelSpec('doubao-seedance-2-0-260128', 'Doubao-Seedance-2.0（動画生成）', 'video'),
-  DbModelSpec('glm-5-2-260617', 'GLM-5.2（コーディングモデル）', 'chat'),
+  DbModelSpec('glm-5-2-260617', 'GLM-5.2（编程模型）', 'chat'),
   DbModelSpec('doubao-seed-2-0-mini-260428', 'Doubao-Seed-2.0-mini', 'chat'),
   DbModelSpec('doubao-seed-evolving-latest-version', 'Doubao-Seed-Evolving', 'chat'),
   DbModelSpec('doubao-seed-2-1-pro-260628', 'Doubao-Seed-2.1-pro', 'chat'),
@@ -70,13 +70,13 @@ const List<DbModelSpec> dbModelCatalog = <DbModelSpec>[
 
 /// 图片风格预置（前端展示，选中后拼进提示词；也允许自定义）
 const List<String> dbImageStyles = <String>[
-  'アニメ',
+  '动漫',
   '二次元',
-  '日本アニメ風',
-  'ピクセル',
-  'シネマティック',
+  '日漫风',
+  '像素',
+  '电影感',
   '特撮風',
-  '中国アニメ風',
+  '国漫风',
   '田野風',
 ];
 
@@ -93,15 +93,15 @@ const String DB_DEFAULT_VOICE = 'zh_female_xiaohe_uranus_bigtts';
 const String DB_DEFAULT_VOICE_B = 'zh_male_qingshuangnanda_mars_bigtts';
 
 // ------------------------------------------------------------
-// 多言語メッセージ（6 言語）
-//   UI 言語に合わせて直接その言語で返すため、前端の二次翻訳に依存しない。
-//   key ごとに ja / zh / en / ko / ru / fr を必ず揃える。
+// 多语言消息（6 种语言）
+//   按 UI 语言直接用该语言返回，不依赖前端的二次翻译。
+//   每个 key 必须凑齐 ja / zh / en / ko / ru / fr。
 // ------------------------------------------------------------
 const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String>>{
   'audioUnsupported': <String, String>{
-    'ja': '選択中の豆包モデル（{0}）は音声理解に対応していません。'
-        '音声理解対応モデル（{1}）に切り替えてください。'
-        '音声を DeepSeek へ送信することはありません。',
+    'ja': '当前选择的豆包模型（{0}）不支持语音理解。'
+        '请切换到支持语音理解的模型（{1}）。'
+        '不会把音频发送给 DeepSeek。',
     'zh': '当前所选豆包模型（{0}）不支持音频理解。'
         '请切换到支持音频理解的模型（{1}）。音频不会发送给 DeepSeek。',
     'en': 'The selected Doubao model ({0}) does not support audio understanding. '
@@ -118,9 +118,9 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Votre audio n’est jamais envoyé à DeepSeek.',
   },
   'videoUnsupported': <String, String>{
-    'ja': '選択中の豆包モデル（{0}）は動画理解に対応していません。'
-        '動画理解対応モデル（{1}）に切り替えてください。'
-        '動画を DeepSeek へ送信することはありません。',
+    'ja': '当前选择的豆包模型（{0}）不支持视频理解。'
+        '请切换到支持视频理解的模型（{1}）。'
+        '不会把视频发送给 DeepSeek。',
     'zh': '当前所选豆包模型（{0}）不支持视频理解。'
         '请切换到支持视频理解的模型（{1}）。视频不会发送给 DeepSeek。',
     'en': 'The selected Doubao model ({0}) does not support video understanding. '
@@ -137,7 +137,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Votre vidéo n’est jamais envoyée à DeepSeek.',
   },
   'audioTooLarge': <String, String>{
-    'ja': '音声ファイルが大きすぎます（上限 40MB）：{0}',
+    'ja': '音频文件过大（上限 40MB）：{0}',
     'zh': '音频文件过大（上限 40MB）：{0}',
     'en': 'Audio file is too large (limit 40MB): {0}',
     'ko': '오디오 파일이 너무 큽니다(최대 40MB): {0}',
@@ -147,7 +147,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
   'videoTooLarge': <String, String>{
     // 视频上限从 40MB 提升到 2GB：45MB 以内直传 video_url，
     // 超过则用 ffmpeg 无损切片后逐段理解再汇总（见 doubao_video_ark.dart）。
-    'ja': '動画ファイルが大きすぎます（上限 2GB）：{0}',
+    'ja': '视频文件过大（上限 2GB）：{0}',
     'zh': '视频文件过大（上限 2GB）：{0}',
     'en': 'Video file is too large (limit 2GB): {0}',
     'ko': '동영상 파일이 너무 큽니다(최대 2GB): {0}',
@@ -155,7 +155,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Fichier vidéo trop volumineux (limite 2 Go) : {0}',
   },
   'keyMissingForModel': <String, String>{
-    'ja': '豆包モデルを選択中ですが、豆包 API Key が未設定です',
+    'ja': '当前选择了豆包模型，但豆包 API Key 未设置',
     'zh': '已选择豆包模型，但豆包 API Key 未填写',
     'en': 'A Doubao model is selected, but the Doubao API Key is not set.',
     'ko': '더우바오 모델을 선택했지만 더우바오 API Key가 설정되지 않았습니다.',
@@ -163,9 +163,9 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Un modèle Doubao est sélectionné, mais la clé API Doubao n’est pas définie.',
   },
   'searchBlockedNote': <String, String>{
-    'ja': '【联网検索について】本サイトは豆包モードでのウェブ検索に対応していません。'
-        '豆包の検索機能を別途追加する必要もありません。'
-        'ウェブ検索が必要な場合は、豆包モードをオフにして、DeepSeek モードで検索してください。',
+    'ja': '【关于联网搜索】本站不支持在豆包模式下进行网页搜索。'
+        '也无需另外添加豆包的搜索功能。'
+        '如需网页搜索，请关闭豆包模式，在 DeepSeek 模式下搜索。',
     'zh': '【关于联网搜索】本网站不支持豆包模式下的联网搜索，也没有必要额外支持豆包搜索。'
         '如需联网搜索，请关闭豆包模式，改用 DeepSeek 模式进行搜索。',
     'en': '[About web search] This site does not support web search in Doubao mode, '
@@ -183,10 +183,10 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'et utilisez la recherche en mode DeepSeek.',
   },
   'noMediaNote': <String, String>{
-    'ja': '【重要】この経路（DeepSeek）は音声・動画の内容理解に対応していません。'
-        '対象ファイル（{0}）の中身は読まれていません。'
-        '音声・動画を理解させたい場合は、豆包モードに切り替えて'
-        '音声理解・動画理解対応モデルを選んでください。',
+    'ja': '【重要】此通道（DeepSeek）不支持音频、视频的内容理解。'
+        '目标文件（{0}）的内容未被读取。'
+        '若需要理解音频、视频，请切换到豆包模式'
+        '请选择支持语音理解、视频理解的模型。',
     'zh': '【重要】当前通道（DeepSeek）不支持音频、视频内容理解。'
         '目标文件（{0}）的内容并未被读取。'
         '如需理解音频、视频，请切换到豆包模式，并选择支持音频理解、视频理解的模型。',
@@ -208,7 +208,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'un modèle compatible audio/vidéo.',
   },
   'transcribeNote': <String, String>{
-    'ja': '選択モデルは音声理解に非対応のため、文字起こし後に分析しました',
+    'ja': '所选模型不支持语音理解，已在转写后进行分析',
     'zh': '所选模型不支持音频理解，因此先转写文字再进行分析',
     'en': 'The selected model lacks audio understanding, so the audio was transcribed first '
         'and then analyzed.',
@@ -330,7 +330,7 @@ Map<String, dynamic>? dbThinkingDisableParam(String model) {
 Map<String, dynamic> dbWebSearchOptions({String searchType = 'auto'}) {
   var st = searchType.trim().toLowerCase();
   if (st != 'auto' && st != 'mandatory' && st != 'disabled') st = 'auto';
-  logp('🌐 豆包ネイティブ検索オプション: search_type=$st');
+  logp('🌐 豆包原生搜索选项: search_type=$st');
   return <String, dynamic>{'search_type': st};
 }
 
@@ -594,7 +594,7 @@ DbConfig getDbConfig() {
     _dbCfgCacheRaw = raw;
     return cfg;
   } catch (e) {
-    logp('⚠️ 豆包設定の読み込みに失敗しました: $e');
+    logp('⚠️ 豆包配置读取失败: $e');
     return DbConfig();
   }
 }
@@ -609,7 +609,7 @@ bool saveDbConfig(DbConfig cfg) {
     _dbCfgCacheRaw = raw;
     return true;
   } catch (e) {
-    logp('❌ 豆包設定の保存に失敗しました: $e');
+    logp('❌ 豆包配置保存失败: $e');
     return false;
   }
 }
@@ -883,10 +883,10 @@ DsFileMeta? saveDbBlob(
       } catch (_) {}
       return null;
     }
-    logp('💾 豆包生成物を保存しました: $relPath (${bytes.length} bytes, $mime)');
+    logp('💾 已保存豆包生成物: $relPath (${bytes.length} bytes, $mime)');
     return meta;
   } catch (e) {
-    logp('❌ 豆包生成物の保存に失敗しました: $e');
+    logp('❌ 豆包生成物保存失败: $e');
     return null;
   }
 }
@@ -999,9 +999,9 @@ Future<Map<String, dynamic>> dbGenerateImage({
   final useModel = trimOr(model, cfg.imageModel);
   var fullPrompt = p;
   final st = customStyle.trim().isNotEmpty ? customStyle.trim() : style.trim();
-  if (st.isNotEmpty) fullPrompt = '$p\n\n【スタイル】$st';
+  if (st.isNotEmpty) fullPrompt = '$p\n\n【风格】$st';
   final rt = _ratioLabel(ratio);
-  fullPrompt = '$fullPrompt\n\n【アスペクト比】$rt';
+  fullPrompt = '$fullPrompt\n\n【宽高比】$rt';
 
   Object size = resolution.toUpperCase() == '4K' ? '4K' : '2K';
   if (useRatio) {
@@ -1053,7 +1053,7 @@ Future<Map<String, dynamic>> dbGenerateImage({
   var usedModel = useModel;
   for (var mi = 0; mi < modelSeq.length; mi++) {
     final m = modelSeq[mi];
-    if (mi > 0) logp('↩️ 豆包画像生成：$useModel 利用不可 → $m にフォールバック');
+    if (mi > 0) logp('↩️ 豆包图片生成：$useModel 不可用 → 回退到 $m');
     final cs = buildCandidates(m);
     for (var i = 0; i < cs.length; i++) {
       try {
@@ -1263,7 +1263,7 @@ void _saveVideoTasks(List<Map<String, dynamic>> tasks) {
     }
     File(dbVideoTasksFile).writeAsStringSync(sb.toString());
   } catch (e) {
-    logp('❌ 豆包動画タスクの保存に失敗しました: $e');
+    logp('❌ 豆包视频任务保存失败: $e');
   }
 }
 
@@ -1410,7 +1410,7 @@ Future<Map<String, dynamic>> dbPollVideoTask(String taskID) async {
         });
       }
     } else {
-      logp('⚠️ 豆包動画のダウンロードに失敗しました（HTTP ${dl.code}）');
+      logp('⚠️ 豆包视频下载失败（HTTP ${dl.code}）');
     }
   }
   final updated = _upsertVideoTask(taskID, {
@@ -1551,7 +1551,7 @@ Future<List<int>> edgeSpeechBytes(
       logp('⚠️ Edge TTS ${i + 1}/${chunks.length} 例外: $e');
     }
     if (!ok || buf.isEmpty) {
-      logp('⚠️ Edge TTS ${i + 1}/${chunks.length} 塊の合成に失敗（voice=$useVoice）');
+      logp('⚠️ Edge TTS ${i + 1}/${chunks.length} 块合成失败（voice=$useVoice）');
       return <int>[];
     }
     out.addAll(buf);
@@ -1658,7 +1658,7 @@ List<int> _multipartBody(
   return out;
 }
 
-/// 音声ファイル名から方舟に申告する形式名を決める（未対応拡張子は mp3 扱い）。
+/// 从音频文件名决定向方舟申报的格式名（不支持的扩展名按 mp3 处理）。
 String _audioFormatOf(String fileName) {
   final lower = fileName.toLowerCase();
   const ok = ['mp3', 'wav', 'aac', 'flac', 'opus', 'pcm', 'ogg'];
@@ -1669,9 +1669,9 @@ String _audioFormatOf(String fileName) {
   return 'mp3';
 }
 
-/// 任意形式の音声を mp3（16kHz / モノラル）へ揃える。
-/// 方舟の input_audio は形式指定が厳しく、m4a / amr をそのまま渡すと 400 になるため、
-/// ffmpeg があれば mp3 に変換し、無ければ元のバイト列をそのまま返す。
+/// 把任意格式的音频统一成 mp3（16kHz / 单声道）。
+/// 方舟的 input_audio 格式要求严格，m4a / amr 原样传入会 400，因此
+/// 若有 ffmpeg 则转为 mp3，没有则原样返回原字节序列。
 Future<List<int>> _ensureMp3Bytes(List<int> audio, String fileName) async {
   final lower = fileName.toLowerCase();
   if (lower.endsWith('.mp3')) return audio;
@@ -1699,9 +1699,9 @@ Future<List<int>> _ensureMp3Bytes(List<int> audio, String fileName) async {
       final out = File(outFile).readAsBytesSync();
       if (out.length > 200) return out;
     }
-    logp('⚠️ ffmpeg で mp3 へ変換できませんでした: ${r.stderr}');
+    logp('⚠️ ffmpeg 转换为 mp3 失败: ${r.stderr}');
   } catch (e) {
-    logp('⚠️ ffmpeg の実行に失敗: $e');
+    logp('⚠️ ffmpeg 执行失败: $e');
   } finally {
     for (final p in [inFile, outFile]) {
       try {
@@ -1713,15 +1713,15 @@ Future<List<int>> _ensureMp3Bytes(List<int> audio, String fileName) async {
   return audio;
 }
 
-/// 方舟のマルチモーダル音声理解（/chat/completions + input_audio）で文字起こしする。
-/// このアカウントでは /audio/transcriptions が 404 を返すため、こちらを主経路にする。
-/// 使うのは豆包の言語モデルのみで、DeepSeek の API は一切呼ばない（用量を消費しない）。
+/// 用方舟的多模态语音理解（/chat/completions + input_audio）做转写。
+/// 该账号下 /audio/transcriptions 返回 404，故以此为主路径。
+/// 只用豆包的语言模型，完全不调用 DeepSeek 的 API（不消耗用量）。
 Future<String> _dbTranscribeViaChatAudio(
     List<int> audio, String fileName, DbConfig cfg) async {
   final model = _dbPickChatModel('', cfg);
   final mp3 = await _ensureMp3Bytes(audio, fileName);
-  // 変換されなかった（同一インスタンスが返った）場合は元の形式をそのまま申告する。
-  // format を mp3 と偽ると方舟側で 400 になるため、ここは実体に合わせる。
+  // 若未转换（返回同一实例），则按原格式申报。
+  // 若把 format 伪造成 mp3，方舟侧会返回 400，这里按实际格式来。
   final fmt = identical(mp3, audio) ? _audioFormatOf(fileName) : 'mp3';
   final b64 = base64.encode(mp3);
   final payload = {
@@ -1777,19 +1777,19 @@ Future<String> dbTranscribeBytes(
   final cfg = getDbConfig();
   var lastErr = '';
   if (cfg.apiKey.trim().isNotEmpty) {
-    // ① 方舟のマルチモーダル音声理解（主経路・豆包のみ／DeepSeek は呼ばない）
+    // ① 方舟的多模态语音理解（主路径・仅豆包／不调用 DeepSeek）
     try {
       final t = await _dbTranscribeViaChatAudio(audio, fileName, cfg);
       if (t.trim().isNotEmpty) {
-        logp('🎤 豆包の音声理解で認識しました（${t.runes.length} 文字）');
+        logp('🎤 已用豆包语音理解识别（${t.runes.length} 字）');
         onRoute?.call(_dbPickChatModel('', cfg), '/chat/completions (input_audio)');
         return t.trim();
       }
     } catch (e) {
       lastErr = '$e';
-      logp('⚠️ 豆包の音声理解に失敗（次の経路へ）: $e');
+      logp('⚠️ 豆包语音理解失败（转下一个路径）: $e');
     }
-    // ② 方舟の音声認識エンドポイント（環境により 404 を返す）
+    // ② 方舟的语音识别端点（部分环境返回 404）
     try {
       final useModel = trimOr(model, cfg.asrModel);
       final mime = _mimeByExtName(fileName, 'audio/webm');
@@ -1839,7 +1839,7 @@ Future<String> dbTranscribeBytes(
     } catch (e) {
       lastErr = '$e';
     }
-    logp('⚠️ 豆包 ASR に失敗しました（ローカル認識へフォールバック）: $lastErr');
+    logp('⚠️ 豆包 ASR 失败（回退到本地识别）: $lastErr');
   } else {
     lastErr = '豆包 API Key 未設定';
   }
@@ -1865,13 +1865,13 @@ Future<String> _whisperTranscribe(List<int> audio, String fileName) async {
     final ff = await Process.run(
         'ffmpeg', ['-y', '-loglevel', 'error', '-i', inFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavFile]);
     if (ff.exitCode != 0) {
-      logp('⚠️ ローカル ASR の ffmpeg 変換に失敗: ${ff.stderr}');
+      logp('⚠️ 本地 ASR 的 ffmpeg 转换失败: ${ff.stderr}');
       return '';
     }
     final wh = await Process.run(bin.path,
         ['-m', model.path, '-f', wavFile, '-l', 'zh', '-nt', '-np']);
     if (wh.exitCode != 0) {
-      logp('⚠️ ローカル whisper の実行に失敗: ${wh.stderr}');
+      logp('⚠️ 本地 whisper 执行失败: ${wh.stderr}');
       return '';
     }
     var out = '${wh.stdout}';
@@ -1883,10 +1883,10 @@ Future<String> _whisperTranscribe(List<int> audio, String fileName) async {
       lines.add(ln);
     }
     final text = lines.join(' ').trim();
-    if (text.isNotEmpty) logp('🎤 ローカル ASR 結果: $text');
+    if (text.isNotEmpty) logp('🎤 本地 ASR 结果: $text');
     return text;
   } catch (e) {
-    logp('⚠️ ローカル ASR 例外: $e');
+    logp('⚠️ 本地 ASR 异常: $e');
     return '';
   } finally {
     for (final p in [inFile, wavFile]) {
@@ -1939,13 +1939,13 @@ String dbPodcastSystemPrompt(String lang, int minutes) {
         'fr': 'français',
       }[lang] ??
       '简体中文';
-  return '''あなたは音声番組（ポッドキャスト）の構成作家です。以下の条件で台本を書いてください。
-1. 言語は自由。ユーザーが使っている言語で書き、指定があればそれに従うこと。
-2. 2 人のパーソナリティ（A と B）の自然会話にすること。相づち・ツッコミ・具体例を入れる。
-3. 全体で約 $minutes 分の読み上げ量（目安として日本語 350 文字/分）。
-4. 出力は厳密な JSON 配列のみ。前後に説明文・コードフェンスを一切付けない。
-5. 各要素は {"speaker":"A"|"B","text":"セリフ"} の形式。1 セリフは 120 文字以内。
-6. 事実と異なる断定を避け、誇張しすぎない。''';
+  return '''你是语音节目（播客）的编剧。请按以下条件写台本。
+1. 语言自由。用用户使用的语言书写，有指定则遵循。
+2. 写成两位主播（A 与 B）的自然对话。加入附和、吐槽、具体例子。
+3. 整体约 $minutes 分钟的朗读量（按中文约 350 字/分估算）。
+4. 只输出严格的 JSON 数组。前后不加任何说明文字或代码围栏。
+5. 每个元素为 {"speaker":"A"|"B","text":"台词"} 的格式。每句台词不超过 120 字。
+6. 避免与事实不符的断言，不要过度夸张。''';
 }
 
 List<Map<String, String>> dbParsePodcastScript(String raw) {
@@ -2027,12 +2027,12 @@ Future<Map<String, dynamic>> dbGeneratePodcast({
   if (mins > 20) mins = 20;
   final sys = dbPodcastSystemPrompt(lang, mins);
   final user = StringBuffer()
-    ..writeln('テーマ: $t');
-  if (style.trim().isNotEmpty) user.writeln('雰囲気・スタイル: ${style.trim()}');
+    ..writeln('主题: $t');
+  if (style.trim().isNotEmpty) user.writeln('氛围·风格: ${style.trim()}');
   user.writeln('想定尺: 約 $mins 分');
-  user.writeln('上記条件で JSON 配列の台本を出力してください。');
+  user.writeln('请按上述条件输出 JSON 数组形式的台本。');
 
-  // 台本生成只能用对话模型：前端可能把ポッドキャストモデル一起传进来，
+  // 台本生成只能用对话模型：前端可能把播客模型一起传进来，
   // 该模型在方舟上没有 chat 端点（HTTP 404），这里强制纠正。
   final scriptModel = _dbPickChatModel(model, cfg);
   final raw = await dbChatText(sys, [
@@ -2070,7 +2070,7 @@ Future<Map<String, dynamic>> dbGeneratePodcast({
           format: 'mp3');
       audio.addAll(bytes);
     } catch (e) {
-      logp('⚠️ ポッドキャスト ${i + 1}/${script.length} 行目の合成に失敗: $e');
+      logp('⚠️ 播客第 ${i + 1}/${script.length} 行合成失败: $e');
       failLines.add(text);
     }
   }
@@ -2116,11 +2116,11 @@ Future<Map<String, dynamic>> dbVoiceTurn({
       ? text.trim()
       : await dbTranscribeBytes(audio, fileName, model: __asrUsed);
   final langRule = dsLangSystemPrompt(lang);
-  final sys = '''あなたは音声通話の相手です。$langRule
-音声で読み上げられるため、次の制約を厳守してください：
-1. 返答は 2〜4 文、120 文字以内。前置き・箇条書き・記号過多を避ける。
-2. 自然な話し言葉で、聞き取りやすい短文にする。
-3. 不明な点は 1 つだけ短く質問する。''';
+  final sys = '''你是语音通话的对象。$langRule
+因为会被语音朗读，请严格遵守以下约束：
+1. 回复 2～4 句、120 字以内。避免前言、罗列、符号过多。
+2. 用自然的口语，写成易听懂的短句。
+3. 不清楚的点只简短地问 1 个。''';
   final msgs = <Map<String, dynamic>>[];
   for (final h in history.take(20)) {
     final role = mStr(h, 'role');
@@ -2392,7 +2392,7 @@ Future<void> handleDbImage(HttpRequest req) async {
     );
     await dsJSONOk(res, 200, out);
   } catch (e) {
-    logp('❌ 豆包画像生成エラー: $e');
+    logp('❌ 豆包图片生成错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2464,7 +2464,7 @@ Future<void> handleDbVideoCreate(HttpRequest req) async {
     );
     await dsJSONOk(res, 200, out);
   } catch (e) {
-    logp('❌ 豆包動画生成エラー: $e');
+    logp('❌ 豆包视频生成错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2480,7 +2480,7 @@ Future<void> handleDbVideoStatus(HttpRequest req) async {
     final out = await dbPollVideoTask(id);
     await dsJSONOk(res, 200, out);
   } catch (e) {
-    logp('❌ 豆包動画照会エラー: $e');
+    logp('❌ 豆包视频查询错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2529,7 +2529,7 @@ Future<void> handleDbTts(HttpRequest req) async {
       'audioUrl': meta == null ? '' : '/api/ds-files/download?id=${meta.id}',
     });
   } catch (e) {
-    logp('❌ 豆包音声合成エラー: $e');
+    logp('❌ 豆包语音合成错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2560,7 +2560,7 @@ Future<void> handleDbPodcast(HttpRequest req) async {
     );
     await dsJSONOk(res, 200, out);
   } catch (e) {
-    logp('❌ 豆包ポッドキャスト生成エラー: $e');
+    logp('❌ 豆包播客生成错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2655,7 +2655,7 @@ Future<void> handleDbAsr(HttpRequest req) async {
       'endpoint': usedEndpoint,
     });
   } catch (e) {
-    logp('❌ 豆包 ASR エラー: $e');
+    logp('❌ 豆包 ASR 错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2711,7 +2711,7 @@ Future<void> handleDbVoiceTurn(HttpRequest req) async {
     );
     await dsJSONOk(res, 200, out);
   } catch (e) {
-    logp('❌ 豆包音声通話エラー: $e');
+    logp('❌ 豆包语音通话错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2752,7 +2752,7 @@ Future<void> handleDbChat(HttpRequest req) async {
         temperature: double.tryParse(mStr(body, 'temperature')) ?? 0.8);
     await dsJSONOk(res, 200, {'success': true, 'text': text});
   } catch (e) {
-    logp('❌ 豆包チャットエラー: $e');
+    logp('❌ 豆包聊天错误: $e');
     await dsJSONErr(res, 500, dbErrText(e));
   }
 }
@@ -2789,8 +2789,8 @@ Future<void> handleDbAudioAnalyze(HttpRequest req) async {
     if (dbSupportsAudioInput(wantModel)) {
       final prepared = await dbPrepareAudioForArk(bytes, meta.name);
       final question = prompt.trim().isEmpty
-          ? 'この音声の内容を詳しく教えてください。何が話されていますか。'
-              '要点を整理してまとめてください。'
+          ? '请详细告诉我这段音频的内容。里面说了什么。'
+              '请整理并归纳要点。'
           : prompt.trim();
       final content = <Map<String, dynamic>>[
         dbAudioPart(prepared.format, base64Encode(prepared.bytes)),
@@ -2825,7 +2825,7 @@ Future<void> handleDbAudioAnalyze(HttpRequest req) async {
         cfg,
         _dbPickChatModel(wantModel, cfg),
         <Map<String, dynamic>>[
-          {'role': 'user', 'content': '音声の書き起こし:\n$text\n\n依頼: $prompt'}
+          {'role': 'user', 'content': '语音转写:\n$text\n\n请求: $prompt'}
         ],
         maxTokens: 8192,
         temperature: 0.7,

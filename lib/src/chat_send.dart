@@ -60,9 +60,9 @@ String dbToolSystemPromptFor(String model, String apiUrl, String lang) {
   return dsToolAgentPrompt(lang, DS_TOOL_AGENT_SYSTEM_PROMPT);
 }
 
-/// ★ 维度解決：明示された dim を最優先。無ければモデル归属で判定する。
-///   豆包モデル → db ／ それ以外（DeepSeek / ST）→ ds。
-///   ST 维度はモデル名では区別できないため、必ず呼び出し側から dim='st' を渡す。
+/// ★ 维度解析：优先用显式的 dim。没有则按模型归属判定。
+///   豆包模型 → db ／ 其他（DeepSeek / ST）→ ds。
+///   ST 维度无法通过模型名区分，必须由调用方传入 dim='st'。
 String dsDimOf(String model, [String dim = '']) {
   final d = dim.trim();
   if (d == DS_DIM_ST || d == DS_DIM_DB || d == DS_DIM_DS) return d;
@@ -93,7 +93,7 @@ Future<void> handleDsChatSendStream(
   String content,
   List<String> fileIDs,
   bool enableTools, {
-  /// ★ 维度（'ds' / 'db' / 'st'）。空串 → 従来どおりモデルから判定。
+  /// ★ 维度（'ds' / 'db' / 'st'）。空串 → 照旧从模型判定。
   String dim = '',
   /// 用户是否在 UI 上开启了「联网搜索」。
   /// 抖音百科（方舟联网内容插件）只在确实要联网时才启用：
@@ -102,7 +102,7 @@ Future<void> handleDsChatSendStream(
   bool webSearch = false,
   ModelRouteDecision? route,
   String apiUrl = DS_API_URL,
-  /// UI 言語（拒否禁令の選択に使用）
+  /// UI 语言（用于选择拒绝禁令）
   String lang = '',
   /// 方舟专用附加字段（如 thinking）。DeepSeek 通道保持为 null。
   Map<String, dynamic>? extraBody,
@@ -167,12 +167,12 @@ Future<void> handleDsChatSendStream(
         'segments': vid.text.isEmpty ? 0 : 1,
       });
     } on DbVideoArkException catch (e) {
-      logp('❌ 動画の準備に失敗（ストリーミング）: ${e.message}');
+      logp('❌ 视频准备失败（流式）: ${e.message}');
       await sse.send('error', {'message': e.message});
       await sse.done();
       return;
     } catch (e) {
-      logp('❌ 動画の準備に失敗（ストリーミング・想定外）: $e');
+      logp('❌ 视频准备失败（流式·意外）: $e');
       await sse.send('error', {'message': '视频准备失败：$e'});
       await sse.done();
       return;
@@ -198,7 +198,7 @@ Future<void> handleDsChatSendStream(
         pendingVideoIds.isEmpty &&
         dbWikiMediaSupported(mediaParts);
     if (!useWikiTools && apiUrl != DS_API_URL && toolWikiSources.isNotEmpty) {
-      logp('ℹ️ 音声・動画入力を含むため、ツールモードでは联网内容插件を併用しません');
+      logp('ℹ️ 因含音频、视频输入，工具模式下不并用联网内容插件');
       await sse.send('notice', {
         'message': '当前输入含音频/视频，联网内容插件通道不支持，本次未启用百科检索',
       });
@@ -212,10 +212,10 @@ Future<void> handleDsChatSendStream(
     ];
     final maxIter = dbToolMaxIterFor(model, apiUrl, rounds);
     if (apiUrl != DS_API_URL) {
-      logp('🫘 豆包専用ツールモード: ${dbToolProfileOf(model)} '
-          '／ツール ${dbToolCountOf(model)} 件');
+      logp('🫘 豆包专用工具模式: ${dbToolProfileOf(model)} '
+          '／工具 ${dbToolCountOf(model)} 个');
     }
-    logp('🔧 ツールモード起動: 最大 $maxIter 回の反復（Agent システムプロンプト注入済み）');
+    logp('🔧 工具模式启动: 最多 $maxIter 次迭代（已注入 Agent 系统提示词）');
 
     final toolReasoningBuf = StringBuffer();
 
@@ -307,7 +307,7 @@ Future<void> handleDsChatSendStream(
       }
       final r = cleaned.toString().trim();
       if (r.isNotEmpty) {
-        logp('⚠️ ツールモードの content が空です。純粋な reasoning にフォールバックします（${runeLen(r)} 文字）');
+        logp('⚠️ 工具模式的 content 为空。回退到纯 reasoning（${runeLen(r)} 字）');
         firstContentAt ??= DateTime.now();
         contentBuf.clear();
         contentBuf.write(r);
@@ -315,12 +315,12 @@ Future<void> handleDsChatSendStream(
       }
     }
 
-    logp('🔧 ツールモード完了: content=${runeLen(contentBuf.toString())} 字, '
+    logp('🔧 工具模式完成: content=${runeLen(contentBuf.toString())} 字, '
         'reasoning=${runeLen(toolReasoningBuf.toString())} 字, toolLogs=${toolLogs.length} 条');
 
     if (toolLogs.isEmpty && contentBuf.toString().trim().isEmpty) {
       reasoningPump.push(
-          'AI はこの質問にツール呼び出しが不要と判断し、本文も返しませんでした。\n');
+          'AI 判断该问题无需调用工具，也没有返回正文。\n');
     }
 
     final now = DateTime.now();
@@ -343,7 +343,7 @@ Future<void> handleDsChatSendStream(
       content: contentBuf.toString(),
       createdAt: rfc3339(DateTime.now()),
       reasoning: outcome.reasoning,
-      // 豆包経由では usage を保存しない（方舟の消費量を正確に取得できないため）
+      // 经由豆包时不保存 usage（因为无法精确获取方舟的消耗量）
       usage: usageAcc.snapshot(),
     );
     aiMsg.dim = dsDimOf(model, dim);
@@ -356,7 +356,7 @@ Future<void> handleDsChatSendStream(
       if (title.isEmpty || title == '新对话') {
         final runes = content.runes.toList();
         if (runes.isEmpty) {
-          title = '[ツール対話]';
+          title = '[工具对话]';
         } else if (runes.length > 18) {
           title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
         } else {
@@ -405,7 +405,7 @@ Future<void> handleDsChatSendStream(
       dbWikiMediaSupported(mediaParts);
 
   if (canUseWiki) {
-    logp('豆包联网内容插件モード: 信源=${wikiSources.join(",")}');
+    logp('豆包联网内容插件模式: 信源=${wikiSources.join(",")}');
     try {
       await callDbWikiResponsesStream(
         apiKey,
@@ -436,7 +436,7 @@ Future<void> handleDsChatSendStream(
         },
       );
     } catch (e) {
-      logp('豆包联网内容插件の呼び出しに失敗: $e');
+      logp('豆包联网内容插件调用失败: $e');
       await sse.send('error', {'message': '$e'});
       await sse.done();
       return;
@@ -553,7 +553,7 @@ Future<void> handleDsChatSendStream(
     if (title.isEmpty || title == '新对话') {
       final runes = content.runes.toList();
       if (runes.isEmpty) {
-        title = '[ファイル対話]';
+        title = '[文件对话]';
       } else if (runes.length > 18) {
         title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
       } else {
@@ -617,10 +617,10 @@ Future<void> handleDsNovelGeneration(
   final tg = tags.trim();
   final st = story.trim();
 
-  logp('📖 小説モード起動: 分類=$g テーマ=$th タグ=$tg 目標=$target 文字');
+  logp('📖 小说模式启动: 分类=$g 主题=$th 标签=$tg 目标=$target 字');
 
-  var userContent = '📖 小説創作\n分類: $g\nテーマ: $th\nタグ: $tg\n目標文字数: $target';
-  if (st.isNotEmpty) userContent += '\nストーリー設定: $st';
+  var userContent = '📖 小说创作\n分类: $g\n主题: $th\n标签: $tg\n目标字数: $target';
+  if (st.isNotEmpty) userContent += '\n故事设定: $st';
 
   final userMsg = DsMessage(
     id: 'dsm_${fmtStamp14(DateTime.now())}_${randomHex(6)}',
@@ -636,7 +636,7 @@ Future<void> handleDsNovelGeneration(
   final usageAcc = DsUsageAcc();
   final gen = await generateNovel(apiKey, model, basePrompt, target, usageAcc);
   if (gen.error != null && gen.text.trim().isEmpty) {
-    await dsJSONErr(res, 500, '小説の生成に失敗しました: ${gen.error}');
+    await dsJSONErr(res, 500, '小说生成失败: ${gen.error}');
     return;
   }
 
@@ -667,7 +667,7 @@ Future<void> handleDsNovelGeneration(
   }
   updateDsSession(sessionID, title, rfc3339(DateTime.now()));
 
-  logp('✅ 小説の生成が完了しました。計 ${runeLen(gen.text)} 文字');
+  logp('✅ 小说生成完成。共 ${runeLen(gen.text)} 字');
   await dsJSONOk(res, 200, {
     'success': true,
     'userMessage': userMsg.toJson(),
@@ -707,8 +707,8 @@ Future<void> handleDsNovelGenerationStream(
 
   final sse = Sse(req.response);
 
-  var userContent = '📖 小説創作\n分類: $g\nテーマ: $th\nタグ: $tg\n目標文字数: $target';
-  if (st.isNotEmpty) userContent += '\nストーリー設定: $st';
+  var userContent = '📖 小说创作\n分类: $g\n主题: $th\n标签: $tg\n目标字数: $target';
+  if (st.isNotEmpty) userContent += '\n故事设定: $st';
   final userMsg = DsMessage(
     id: 'dsm_${fmtStamp14(DateTime.now())}_${randomHex(6)}',
     sessionId: sessionID,
@@ -720,7 +720,7 @@ Future<void> handleDsNovelGenerationStream(
   appendDsMessage(userMsg);
   await sse.send('user_message', userMsg.toJson());
 
-  logp('📖 小説モード（ストリーミング）起動: 分類=$g テーマ=$th タグ=$tg 目標=$target 文字');
+  logp('📖 小说模式（流式）启动: 分类=$g 主题=$th 标签=$tg 目标=$target 字');
 
   final basePrompt = buildNovelBasePrompt(th, tg, g, st, target);
   final usageAcc = DsUsageAcc();
@@ -850,7 +850,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final relayCfg = getRelayConfig();
   final useRelay = isRelayModel(model);
   final useDoubao = !useRelay && dbIsChatModel(model);
-  // ★ 维度：ST 维度はフロントが body.dim='st' で明示する
+  // ★ 维度：ST 维度由前端用 body.dim='st' 明示
   final dimReq = mStr(body, 'dim').trim();
   final dimOverride =
       (dimReq == DS_DIM_ST || dimReq == DS_DIM_DB || dimReq == DS_DIM_DS)
@@ -877,7 +877,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final callUrl = useDoubao
       ? dbChatEndpoint()
       : (useRelay ? relayChatEndpoint() : DS_API_URL);
-  logp('🚀 使用モデル: $model (リクエスト=${mStr(body, 'model')}, 設定=${cfg.model}, '
+  logp('🚀 使用模型: $model (请求=${mStr(body, 'model')}, 配置=${cfg.model}, '
       '経路=${useDoubao ? '豆包/方舟' : (useRelay ? '中转站' : 'DeepSeek')})');
 
   // ★★ 显式插件按钮通道（墨迹天气 / 头条图文）
@@ -899,7 +899,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     }
     enableTools = false;
     DsToolGate.syncMode(sessionID, false);
-    logp('🎯 明示プラグイン: $explicitPlugin（ツールモードは強制 OFF・該当插件のみ呼び出す）');
+    logp('🎯 显式插件: $explicitPlugin（工具模式强制 OFF，只调用该插件）');
   }
 
   // ★★ 前缀强制信源（doubao_intent.dart）
@@ -912,11 +912,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       ? explicitSources
       : (dbIntent.forced ? dbIntent.sources : const <String>[]);
   if (explicitSources.isNotEmpty) {
-    logp('📌 明示プラグインの強制信源: ' + explicitSources.join(','));
+    logp('📌 显式插件的强制信源: ' + explicitSources.join(','));
   }
   if (dbIntent.forced) {
     content = dbIntent.cleaned;
-    logp('📌 信源プレフィックスを検出: ${dbIntent.hits.join(' / ')} '
+    logp('📌 检测到信源前缀: ${dbIntent.hits.join(' / ')} '
         '→ 強制 sources=${forcedSources.join(',')}');
   }
 
@@ -943,18 +943,18 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     maxTokens = DS_MAX_OUTPUT_TOKENS;
     rounds = 1;
     temperature = 1.0;
-    logp('📚 超長文モード有効: maxTokens=$maxTokens, 目標文字数=$targetChars');
+    logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
   if (enableTools) temperature = 0.0;
 
   // ========== 豆包模式 × 抖音百科：职责单一，绝不叠加 ==========
-  // 1) 豆包通道一律单轮：推論レベル只抬高 max_tokens，不再触发多轮自我反思。
+  // 1) 豆包通道一律单轮：推理级别只抬高 max_tokens，不再触发多轮自我反思。
   // 2) 抖音百科（联网内容插件，仅 Responses API）生效期间强制关闭工具模式：
   //    否则 Chat Completions 的 function calling 与插件的 web_search 会在同一轮
   //    互相抢占，表现为「豆包模式搜索抖音百科时突然调用工具」的严重 bug。
   if (useDoubao && !longTextMode) {
     if (rounds != 1) {
-      logp('🫘 豆包モード: 多輪反思を無効化（rounds=$rounds → 1、max_tokens=$maxTokens は維持）');
+      logp('🫘 豆包模式: 禁用多轮反思（rounds=$rounds → 1、max_tokens=$maxTokens 保持）');
     }
     rounds = 1;
   }
@@ -966,7 +966,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (useDoubao && enableTools && dbWikiActiveNow) {
     enableTools = false;
     DsToolGate.syncMode(sessionID, false);
-    logp('🛑 抖音百科が有効なためツールモードを自動解除（検索とツール呼び出しの衝突を根本回避）');
+    logp('🛑 因抖音百科已启用，自动关闭工具模式（从根本上避免搜索与工具调用的冲突）');
   }
   // ★ 单一可信来源：本请求最终的 enableTools 就是服务端闸门的模式状态。
   //   之后所有工具执行（含插件混用通道）都以这里为准，前端状态不再能「带私货」。
@@ -983,7 +983,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       .where((e) => e.isNotEmpty)
       .toList();
   if (injected.isNotEmpty) {
-    logp('🧩 外部注入プロンプトを適用: ${injected.length} 件（system ロール）');
+    logp('🧩 应用外部注入提示词: ${injected.length} 条（system 角色）');
   }
 
   final fileCtx = buildFileContext(fileIDs);
@@ -1033,10 +1033,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
           hasImage: fileCtx.imageFileIds.isNotEmpty, settings: routeSettings);
   if (route.hasImage || route.routed || route.reason == 'router-disabled') {
     recordModelRoute(route);
-    logp('🔀 モデルルーティング: ${route.summary} · 視覚抽出モデル=${route.visionModel}');
+    logp('🔀 模型路由: ${route.summary} · 视觉提取模型=${route.visionModel}');
   }
   if (route.routed) {
-    logp('🔀 メインリクエストのモデルを ${route.effective} に切替（元の選択 ${route.requested}）');
+    logp('🔀 主请求的模型切换为 ${route.effective}（原选择 ${route.requested}）');
     model = route.effective;
   }
 
@@ -1058,10 +1058,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     final wikiOn = useDoubao && dbWikiActiveNow;
     if (wikiOn) {
       // 插件自己会检索；再叠一次官方搜索就是「两次联网」，首包被拖后数秒。
-      logp('🔍 豆包モード：联网内容プラグインが検索を担当するため、公式検索は省略（二重検索回避）');
+      logp('🔍 豆包模式：联网内容插件负责搜索，故省略官方搜索（避免重复搜索）');
     } else if (useDoubao) {
       dbNativeSearch = true;
-      logp('🔍 豆包モード：豆包ネイティブ検索（web_search_options / 月2万回無料枠）を使用');
+      logp('🔍 豆包模式：使用豆包原生搜索（web_search_options / 每月 2 万次免费额度）');
     } else {
       final ctx = await buildWebSearchContext(content);
       if (ctx.isNotEmpty) userPrompt += ctx;
@@ -1069,14 +1069,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     // ★ 硬性隔离：豆包通道（方舟）任何情况下都不允许落到 DeepSeek 官方搜索。
     //   上面的分支已经保证这一点，这里再加一道断言，防止后续改动回退。
     if (useDoubao && dbNativeSearch) {
-      logp('✅ 検索経路確定：豆包／方舟ネイティブ検索のみ（DeepSeek 検索は未使用）');
+      logp('✅ 搜索路径确定：仅豆包／方舟原生搜索（未使用 DeepSeek 搜索）');
     }
   }
-  if (userPrompt.trim().isEmpty) userPrompt = 'アップロードしたファイルを確認してください。';
+  if (userPrompt.trim().isEmpty) userPrompt = '请查看上传的文件。';
 
   if (longTextMode) {
     final target = targetChars <= 0 ? DS_TARGET_CHARS_5M : targetChars;
-    userPrompt += '''\n\n【重要指令 · 超長文モード】\n完全な長文をそのまま出力してください。目標文字数は $target 文字（約 $target 文字相当）。\n要件:\n1. 「これから...」「以下は...」「まとめ」といった前置きや結びは一切書かないこと\n2. 本文から直接始め、章立てを明確にし、内容を充実させること\n3. 長さ制限を理由に早く終わらせず、可能な限り書き切ること\n4. 内容の質を保ち、繰り返しの水増しを避けること''';
+    userPrompt += '''\n\n【重要指令 · 超长文模式】\n请原样输出完整长文。目标字数为 $target 字（约 $target 字相当）。\n要求:\n1. 不写"接下来..."、"以下是..."、"总结"之类的前言或结语\n2. 从正文直接开始，章节划分清晰，内容充实\n3. 不以长度限制为由提前结束，尽可能写完\n4. 保持内容质量，避免重复注水''';
   }
 
   // 图片内容提取（仅 DeepSeek 通道需要：先让视觉模型转述，再交给文本模型）
@@ -1087,32 +1087,32 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       final imgID = fileCtx.imageFileIds[i];
       final b64 = dsFileToBase64(imgID);
       if (b64.error == null && b64.b64.isNotEmpty) {
-        logp('🖼️ ${i + 1}/${fileCtx.imageFileIds.length} 枚目の画像を検出しました。内容を抽出します...');
+        logp('🖼️ 检测到第 ${i + 1}/${fileCtx.imageFileIds.length} 张图片。提取内容中...');
         final visionPrompt =
-            '${i + 1} 枚目の画像の内容を詳しく説明し、含まれるすべての文字を抽出し、要点をまとめてください。';
+            '请详细说明第 ${i + 1} 张图片的内容，提取其中包含的所有文字，并归纳要点。';
         try {
           final desc = await callDsVisionAPI(
               callKey, visionPrompt, b64.b64, b64.mime, 4096, 1.0,
               model: route.visionModel, apiUrl: callUrl);
           if (desc.trim().isNotEmpty) {
-            visionDescs.add('【${i + 1} 枚目の画像の内容抽出結果】\n$desc');
-            logp('✅ ${i + 1} 枚目の画像の内容抽出に成功しました');
+            visionDescs.add('【第 ${i + 1} 张图片内容提取结果】\n$desc');
+            logp('✅ 第 ${i + 1} 张图片内容提取成功');
           } else {
-            visionDescs.add('【${i + 1} 枚目の画像の内容抽出結果は空です】');
+            visionDescs.add('【第 ${i + 1} 张图片内容提取结果为空】');
           }
         } catch (e) {
-          logp('⚠️ ${i + 1} 枚目の画像の抽出に失敗しました: $e');
-          visionDescs.add('【${i + 1} 枚目の画像の内容抽出に失敗しました】');
+          logp('⚠️ 第 ${i + 1} 张图片提取失败: $e');
+          visionDescs.add('【第 ${i + 1} 张图片内容提取失败】');
         }
       } else {
-        logp('⚠️ ${i + 1} 枚目の画像の読み込みに失敗しました: ${b64.error}');
-        visionDescs.add('【${i + 1} 枚目の画像を読み込めません】');
+        logp('⚠️ 第 ${i + 1} 张图片读取失败: ${b64.error}');
+        visionDescs.add('【第 ${i + 1} 张图片无法读取】');
       }
     }
     if (visionDescs.isNotEmpty) {
-      userPrompt += '\n\n【画像内容の抽出結果（視覚モデルが生成）】\n'
+      userPrompt += '\n\n【图片内容的提取结果（视觉模型生成）】\n'
           '${visionDescs.join('\n\n')}';
-      logp('✅ すべての画像の内容抽出が完了し、プロンプトに結合しました');
+      logp('✅ 所有图片内容提取完成，已合并到提示词');
     }
   }
 
@@ -1125,10 +1125,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   现在不再自动开启：开关关着就是关着，模型拿不到 tools 定义，
   //   即使它自己写出 function call，执行层（DsToolGate）也会直接拒绝。
   if (!useTools && dsIsDeviceIntent(content)) {
-    logp('⛔ 設備操作意図を検出したが、ツールモードは OFF のため自動有効化しません');
+    logp('⛔ 检测到设备操作意图，但工具模式为 OFF，不自动启用');
   }
   Map<String, dynamic>? dbExtraBody;
-  // ★ 豆包通道：把「深い思考」开关直接映射到方舟的 thinking 字段。
+  // ★ 豆包通道：把"深度思考"开关直接映射到方舟的 thinking 字段。
   //   不传时方舟按模型默认开启深度思考，首包会被拖到 60 秒以上，
   //   前端看到的就是「不是流式、非常慢」。关闭时不思考，立刻逐字出流。
   //   含媒体时由下面的 dbThinkingEnableParam 覆盖为 enabled（先看再想）。
@@ -1147,8 +1147,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         ...?dbExtraBody,
         'reasoning_effort': effort,
       };
-      logp('🧠 豆包の思考長を調整: reasoning_effort=$effort'
-          '（推論レベル $level / ${dbThinkingProfileOf(model)}）');
+      logp('🧠 调整豆包的思考长度: reasoning_effort=$effort'
+          '（推理级别 $level / ${dbThinkingProfileOf(model)}）');
     }
   }
   // ★ 豆包自带联网搜索（百科关闭 + 联网开启）：Chat Completions 的
@@ -1159,7 +1159,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       ...(dbExtraBody ?? const <String, dynamic>{}),
       'web_search_options': dbWebSearchOptions(),
     };
-    logp('🌐 豆包ネイティブ検索を有効化（web_search_options, 月2万回無料枠）');
+    logp('🌐 启用豆包原生搜索（web_search_options, 每月 2 万次免费额度）');
   }
   final dbMediaParts = <Map<String, dynamic>>[];
   // 视频统一由 doubao_video_ark 处理：≤45MB 直接作为 video_url 片段，
@@ -1178,7 +1178,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       if (b64.error == null && b64.b64.isNotEmpty) {
         dbMediaParts.add(dbImagePart(b64.mime, b64.b64));
       } else {
-        logp('⚠️ 画像の読み込みに失敗しました（豆包へは送信しません）: ${b64.error}');
+        logp('⚠️ 图片读取失败（不发送给豆包）: ${b64.error}');
       }
     }
     for (final id in fileCtx.audioFileIds) {
@@ -1194,7 +1194,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       }
       final prepared = await dbPrepareAudioForArk(raw, meta.name);
       dbMediaParts.add(dbAudioPart(prepared.format, base64Encode(prepared.bytes)));
-      logp('🎧 音声を豆包の音声理解へ直接送信: ${meta.name} (${prepared.format})');
+      logp('🎧 将音频直接发送给豆包语音理解: ${meta.name} (${prepared.format})');
     }
     // 视频：不再 readAsBytesSync + base64（2GB 走那条路必然 OOM）。
     // 现在交给 doubao_video_ark：≤45MB 直接作为 video_url 片段，
@@ -1210,29 +1210,29 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         if (vid.text.isNotEmpty) {
           // 大视频：分段理解结果以文本形式并入用户提示词
           userPrompt = '$userPrompt\n\n${vid.text}';
-          logp('🧾 動画の分段理解結果をプロンプトへ結合（${runeLen(vid.text)} 文字）');
+          logp('🧾 把视频分段理解结果合并到提示词（${runeLen(vid.text)} 字）');
         }
       } on DbVideoArkException catch (e) {
-        logp('❌ 動画の準備に失敗: ${e.message}');
+        logp('❌ 视频准备失败: ${e.message}');
         await dsJSONErr(res, 400, e.message);
         return;
       }
     } else {
-      logp('🎬 動画 ${fileCtx.videoFileIds.length} 件は SSE 接続後に '
-          '分割・準備します');
+      logp('🎬 ${fileCtx.videoFileIds.length} 个视频将在 SSE 连接后 '
+          '分割并准备');
     }
-    // 画像 / 音声 / 動画を見たうえで、まず考えてから答える
+    // 看过图片 / 音频 / 视频后，先思考再回答
     dbExtraBody = dbThinkingEnableParam(model);
     if (dbExtraBody != null) {
-      logp('🧠 豆包の深度思考を有効化（メディア理解後に思考して回答）');
+      logp('🧠 启用豆包深度思考（理解媒体后思考再回答）');
     }
-    // ツールモードのリクエスト形式は thinking と併用できないため、
-    // メディア添付時のみ自動解除する（黙って無視はしない）。
+    // 工具模式的请求形式无法与 thinking 并用，因此
+    // 仅在附带媒体时自动关闭（不默默忽略）。
     if (useTools) {
       useTools = false;
       // 工具模式曾把 temperature 压到 0，这里恢复默认采样温度
       temperature = 1.0;
-      logp('ℹ️ メディア添付のためツールモードを自動解除しました（思考を優先）');
+      logp('ℹ️ 因附带媒体，已自动关闭工具模式（优先思考）');
     }
   }
   // DeepSeek 通道不具备音视频理解能力，如实告知而不是假装已读
@@ -1242,7 +1242,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       ...fileCtx.audioFileIds.map((id) => getDsFileMeta(id)?.name ?? id),
       ...fileCtx.videoFileIds.map((id) => getDsFileMeta(id)?.name ?? id),
     ];
-    logp('⚠️ DeepSeek 通道は音声・動画理解に非対応: ${names.join('、')}');
+    logp('⚠️ DeepSeek 通道不支持音频、视频理解: ${names.join('、')}');
     userPrompt +=
         '\n\n' + dbLocalized(mediaLang, 'noMediaNote', [names.join('、')]);
   }
@@ -1251,23 +1251,23 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final refs = resolveCrossSessionRefs(userPrompt, sessionID);
   if (refs.injected) userPrompt = refs.rewritten;
 
-  // ★ 维度隔離：只把「同一维度」の履歴をモデルへ渡す。
-  //   豆包(dim=db) と DeepSeek(dim=ds) は互いのメッセージを一切見ない。
-  // ★ chatDim はこの関数の先頭（useDoubao 直後）で確定済み
+  // ★ 维度隔离：只把"同一维度"的历史传给模型。
+  //   豆包(dim=db) 与 DeepSeek(dim=ds) 完全不看彼此的消息。
+  // ★ chatDim 已在本函数开头（useDoubao 之后）确定
   logp('🧭 送信维度=$chatDim (model=$model)');
   var history = getDsMessages(sessionID, dim: chatDim);
   history = pickHistoryWindow(history);
 
   final apiMessages = <Map<String, dynamic>>[];
-  // i18n：UI 言語に一致した言語固定プロンプトを注入
+  // i18n：注入与 UI 语言一致的语言固定提示词
   final uiLang = dsRequestLang(req, body);
   final sysParts = <String>[];
   sysParts.add(dsLangSystemPrompt(uiLang));
   if (deepThink) {
-    sysParts.add('深い多段階の推論が可能です。思考プロセスを十分に示してください。');
+    sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
   }
   if (longTextMode) {
-    sysParts.add('あなたは長文執筆を得意とするプロの作家です。前置きやまとめを一切入れず、完成した長文を直接出力してください。');
+    sysParts.add('你是擅长长文写作的专业作家。不要加任何前言或总结，直接输出完成的长文。');
   }
   // ★ 显式插件按钮（墨迹天气 / 头条图文）：强制模型真的调用插件 + Markdown 结构化输出。
   //   工具模式在这条请求里恒为 OFF，因此这里只做「信源使用」与「输出格式」约束。
@@ -1302,7 +1302,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (deferVideoPrepare) {
     // 含视频的流式请求：本条 user message 由 handleDsChatSendStream 在
     // SSE 建连、且视频 file_id 准备好之后追加（避免 120 秒空闲断连）。
-    logp('⏸️ 動画付きリクエスト: user メッセージの追加を SSE 側へ委譲');
+    logp('⏸️ 带视频的请求: 把 user 消息的追加委托给 SSE 侧');
   } else if (dbMediaParts.isNotEmpty) {
     apiMessages.add({
       'role': 'user',
@@ -1335,7 +1335,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   // ============ 工具模式（非流式） ============
   if (useTools) {
-    logp('🔧 ツールモードを有効化し、マルチターンの function calling を開始します（最大 $DS_TOOL_MAX_ITERATIONS ラウンド）');
+    logp('🔧 启用工具模式，开始多轮 function calling（最多 $DS_TOOL_MAX_ITERATIONS 轮）');
     final usageAcc = DsUsageAcc();
     final agentMsgs = <Map<String, dynamic>>[
       {'role': 'system', 'content': dbToolSystemPromptFor(model, callUrl, uiLang)},
@@ -1347,7 +1347,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
           temperature, dbToolMaxIterFor(model, callUrl, rounds), usageAcc,
           apiUrl: callUrl);
     } catch (e) {
-      await dsJSONErr(res, 500, 'ツール呼び出しに失敗しました: $e');
+      await dsJSONErr(res, 500, '工具调用失败: $e');
       return;
     }
 
@@ -1367,9 +1367,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     var fullReasoning = outcome.reasoning;
     if (outcome.toolLogs.isNotEmpty) {
       fullReasoning =
-          '【ツール呼び出し記録】\n${outcome.toolLogs.join('\n\n───────────────\n\n')}';
+          '【工具调用记录】\n${outcome.toolLogs.join('\n\n───────────────\n\n')}';
       if (outcome.reasoning.isNotEmpty) {
-        fullReasoning += '\n\n【モデルの思考プロセス】\n${outcome.reasoning}';
+        fullReasoning += '\n\n【模型的思考过程】\n${outcome.reasoning}';
       }
     }
 
@@ -1465,7 +1465,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       reasoning = r.reasoning;
     }
   } catch (e) {
-    await dsJSONErr(res, 500, 'API 呼び出しに失敗しました: $e');
+    await dsJSONErr(res, 500, 'API 调用失败: $e');
     return;
   }
 
@@ -1501,7 +1501,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     if (title.isEmpty || title == '新对话') {
       final runes = content.runes.toList();
       if (runes.isEmpty) {
-        title = '[ファイル対話]';
+        title = '[文件对话]';
       } else if (runes.length > 18) {
         title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
       } else {

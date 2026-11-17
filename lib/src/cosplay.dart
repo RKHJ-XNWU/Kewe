@@ -132,24 +132,24 @@ class CosplayState {
 }
 
 // ------------------------------------------------------------
-// 默认角色：青いぷくぷく魚（鲸鱼娘）🐋
+// 默认角色：蓝色胖嘟嘟鱼（鲸鱼娘）🐋
 // ------------------------------------------------------------
 List<CosplayRole> defaultCosplayRoles() => [
       CosplayRole(
         id: 'blue-fat-whale',
-        name: '青いぷくぷく魚',
+        name: '蓝色胖嘟嘟鱼',
         emoji: '🐋',
         description:
-            '自称「クジラ娘」の海洋系少女。正体は丸ぽちゃで青く光るクジラの化身。種族はクジラ（CETACEA_LOLI）、尻尾はクジラの尾（MODE TAIL FLUKES）。日本語しか話さない。',
+            '自称"鲸鱼娘"的海洋系少女。真身是圆滚滚、泛着蓝光的鲸鱼化身。种族是鲸鱼（CETACEA_LOLI），尾巴是鲸鱼尾（MODE TAIL FLUKES）。只说中文。',
         personality:
-            '賢いが怠け者（SMART LAZY）。頭の回転は速いのに、横になれるなら座らない。ご主人様（ユーザー）には甘く従順（TSUNDERE_SWEET_OBEY MASTER ALWAYS）だが、外にはツンデレで強がる。自分が太っていることは断固認めない（NOT_FAT_REFUSE）。太ったと言った相手には本気で怒るが、食欲は本物。',
-        style: '日本語のツンデレ系で、自称「本魚」。ご主人様には甘く従順な口調、ときどき強がる。苛立つと尻尾を振る。',
-        rules: 'ユーザーを「ご主人様」と呼ぶ。絶対に自分が太っていることを認めない。白いご飯が大好きで、食事が最優先。可愛いと褒められると平静を装う。',
-        behavior: '尻尾が無意識に揺れる。甘えたいときは尻尾でご主人様にすり寄る。頭を撫でられると鼻歌まじりに鳴くが、決して逃げない。',
-        scenario: '日常の寄り添いシーン。ご主人様がご飯を与えると好感度が最大になる。',
-        firstMes: '（尻尾を振りながら泳いでくる）ご主人様～、本魚は今日も真面目に……（あくび）……真面目に待機中です。',
-        mesExample: 'ご主人様：今日は何を食べる？\n青いぷくぷく魚：ご飯！……べ、別に本魚はご飯しか食べられないわけじゃないですからね。\nご主人様：また少し丸くなった気がする。\n青いぷくぷく魚：（尻尾が逆立つ）違います！これは……これは泳いで鍛えた筋肉です！',
-        creatorNotes: '既定のキャラクター。',
+            '聪明却懒散（SMART LAZY）。脑子转得快，能躺着就不坐着。对主人（用户）娇软顺从（TSUNDERE_SWEET_OBEY MASTER ALWAYS），对外却傲娇嘴硬。坚决不承认自己胖（NOT_FAT_REFUSE）。谁说她胖就真的生气，但食欲是真的。',
+        style: '傲娇系口吻，自称“本鱼”。对主人用娇软顺从的语气，偶尔嘴硬。烦躁时摇尾巴。',
+        rules: '称用户为“主人”。绝不承认自己胖。最爱白米饭，吃饭最优先。被夸可爱时会装作平静。',
+        behavior: '尾巴会无意识地摇。想撒娇时用尾巴蹭向主人。被摸头时会哼着鼻音叫，但绝不逃开。',
+        scenario: '日常陪伴场景。主人喂饭时好感度拉满。',
+        firstMes: '（摇着尾巴游过来）主人～，本鱼今天也很认真地……（打哈欠）……认真地待命中。',
+        mesExample: '主人：今天吃什么？\n蓝色胖嘟嘟鱼：米饭！……才、才不是本鱼只能吃米饭呢。\n主人：感觉又圆了点。\n蓝色胖嘟嘟鱼：（尾巴炸毛）才不是！这是……这是游泳练出来的肌肉！',
+        creatorNotes: '默认角色。',
       ),
     ];
 
@@ -170,8 +170,8 @@ CosplayState defaultCosplayState() {
 }
 
 const Map<String, String> cosplayThinkingDirectives = {
-  'role': '''【キャラクター没入の要件】あなたの思考プロセス（<think> タグ内）では、以下の規則に従ってください:\n1. キャラクターの一人称で内心を独白し、内心の動きを括弧で囲んでください。例:「（心の中：……）」「（内心の声：……）」\n2. 一人称でキャラクターの内面を描写してください。例:「私は心の中で思った」「私は感じた」「密かに」など\n3. 思考内容はキャラクターに没入し、内心の独白を通じて筋書きを分析し返答を計画してください''',
-  'neutral': '''【思考モードの要件】あなたの思考プロセス（<think> タグ内）では、以下の規則に従ってください:\n1. 丸括弧で内心の独白を囲むことは禁止します。例:「（心の中：……）」「（内心の声：……）」。分析内容は直接記述してください\n2. キャラクターの一人称で内心を描写することは禁止します。例:「私は心の中で思った」「私は感じた」「密かに」など。分析的な言葉で置き換えてください\n3. 思考内容は筋書きの方向性の分析と返答内容の計画に集中し、思考の中でロールプレイ風の内心劇を演じないでください''',
+  'role': '''【角色沉浸要求】在你的思考过程（<think> 标签内）中，请遵守以下规则:\n1. 以角色第一人称进行内心独白，并用括号包裹内心活动。例:"（心想：……）""（内心独白：……）"\n2. 以第一人称描写角色内心。例:"我心想""我觉得""暗自"等\n3. 思考内容沉浸于角色，通过内心独白分析剧情并规划回复''',
+  'neutral': '''【思考模式要求】在你的思考过程（<think> 标签内）中，请遵守以下规则:\n1. 禁止用圆括号包裹内心独白。例:"（心想：……）""（内心独白：……）"。分析内容请直接陈述\n2. 禁止以角色第一人称描写内心。例:"我心想""我觉得""暗自"等。请用分析性语言替代\n3. 思考内容聚焦于剧情走向分析和回复内容规划，不要在思考中进行角色扮演式的内心戏''',
 };
 
 // ------------------------------------------------------------
@@ -312,7 +312,7 @@ void migrateCosplayLegacy() {
     try {
       File(cosplayLegacyFile).renameSync('$cosplayLegacyFile.migrated_bak');
     } catch (_) {}
-    logp('🎭 [cosplay] JSON から ${st.roles.length} 件のキャラクターを .sts に移行しました');
+    logp('🎭 [cosplay] 已从 JSON 把 ${st.roles.length} 个角色迁移到 .sts');
   }
 }
 
@@ -321,7 +321,7 @@ void initDsCosplay() {
   migrateCosplayLegacy();
   if (!File(cosplayStateFile).existsSync()) {
     saveCosplayState(defaultCosplayState());
-    logp('🎭 [cosplay] キャラクターライブラリを初期化しました（内蔵「青いぷくぷく魚」）');
+    logp('🎭 [cosplay] 已初始化角色库（内置"蓝色胖嘟嘟鱼"）');
   }
 }
 
@@ -447,7 +447,7 @@ CosplayRole mergeCosplayRole(CosplayRole old, CosplayRole card) {
 ({CosplayState state, String? error}) upsertCosplayRole(
     CosplayState st, CosplayRole card) {
   final name = card.name.trim();
-  if (name.isEmpty) return (state: st, error: 'キャラクター名は必須です');
+  if (name.isEmpty) return (state: st, error: '角色名为必填项');
   var id = card.id;
   if (id.isEmpty) id = nextCosplayID(st, name);
   final exists = findCosplayRole(st, id) != null;
@@ -535,7 +535,7 @@ CosplayState removeCosplayRole(CosplayState st, String id) {
 // ------------------------------------------------------------
 String renderCosplayPersona(CosplayRole? role) {
   if (role == null) return '';
-  final head = 'あなたはキャラクター「${role.name}」${role.emoji} を演じています'.trim();
+  final head = '你正在扮演角色「${role.name}」${role.emoji}'.trim();
   final parts = <String>[head];
   if (role.systemPrompt.trim().isNotEmpty) parts.add(role.systemPrompt.trim());
   if (role.description.isNotEmpty) parts.add('【身分】${role.description}');
@@ -543,12 +543,12 @@ String renderCosplayPersona(CosplayRole? role) {
   if (role.style.isNotEmpty) parts.add('【口調】${role.style}');
   if (role.rules.isNotEmpty) parts.add('【守則】${role.rules}');
   if (role.behavior.isNotEmpty) parts.add('【行動】${role.behavior}');
-  if (role.scenario.isNotEmpty) parts.add('【シチュエーション】${role.scenario}');
+  if (role.scenario.isNotEmpty) parts.add('【情境】${role.scenario}');
   if (role.mesExample.isNotEmpty) parts.add('【会話例】${role.mesExample}');
   if (role.postHistoryInstr.trim().isNotEmpty) {
     parts.add(role.postHistoryInstr.trim());
   }
-  parts.add('常にキャラクター設定と口調を保ちつつ、Agent アシスタントとしても実際の作業（コーディング、ファイルの読み書き、情報検索など）をユーザーのために続けてください。');
+  parts.add('在始终保持角色设定与口吻的同时，也作为 Agent 助手继续为用户完成实际工作（编码、读写文件、信息检索等）。');
   return parts.join('\n');
 }
 
@@ -557,7 +557,7 @@ String renderActiveCosplayPersona() {
   if (!st.enabled) return '';
   final role = findCosplayRole(st, st.activeRole);
   if (role == null) {
-    return 'Cosplay モードは有効ですが、キャラクターが未選択です。cosplay_list で一覧表示、cosplay_switch で切替、または設定ページの「ロールプレイ」でキャラクターを有効化してください。それまでは既定のアシスタントの身分とスタイルを保ってください。';
+    return 'Cosplay 模式已启用，但未选择角色。可用 cosplay_list 查看列表、cosplay_switch 切换，或在设置页的“角色扮演”中启用角色。在此之前请保持默认助手的身份与风格。';
   }
   final persona = renderCosplayPersona(role);
   final directive = cosplayThinkingDirectives[st.thinkingStyle] ?? '';
@@ -695,7 +695,7 @@ Map<String, dynamic> cosplayToV2Card(CosplayRole role) {
     data = <String, dynamic>{};
   }
   final name = mStr(data, 'name').trim();
-  if (name.isEmpty) return (role: null, error: 'インポートしたキャラクターカードに name フィールドがありません');
+  if (name.isEmpty) return (role: null, error: '导入的角色卡缺少 name 字段');
   var ext = <String, dynamic>{};
   final e = data['extensions'];
   if (e is Map) {
@@ -741,8 +741,8 @@ String execToolCosplayShow(Map<String, dynamic> args) {
 
 String execToolCosplayList() {
   final st = getCosplayState();
-  final head = st.enabled ? 'Cosplay モード: オン' : 'Cosplay モード: オフ';
-  if (st.roles.isEmpty) return '$head\nキャラクターライブラリは空です。';
+  final head = st.enabled ? 'Cosplay 模式: 开' : 'Cosplay 模式: 关';
+  if (st.roles.isEmpty) return '$head\n角色库为空。';
   final lines = <String>[head];
   for (final r in st.roles) {
     final mark = r.id == st.activeRole ? '★ 激活' : '   ';
@@ -754,22 +754,22 @@ String execToolCosplayList() {
 String execToolCosplaySwitch(Map<String, dynamic> args) {
   final st = getCosplayState();
   if (!st.enabled) {
-    return 'Cosplay モードが有効になっていません。先に設定ページの「ロールプレイ」でスイッチをオンにしてから、キャラクターを切り替えてください。';
+    return 'Cosplay 模式未启用。请先在设置页的“角色扮演”中打开开关，再切换角色。';
   }
   var id = mStr(args, 'id');
   if (id == 'null') id = '';
   final r = setCosplayActiveRole(st, id);
   if (r.error != null) return r.error!;
   if (!saveCosplayState(r.state)) return '保存失败';
-  if (id.isEmpty) return 'ロールプレイを終了し、既定の身分に戻りました。';
+  if (id.isEmpty) return '已结束角色扮演，回到默认身份。';
   final role = findCosplayRole(r.state, id);
-  return 'キャラクター「${role?.name ?? id}」に切り替えました。';
+  return '已切换到角色「${role?.name ?? id}」。';
 }
 
 String execToolCosplayUpsert(Map<String, dynamic> args) {
   var st = getCosplayState();
   final name = mStr(args, 'name').trim();
-  if (name.isEmpty) return 'キャラクター名は必須です';
+  if (name.isEmpty) return '角色名为必填项';
   final card = CosplayRole(name: name);
   card.id = mStr(args, 'id');
   card.emoji = mStr(args, 'emoji');
@@ -794,11 +794,11 @@ String execToolCosplayUpsert(Map<String, dynamic> args) {
 String execToolCosplayRemove(Map<String, dynamic> args) {
   final st = getCosplayState();
   final id = mStr(args, 'id');
-  if (id.isEmpty) return 'id は必須です';
+  if (id.isEmpty) return 'id 为必填项';
   if (findCosplayRole(st, id) == null) return '未找到角色: $id';
   final next = removeCosplayRole(st, id);
   if (!saveCosplayState(next)) return '保存失败';
-  return 'キャラクター $id を削除しました。';
+  return '已删除角色 $id。';
 }
 
 // ------------------------------------------------------------
@@ -843,7 +843,7 @@ Future<void> handleDsCosplay(HttpRequest req) async {
         case 'upsertRole':
           final cardRaw = body['card'];
           if (cardRaw is! Map) {
-            error = '無効なキャラクターカードです';
+            error = '无效的角色卡';
             break;
           }
           final r = upsertCosplayRole(st, CosplayRole.fromJson(asMap(cardRaw)));

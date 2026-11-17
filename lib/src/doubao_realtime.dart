@@ -50,7 +50,7 @@ const String dbRtcVersion = '2025-06-01';
 // ------------------------------------------------------------
 /// 各语言的「说话语言」指令：语言自由，跟随用户
 const Map<String, String> _dbSpeakLang = <String, String>{
-  'ja': '話す言語は自由です。ユーザーが使っている言語に合わせてください。',
+  'ja': '说话语言自由。请与用户使用的语言保持一致。',
   'zh': '说话语言不受限制，请跟随用户使用的语言。',
   'en': 'There is no language restriction; speak in the language the user uses.',
   'ko': '말하는 언어는 자유이며 사용자가 쓰는 언어를 따르세요.',
@@ -213,7 +213,7 @@ Future<void> handleDbRealtime(HttpRequest req) async {
   final auth = dbDuplexAuthHeaders(cfg);
   if (auth.isEmpty) {
     await errJson(req.response, 400,
-        '端到端音声サービスの認証情報が未設定です。設定画面で豆包音声 API Key を入力してください。');
+        '端到端语音服务的认证信息未设置。请在设置界面输入豆包语音 API Key。');
     return;
   }
 
@@ -227,7 +227,7 @@ Future<void> handleDbRealtime(HttpRequest req) async {
   try {
     client = await WebSocketTransformer.upgrade(req);
   } catch (e) {
-    logp('❌ Seeduplex: WebSocket への昇格に失敗しました: $e');
+    logp('❌ Seeduplex: 升级到 WebSocket 失败: $e');
     return;
   }
 
@@ -238,7 +238,7 @@ Future<void> handleDbRealtime(HttpRequest req) async {
       headers: auth,
     ).timeout(const Duration(seconds: 20));
   } catch (e) {
-    final msg = 'エンドツーエンド音声サービスへ接続できませんでした：${dbErrText(e)}';
+    final msg = '无法连接到端到端语音服务：${dbErrText(e)}';
     logp('❌ Seeduplex: $msg');
     try {
       client.add(jsonEncode(<String, dynamic>{
@@ -251,7 +251,7 @@ Future<void> handleDbRealtime(HttpRequest req) async {
     return;
   }
 
-  logp('🔊 Seeduplex 接続を開始しました（lang=$lang, voice=${voice.isEmpty ? '(既定)' : voice}）');
+  logp('🔊 Seeduplex 连接已开始（lang=$lang, voice=${voice.isEmpty ? '(默认)' : voice}）');
 
   var closed = false;
   var framesUp = 0;
@@ -260,7 +260,7 @@ Future<void> handleDbRealtime(HttpRequest req) async {
   Future<void> shutdown(String reason) async {
     if (closed) return;
     closed = true;
-    logp('🔊 Seeduplex 終了（$reason・上り $framesUp 帧 / 下り $framesDown 帧）');
+    logp('🔊 Seeduplex 结束（$reason・上行 $framesUp 帧 / 下行 $framesDown 帧）');
     try {
       await remote.close();
     } catch (_) {}
@@ -281,17 +281,17 @@ Future<void> handleDbRealtime(HttpRequest req) async {
             data.contains('response.done')) {
           final t = _str(_asMap(_safeDecode(data))['type']);
           if (t.isNotEmpty) logp('🔊 Seeduplex ↓ $t');
-          if (t == 'error') logp('❌ Seeduplex エラー: $data');
+          if (t == 'error') logp('❌ Seeduplex 错误: $data');
         }
       }
       try {
         client.add(data);
       } catch (e) {
-        shutdown('ブラウザ側への書き込み失敗: $e');
+        shutdown('写入浏览器侧失败: $e');
       }
     },
-    onError: (Object e) => shutdown('上流エラー: $e'),
-    onDone: () => shutdown('上流が切断されました'),
+    onError: (Object e) => shutdown('上游错误: $e'),
+    onDone: () => shutdown('上游已断开'),
     cancelOnError: false,
   );
 
@@ -313,11 +313,11 @@ Future<void> handleDbRealtime(HttpRequest req) async {
       try {
         remote.add(out);
       } catch (e) {
-        shutdown('上流への書き込み失敗: $e');
+        shutdown('写入上游失败: $e');
       }
     },
-    onError: (Object e) => shutdown('ブラウザ側エラー: $e'),
-    onDone: () => shutdown('ブラウザが切断しました'),
+    onError: (Object e) => shutdown('浏览器侧错误: $e'),
+    onDone: () => shutdown('浏览器已断开'),
     cancelOnError: false,
   );
 }
@@ -401,7 +401,7 @@ Future<Map<String, dynamic>> dbRtcCall(String action, Map<String, dynamic> paylo
   if (ak.isEmpty || sk.isEmpty) {
     return <String, dynamic>{
       'ok': false,
-      'error': 'RTC の AccessKey / SecretKey が未設定です。設定画面で入力してください。',
+      'error': 'RTC 的 AccessKey / SecretKey 未设置。请在设置界面输入。',
     };
   }
   final body = jsonEncode(payload);
@@ -702,8 +702,8 @@ Future<void> handleDbRealtimeStatus(HttpRequest req) async {
       'hasDuplexKey': cfg.duplexApiKey.trim().isNotEmpty,
       'reason': cfg.duplexApiKey.trim().isNotEmpty
           ? ''
-          : '端到端音声サービスには豆包音声コンソールの API Key が別途必要です'
-              '（方舟の API Key では 401 になります）',
+          : '端到端语音服务需要另外提供豆包语音控制台的 API Key'
+              '（用方舟的 API Key 会返回 401）',
     },
     'rtc': <String, dynamic>{
       'available': cfg.rtcAppId.trim().isNotEmpty &&
@@ -736,11 +736,11 @@ Future<void> handleDbRtcStart(HttpRequest req) async {
   final body = await readJsonBody(req);
   final payload = dbRtcTaskPayload(body);
   if ('${payload['AppId']}'.trim().isEmpty) {
-    await errJson(req.response, 400, 'RTC AppId が未設定です');
+    await errJson(req.response, 400, 'RTC AppId 未设置');
     return;
   }
   if ('${payload['RoomId']}'.trim().isEmpty) {
-    await errJson(req.response, 400, 'RoomId が未設定です（設定画面かリクエストで指定）');
+    await errJson(req.response, 400, 'RoomId 未设置（请在设置界面或请求中指定）');
     return;
   }
   final r = await dbRtcCall('StartVoiceChat', payload);
@@ -761,7 +761,7 @@ Future<void> handleDbRtcStop(HttpRequest req) async {
   final roomId = trimOr(mStr(body, 'roomId'), cfg.rtcRoomId);
   final taskId = mStr(body, 'taskId').trim();
   if (appId.isEmpty || roomId.isEmpty || taskId.isEmpty) {
-    await errJson(req.response, 400, 'AppId / RoomId / TaskId が必要です');
+    await errJson(req.response, 400, '需要 AppId / RoomId / TaskId');
     return;
   }
   final r = await dbRtcCall('StopVoiceChat', <String, dynamic>{

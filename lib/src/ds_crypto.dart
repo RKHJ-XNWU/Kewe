@@ -87,7 +87,7 @@ List<int> getOrCreateMasterKey() {
     // 权限 0600（Termux 下 chmod 生效）
     Process.runSync('chmod', ['600', dsMasterKeyFile]);
   } catch (e) {
-    logp('⚠️ マスターキーの書き込みに失敗しました: $e');
+    logp('⚠️ 主密钥写入失败: $e');
   }
   _masterKeyCache = key;
   return key;
@@ -110,10 +110,10 @@ String dsDecrypt(String encoded) {
   try {
     raw = base64.decode(encoded.trim());
   } catch (e) {
-    throw FormatException('暗号文の base64 デコードに失敗しました: $e');
+    throw FormatException('密文 base64 解码失败: $e');
   }
   if (raw.length < 12) {
-    throw const FormatException('暗号文の長さが不足しています');
+    throw const FormatException('密文长度不足');
   }
   final nonce = raw.sublist(0, 12);
   final body = raw.sublist(12);
@@ -194,7 +194,7 @@ bool saveDsConfig(String apiKey, String model, String imgKey) {
     Process.runSync('chmod', ['600', dsChatConfigFile]);
     return true;
   } catch (e) {
-    logp('❌ 設定の保存に失敗しました: $e');
+    logp('❌ 设置保存失败: $e');
     return false;
   }
 }

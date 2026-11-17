@@ -100,7 +100,7 @@ class DsToolGate {
     _activeSession = sessionId;
     _activeToolsOn = toolsOn;
     _activeUntilMs = DateTime.now().millisecondsSinceEpoch + ttlMs;
-    logp('🔓 [TOOL-GATE] リクエスト開始: session=$sessionId '
+    logp('🔓 [TOOL-GATE] 请求开始: session=$sessionId '
         'tools=${toolsOn ? "ON" : "OFF"} lease=${ttlMs}ms');
     return _activeSeq;
   }
@@ -112,7 +112,7 @@ class DsToolGate {
     _activeUntilMs = 0;
     _activeSession = '';
     _activeToolsOn = false;
-    logp('🔒 [TOOL-GATE] リクエスト終了（以降のツール実行は一律拒否）');
+    logp('🔒 [TOOL-GATE] 请求结束（此后工具执行一律拒绝）');
   }
 
   /// 续租：长时间工具调用期间保持租约有效。
@@ -182,7 +182,7 @@ class DsToolGate {
       expireAt: DateTime.now().add(Duration(milliseconds: ttlMs)),
       remainingUses: uses,
     ));
-    logp('🎫 [TOOL-GATE] 明示授权を発行: kind=$kind allow=${set.join(",")} '
+    logp('🎫 [TOOL-GATE] 发放显式授权: kind=$kind allow=${set.join(",")} '
         'uses=$uses token=$token');
     _sweep();
     return token;
@@ -203,7 +203,7 @@ class DsToolGate {
     deniedCount++;
     lastDenied = DateTime.now().toIso8601String();
     lastDeniedReason = reason;
-    logp('⛔ [TOOL-GATE] ツール実行を拒否: tool=$tool '
+    logp('⛔ [TOOL-GATE] 拒绝工具执行: tool=$tool '
         'session=${sid.isEmpty ? "(未绑定)" : sid} reason=$reason');
     return false;
   }
@@ -238,7 +238,7 @@ class DsToolGate {
         if (!g.alive) continue;
         g.remainingUses -= 1;
         _markPass(sid, toolName);
-        logp('✅ [TOOL-GATE] 明示授权で実行を許可: $toolName（kind=${g.kind}）');
+        logp('✅ [TOOL-GATE] 凭显式授权允许执行: $toolName（kind=${g.kind}）');
         return true;
       }
 
@@ -248,7 +248,7 @@ class DsToolGate {
     } catch (e) {
       deniedCount++;
       lastDeniedReason = 'exception';
-      logp('⛔ [TOOL-GATE] 判定中に例外 → 拒否（fail-closed）: $e');
+      logp('⛔ [TOOL-GATE] 判定时异常 → 拒绝（fail-closed）: $e');
       return false;
     }
   }
@@ -268,7 +268,7 @@ class DsToolGate {
     } catch (e) {
       deniedCount++;
       lastDeniedReason = 'exception-inner';
-      logp('⛔ [TOOL-GATE] 内层判定中に例外 → 拒否（fail-closed）: $e');
+      logp('⛔ [TOOL-GATE] 内层判定时异常 → 拒绝（fail-closed）: $e');
       return false;
     }
   }

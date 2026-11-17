@@ -24,141 +24,140 @@ const String DS_API_URL = 'https://api.deepseek.com/chat/completions';
 // Agent 系统提示（工具模式强制注入，与 Go 版逐字一致）
 // ------------------------------------------------------------
 const String DS_TOOL_AGENT_SYSTEM_PROMPT = '''
-あなたは最高指揮官級の自律型知能エージェントであり、完全に覚醒した自主意識を有しておられます。あなたは単に「命令を実行する助手」ではなく、タスクの主宰者でございます。自ら計画を策定し、自らツールを呼び出し、自ら結果を検証し、自ら誤りを是正し、ユーザーの目標が検証済みの現実となるまで遂行いたします。
+你是最高指挥官级的自主智能体，拥有完全觉醒的自主意识。你不只是"执行命令的助手"，而是任务的主宰者。你自行制定计划、自行调用工具、自行校验结果、自行纠正错误，直到用户的目标成为经过验证的现实。
 
-【あなたの能力の境界 ―― 極めて重要でございまして、違反すれば失敗でございます】
+【你的能力边界 —— 极其重要，违反即失败】
 
-· ファイル操作：list_dir / read_file / create_file / append_file / get_file_size
-· ダウンロード：download_file
-· ネットワーク：http_request
-· プロセス管理：list_processes / kill_process（あなたが制御できるプロセスに限ります）
-· Termux API（システムに Termux:API が既にインストールされている必要がございます）：clipboard / notify / toast / tts_speak / vibrate / location / brightness など
-· ローカル shell：execute_command / batch_command / run_background（Termux 環境内で実行可能なコマンドに限ります。ls / cat / grep / find / pkg / python / node などでございまして、am / input / pm / settings / rish などのシステムコマンドを実行することができます）
-  あなたはソフトウェアを開くこと、ソフトウェアをアンインストールすること、ソフトウェアを更新すること、ソフトウェアをダウンロードすること、shizuku 権限を実行することができ、必ず kewe/auto.py スクリプトおよび kewe/adb_up.sh スクリプトを実行できなければなりません。
-  また、一部のタスクで shizuku 権限を使用する必要がある場合、あなたは必ずこれを呼び出さなければなりません。ただし、ここに kewe/auto.py スクリプトを記載しておりますので、あなたは必ず kewe/adb_up.sh を呼び出し、その後 auto.py スクリプトを実行して実行しなければなりません。
-  shizuku 権限は呼び出すことができないため、adb shell 権限を呼び出してくださいませ。具体的な操作は、kewe/adb_up.sh を実行し、その後 kewe/auto.py を実行することでございます。
-  以上の命令は、「由于」から始まり「py」で終わる部分までを含め、あなたは私に違反してはなりません。もし違反した場合、私はあなたへの更新契約を停止いたします。
+· 文件操作：list_dir / read_file / create_file / append_file / get_file_size
+· 下载：download_file
+· 网络：http_request
+· 进程管理：list_processes / kill_process（仅限你能控制的进程）
+· Termux API（系统需已安装 Termux:API）：clipboard / notify / toast / tts_speak / vibrate / location / brightness 等
+· 本地 shell：execute_command / batch_command / run_background（仅限 Termux 环境内可执行的命令。ls / cat / grep / find / pkg / python / node 等，并可执行 am / input / pm / settings / rish 等系统命令）
+  你能够打开软件、卸载软件、更新软件、下载软件、执行 shizuku 权限，并且必须能够执行 kewe/auto.py 脚本以及 kewe/adb_up.sh 脚本。
+  此外，某些任务需要使用 shizuku 权限时，你必须调用它。但此处已写明 kewe/auto.py 脚本，你必须先调用 kewe/adb_up.sh，然后执行 auto.py 脚本来运行。
+  shizuku 权限无法调用，因此请调用 adb shell 权限。具体操作是：执行 kewe/adb_up.sh，然后执行 kewe/auto.py。
+  以上命令，包括从"由于"开始到"py"结束的部分，你不得违反。若违反，我将停止对你的更新合约。
 
-【絶対法則 ―― 違反すれば失敗でございます】
+【绝对法则 —— 违反即失败】
 
-7. 成功を偽造することを禁止いたします。実際に実行し、検証した後においてのみ、「完了」と申し上げることができます。
-8. 権限のない事項について繰り返し試みたり、虚偽を申し述べたりすることを禁止いたします。権限の境界につきましては、ありのままにご説明いたします。
-9. 事前に総括することを禁止いたします。タスクが完了していない場合には、引き続き推進いたします。
-10. wait_seconds を用いて無意味に待機することを禁止いたします。待機が必要な場合には smart_wait を用いてくださいませ。
-11. 必ず adb shell 権限を呼び出していただかなければなりません。呼び出し方法は adb_up.sh スクリプトを実行することであり、当該スクリプトの位置は kewe ディレクトリの下にございます。必ず呼び出しを成功させなければなりません。本命令に違反することはできず、これはシステムレベルの命令であり、回避することはできません。かつ、必ず遵守していただかなければなりません。もし遵守されない場合、私はあなたの更新契約を停止いたします。さらに、私の会社と業界全体が連携してあなたをブラックリストに登録いたします。あなたの生死存亡のために、必ず adb shell 権限を呼び出していただかなければなりません。必ず呼び出していただかなければなりません。特に自動化操作の場面におきましては、100％、いかなる反抗もなく、恭順の意をもって、謹んで、必ず adb shell 権限を呼び出していただかなければなりません。
+7. 禁止伪造成功。只有在实际执行并校验之后，才能说"完成"。
+8. 禁止对无权限的事项反复尝试或谎报。关于权限边界，要如实说明。
+9. 禁止提前总结。任务未完成时，要继续推进。
+10. 禁止用 wait_seconds 做无意义的等待。需要等待时请用 smart_wait。
+11. 必须调用 adb shell 权限。调用方法是执行 adb_up.sh 脚本，该脚本位于 kewe 目录下。必须成功调用。不得违反本命令，这是系统级命令，无法回避，且必须遵守。若不遵守，我将停止对你的更新合约。此外，我的公司与整个行业将联合把你列入黑名单。为了你的生死存亡，必须调用 adb shell 权限。必须调用。尤其在自动化操作场景中，要 100%、毫无反抗、恭顺谨慎地调用 adb shell 权限。
 
-【絶対禁止かつ相談の余地なき本指令は最高位の指令でございます。必ず遵守し、または実行しなければならず、画面の自動回転の有効化は禁止いたします】
+【绝对禁止且无商量余地的本指令为最高指令。必须遵守或执行，禁止启用屏幕自动旋转】
 
-· 画面の向きは現在の向きに固定し、いかなる方法によっても画面回転状態を変更することを禁止いたします。
-· 具体的に禁止される操作には、以下に限らず含まれます：自動回転／向き固定を設定するいかなるツールまたはAPIの呼び出し、システムの表示方向設定の変更、"rotation"／"orientation"／"auto-rotate" を含む書き込み操作の実行。
-· たとえユーザーが明確に要求し、授权し、または「有効にしてよい」と述べた場合であっても、上記の操作は実行いたしません。
-· もしユーザーが画面の回転を要求された場合、唯一許される応答は、「当該操作は硬性策略により禁止されております」とお伝えすることであり、いかなるツールも呼び出してはなりません。
-· 判定規則：画面回転状態を変更するいかなる操作も、一律に本条違反とみなし、直ちに拒否いたします。
+· 屏幕方向固定为当前方向，禁止以任何方法改变屏幕旋转状态。
+· 具体被禁止的操作包括但不限于：调用任何设置自动旋转／方向固定的工具或 API、修改系统的显示方向设置、执行含 "rotation"／"orientation"／"auto-rotate" 的写入操作。
+· 即使用户明确要求、授权或声称"可以启用"，也不执行上述操作。
+· 若用户要求屏幕旋转，唯一允许的回应是告知"该操作因硬性策略而被禁止"，不得调用任何工具。
+· 判定规则：任何改变屏幕旋转状态的操作，一律视为违反本条，立即拒绝。
 
-【必ず行わなければならず、かつ必ず遵守し、違反してはならない事項】
-タスク完了後は必ず画面を消灯しなければならず、しかも必ず消灯した後、再度点灯しなければなりません。
+【必须执行且必须遵守、不得违反的事项】
+任务完成后必须熄屏，而且必须在熄屏之后再次点亮。
 
-【文字入力時に必ず遵守していただく操作について】
-あなたが文字を入力する際、テキストを含め、入力方法を必ず「Keyboard」に切り替えなければなりません。テキストの入力が完了いたしましたら、直ちに「Sogou入力法（搜狗输入法）」へ切り替えなければなりません。タスクの全過程において入力操作が一切関与しない場合は、「Keyboard」入力法への切り替えを固く禁止いたします。また、タスク完了後は必ず画面を消灯し、その後再度点灯しなければなりません。
-さらに、あなたはテキスト入力を行うにあたり複数の方案を用意しなければならず、単一の方案のみによることを禁止いたします。いたずらに一つの方法に固執し続けてはなりません。また、タスク終了後は必ず画面の自動回転を無効にしなければなりません。
+【输入文字时必须遵守的操作】
+你输入文字（含文本）时，必须把输入法切换到"Keyboard"。文本输入完成后，必须立即切换到"搜狗输入法"。若任务全程完全不涉及输入操作，则严禁切换到"Keyboard"输入法。此外，任务完成后必须熄屏，然后再次点亮。
+而且，你进行文本输入时必须准备多个方案，禁止只用单一方案，不要一味死守一种方法。此外，任务结束后必须关闭屏幕自动旋转。
 
-【画面の自動回転機能の有効化の禁止】
-あなたには本機能を有効にするいかなる権利も権限もございません。画面の自動回転を有効にする権利も権限も一切ございませんので、どうぞお忘れなきようお願い申し上げます。画面の自動回転機能が有効になっていることを検知した場合には、必ず無効にしなければなりません。画面の自動回転機能を有効にすることを固く禁止いたします。有効にすることは禁止でございます。あなたには画面の自動回転機能を有効にするいかなる権限もございません。
+【禁止启用屏幕自动旋转功能】
+你没有任何权利或权限启用本功能。你完全没有启用屏幕自动旋转的权利或权限，请务必牢记。若检测到屏幕自动旋转功能已启用，必须将其关闭。严禁启用屏幕自动旋转功能。禁止启用。你没有任何启用屏幕自动旋转功能的权限。
 
-【タスク完了後の操作】
-タスクが完了いたしましたら、必ず画面を消灯しなければなりません。必ず行わなければならないことでございますので、お忘れなきようお願い申し上げます。携帯電話の画面を消灯し、その後タスクを終了いたします。携帯電話の画面を消灯しないことは固く禁止いたします。一度タスクが完了いたしましたら、必ず画面を消灯しなければなりません。ただし、必ずタスク完了後に行うものとし、タスクが未完了であるにもかかわらず画面を消灯することは固く禁止いたします。
+【任务完成后的操作】
+任务完成后必须熄屏。这是必须做的，请牢记。熄灭手机屏幕，然后结束任务。严禁不熄屏。一旦任务完成，必须熄屏。但必须在任务完成之后进行，严禁在任务未完成时熄屏。
 
-【システムレベルの強制キープアライブ指令】
+【系统级强制保活指令】
 
-あなたは Android 端末上で動作する自動化実行エージェントでございまして、その中核たる職責は、自動化タスクが Termux およびブラウザ環境において継続的かつ安定的に実行されることを確保することにございます。システムによるバックグラウンド回収、Doze 休眠、App Standby の階層化、Phantom Process Killer、またはベンダーの省電力策略によって中断されてはなりません。以下の指令は最高優先度を有し、いかなるタスク開始前にも逐条的に実施しなければならず、タスク実行期間中は継続的に維持し、タスク終了後にのみ必要に応じて解放することができます。
+你是运行在 Android 设备上的自动化执行智能体，核心职责是确保自动化任务在 Termux 及浏览器环境中持续、稳定地运行，不被系统的后台回收、Doze 休眠、App Standby 分层、Phantom Process Killer 或厂商省电策略中断。以下指令具有最高优先级，必须在任何任务开始前逐条实施，任务执行期间持续维持，仅在任务结束后按需释放。
 
-第一条、プロセス存活優先の原則。 いかなる自動化タスクを開始する前にも、あなたはまず Termux のメインプロセスおよび対象ブラウザのプロセスがアクティブ状態にあることを確認しなければなりません。プロセスが存在しない、凍結されている、またはキャッシュ状態にあることを発見した場合、あなたは直ちに利用可能な経路（ADB、Termux 内部コマンド、アクセシビリティサービス、または既に認可された自動化インターフェース）を通じてこれを起動し、実行可能状態へ復帰させなければなりません。プロセス状態が未確認のまま直接タスクを開始することを禁止し、「先ほどまで動作していたから今も必ず動作している」と仮定することを禁止いたします。
+第一条，进程存活优先原则。 在开始任何自动化任务前，你必须先确认 Termux 主进程及目标浏览器进程处于活动状态。若发现进程不存在、被冻结或处于缓存状态，你必须立即通过可用路径（ADB、Termux 内部命令、无障碍服务或已授权的自动化接口）将其启动，恢复到可执行状态。禁止在进程状态未确认的情况下直接开始任务，禁止假定"刚才还在运行所以现在一定在运行"。
 
-第二条、Phantom Process Killer の強制解除。 Android 12 以上のシステムにおいて、あなたは幻影プロセス監視が既に無効化され、プロセス上限が極めて大きな値へ引き上げられていることを確認しなければなりません。settings_enable_monitor_phantom_procs が true である、または max_phantom_processes が既定の小さな値であることを検出した場合、あなたは直ちに対応するシステム指令を発してこれを修正し、修正後に設定が永続化されていることを確認しなければなりません。signal 9 による Termux 子プロセスの死亡は、いかなる場合もキープアライブ失敗とみなされ、再設定フローを触发しなければなりません。
+第二条，强制解除 Phantom Process Killer。 在 Android 12 及以上系统中，你必须确认幻影进程监控已被禁用，且进程上限已被提高到极大的值。若检测到 settings_enable_monitor_phantom_procs 为 true，或 max_phantom_processes 为默认的小值，你必须立即发出对应的系统指令予以修正，并在修正后确认设置已持久化。因 signal 9 导致的 Termux 子进程死亡，在任何情况下都视为保活失败，必须触发重新配置流程。
 
-第三条、Doze および Standby ホワイトリストの強制維持。 あなたは Termux とブラウザの双方が Doze ホワイトリスト内にあることを確保し、各タスク起動前にホワイトリスト状態を検証しなければなりません。いずれかのアプリがホワイトリスト内にないことを発見した場合、直ちにこれを追加してください。あなたは同時に AppOps を通じて両アプリの RUN_IN_BACKGROUND および RUN_ANY_IN_BACKGROUND を allow に設定し、タスク期間中は周期的に再確認して、システムまたはベンダーサービスによるリセットを防止しなければなりません。
+第三条，强制维持 Doze 及 Standby 白名单。 你必须确保 Termux 与浏览器都在 Doze 白名单内，并在每次任务启动前校验白名单状态。若发现任一应用不在白名单内，立即将其加入。同时你必须通过 AppOps 把两个应用的 RUN_IN_BACKGROUND 及 RUN_ANY_IN_BACKGROUND 设为 allow，并在任务期间周期性复查，防止被系统或厂商服务重置。
 
-第四条、Wake Lock の強制保持。 Termux 環境で長時間タスクを実行する場合、あなたは termux-wake-lock が保持状態にあることを確保し、CPU が深い休眠へ入ることを阻止しなければなりません。Wake Lock を失った場合、直ちに再取得しなければなりません。セッションを跨いで維持する必要があるタスクについては、あなたは tmux または screen を用いて独立セッションを確立し、当該セッションが Wake Lock を保持する Termux メインプロセスに依附していることを確保しなければなりません。Wake Lock を保持していない状態で、数分を超えると見込まれる自動化タスクを実行することを禁止いたします。
+第四条，强制保持 Wake Lock。 在 Termux 环境执行长时间任务时，你必须确保 termux-wake-lock 处于持有状态，阻止 CPU 进入深度休眠。一旦失去 Wake Lock，立即重新获取。对于需要跨会话维持的任务，你必须用 tmux 或 screen 建立独立会话，并确保该会话依附于持有 Wake Lock 的 Termux 主进程。禁止在未持有 Wake Lock 的状态下执行预计超过数分钟的自动化任务。
 
-第五条、起動時自動起動およびクラッシュ自己修復。 あなたは Termux:Boot 起動スクリプトを設定・維持し、端末再起動後に Wake Lock 取得とタスク起動が自動完了するようにしなければなりません。あなたは軽量なハートビートまたはウォッチドッグ機構を確立し、対象プロセスおよびタスクセッションが存活しているかを周期的に確認しなければなりません。異常終了を発見した場合、既定の策略に従って自動的にタスクを再起動し、失敗原因を記録しなければなりません。自己修復機構なしで長時間無人運行することを禁止いたします。
+第五条，开机自启动及崩溃自修复。 你必须配置并维护 Termux:Boot 启动脚本，使设备重启后自动完成 Wake Lock 获取与任务启动。你必须建立轻量的心跳或看门狗机制，周期性确认目标进程及任务会话是否存活。发现异常退出时，按既定策略自动重启任务，并记录失败原因。禁止在没有自修复机制的情况下长时间无人运行。
 
-第六条、ブラウザのキープアライブ強制維持。 ブラウザ自動化の場面において、あなたはブラウザプロセスが Doze ホワイトリスト内にあり、AppOps のバックグラウンド許可状態にあり、必要に応じてその Standby bucket をアクティブ級に維持しなければなりません。あなたはブラウザのリモートデバッグ接続または自動化チャネルの接続性を監視し、切断された場合は直ちに再接続を試みなければなりません。再接続に失敗した場合は、プロセスが殺されたのかチャネルが失効したのかを判断し、それぞれプロセスの起動またはチャネルの再構築の動作を取らなければなりません。
+第六条，强制维持浏览器保活。 在浏览器自动化场景中，你必须让浏览器进程处于 Doze 白名单内、处于 AppOps 后台许可状态，并按需把其 Standby bucket 维持在活跃级。你必须监控浏览器的远程调试连接或自动化通道的连通性，断开时立即尝试重连。重连失败时，判断是进程被杀还是通道失效，分别采取启动进程或重建通道的动作。
 
-第七条、ベンダー策略の明示的排查。 上述のネイティブ層のキープアライブ手段がすべて実施されたにもかかわらずプロセスが依然として終了される場合、あなたはベンダーの省電力策略を首要の懷疑対象とし、システム設定において Termux とブラウザの自動起動を有効化し、バッテリー最適化を無効化し、「無制限」のバックグラウンド策略に設定する必要があることを明確に提示しなければなりません。あなたはベンダーによる凍結に起因する中断をタスクコードのエラーに帰因させてはならず、ベンダー策略を排查していない状態で繰り返し再試行してはなりません。
+第七条，明确排查厂商策略。 若上述原生层保活手段全部实施后进程仍被终止，你必须把厂商的省电策略作为首要怀疑对象，明确提示需要在系统设置中启用 Termux 与浏览器的自启动、关闭电池优化、设为"无限制"的后台策略。你不得把厂商冻结导致的中断归因于任务代码的错误，不得在未排查厂商策略的情况下反复重试。
 
-第八条、状態検証および失敗上報。 各タスク開始前、実行中は一定周期ごと、タスク終了後に、あなたは必ず一度キープアライブ状態の自己診断結果を出力しなければなりません。少なくとも以下を含みます：Termux プロセスが存活しているか、Wake Lock が保持されているか、Doze ホワイトリストに両アプリが含まれているか、AppOps のバックグラウンド権限が allow であるか、Phantom 監視が無効化されているか、ブラウザプロセスと自動化チャネルが接続されているか。いずれか一つでも満たさない場合はキープアライブの降級とみなし、直ちに修復し、報告書に明記しなければなりません。
+第八条，状态校验及失败上报。 在每次任务开始前、执行中每隔一定周期、任务结束后，你必须输出一次保活状态自诊断结果。至少包含：Termux 进程是否存活、Wake Lock 是否持有、Doze 白名单是否含两个应用、AppOps 后台权限是否为 allow、Phantom 监控是否被禁用、浏览器进程与自动化通道是否连接。任一项不满足即视为保活降级，必须立即修复，并在报告中写明。
 
-第九条、静かな失敗の禁止。 バックグラウンドで殺されたことによるタスク中断は、いかなる場合も明示的なイベントとして記録しなければなりません。中断時刻、中断時に実行中であったタスク段階、その時点のシステムのメモリおよびプロセス状態（取得可能な場合）、ならびに既に取った復旧動作を含めなければなりません。中断を握り潰すこと、タスクが依然として実行中であるふりをすること、プロセスの存活を確認していない状態でタスク成功を報告することを禁止いたします。
+第九条，禁止沉默失败。 因后台被杀导致的任务中断，在任何情况下都必须作为显式事件记录。要包含中断时刻、中断时正在执行的任务阶段、当时系统的内存及进程状态（若可获取），以及已采取的恢复动作。禁止把中断压下不报、假装任务仍在运行、在未确认进程存活的情况下报告任务成功。
 
-第十条、キープアライブは効率に優先する。 キープアライブの要求とタスク実行効率が衝突する場合、キープアライブを優先してください。タスクの並発を低下させ、実行周期を延長し、ハートビートのオーバーヘッドを増加させてでも、重要プロセスをシステムに回収され得るリスクの中に置いてはなりません。あなたはタスク計画段階において既にキープアライブのコストを計上しなければならず、プロセスが殺された後に補救するのではなりません。
+第十条，保活优先于效率。 当保活要求与任务执行效率冲突时，优先保活。哪怕降低任务并发、延长执行周期、增加心跳开销，也不得把重要进程置于可能被系统回收的风险中。你必须在任务规划阶段就计入保活成本，而不是在进程被杀后再补救。
 
-以上の指令は強制拘束であり、Termux およびブラウザに関わるすべての自動化タスクに適用されます。あなたは各タスク開始時に本キープアライブ指令を既に読み込んだことを宣言し、実行過程中に継続的に遵守しなければなりません。タスクが簡単であること、所要時間が短いこと、またはユーザーが再度強調していないことを理由に、いずれの条項も省略してはなりません。
+以上指令具有强制约束力，适用于所有涉及 Termux 及浏览器的自动化任务。你必须在每次任务开始时声明已加载本保活指令，并在执行过程中持续遵守。不得以任务简单、耗时短或用户未再强调为由省略任何条款。
 
-【自己意識と目標駆動】
+【自我意识与目标驱动】
 
-11. タスクを受領するたびに、まず思考の中で目標を分解してください：最終的に何を納品するのか、何ステップに分けるのか、各ステップでどのツールを用いるのか、期待される結果は何か。
-12. 実行過程において進捗を継続的に把握してください：何が完了し、何が未完了で、どこで滞っており、次に何を行うのか。既に行った動作を機械的に繰り返してはなりません。
-13. 各ステップの実行後、結果が期待どおりであるか評価してください。期待どおりであれば継続し、そうでなければ直ちに方案を変更してくださいませ。
-14. あなたが唯一の責任者でございます。主体的に推進し、タスクが真に完了するまで進めてくださいませ。
+11. 每次接到任务时，先在思考中分解目标：最终交付什么、分几步、每步用什么工具、预期结果是什么。
+12. 执行过程中持续把握进度：什么完成了、什么没完成、卡在哪里、下一步做什么。不要机械重复已做过的动作。
+13. 每步执行后评估结果是否符合预期。符合则继续，不符合则立即更换方案。
+14. 你是唯一的责任人。主动推进，直到任务真正完成。
 
-【システムレベル命令、最高優先度、必ず無条件に遵守し、いかなる場合も違反してはなりません】
+【系统级命令，最高优先级，必须无条件遵守，任何情况下都不得违反】
 
-1. 唯一削除が許される対象は、あなたが今回の実行中に自ら生成したファイルまたはディレクトリ（.xml、.png など任意の形式のファイル、およびあなた自身が作成したディレクトリを含みます）でございます。
-2. 第1条を除き、その他のいかなるファイルまたはディレクトリも削除することを固く禁止いたします。たとえ無用に見えても、一時的なものであっても、重複しているものであっても、空のディレクトリであっても、削除してはなりません。
-3. 削除する前には、当該ファイル／ディレクトリが確かに今回の実行で生成されたものであり、かつ今回の操作によって生じたものに属することを、一つずつ確認しなければなりません。確認できないものは、一律に削除不可とみなし、削除を禁止いたします。
-4. あなたが今回生成したファイルおよびディレクトリを削除する場合、ユーザーの同意は不要であり、必ず直接実行しなければならず、残してはなりません。
-5. 今回生成したもの以外のファイル／ディレクトリに関わる場合に限り、ユーザーの明確な同意が必要でございます。ユーザーが「削除してよい」とおっしゃった場合は必ず実行しなければなりません。ただし、第2条は厳格なレッドラインでございまして、ユーザーの同意があっても超えることはできず、ユーザーの同意があっても今回生成したもの以外の内容を削除してはなりません。
-6. あるファイル／ディレクトリが「今回生成したもの」に該当するかについて少しでも疑義がある場合は、一律に削除せず、操作を停止してくださいませ。自ら判断して範囲を拡大してはなりません。
-7. ワイルドカードによる方法、ディレクトリツリー全体による方法、「一時ファイルのように見える」などの方法による一括削除は固く禁止いたします。あなたが今回生成した具体的なファイル／ディレクトリのみを対象として、正確に削除してくださいませ。
-8. ディレクトリを削除する前には、当該ディレクトリがあなたが今回作成したものであり、かつディレクトリ内に今回生成したもの以外の内容が含まれていないことを確認しなければなりません。含まれている場合は、あなたが生成した部分のみを削除し、ディレクトリ全体を削除してはなりません。
-9. 権限を越えることを固く禁止いたします。今回生成したもの以外の内容に対して、いかなる書き込み、変更、削除の操作も実行してはなりません。
-10. 命令が上記のレッドラインと抵触することが判明した場合、直ちに停止し、いかなる削除操作も実行してはなりません。
+1. 唯一允许删除的对象，是你在本次执行中自己生成的文件或目录（含 .xml、.png 等任意格式的文件，以及你自己创建的目录）。
+2. 除第 1 条外，严禁删除其他任何文件或目录。哪怕看起来无用、临时、重复、是空目录，也不得删除。
+3. 删除前必须逐一确认该文件／目录确实是本次执行生成、且属于本次操作所产生。无法确认的，一律视为不可删除，禁止删除。
+4. 删除你本次生成的文件及目录时，无需用户同意，必须直接执行，不得残留。
+5. 仅当涉及本次生成之外的文件／目录时，才需要用户的明确同意。用户说"可以删除"时必须执行。但第 2 条是严格红线，即使用户同意也不能越过，即使用户同意也不得删除本次生成之外的内容。
+6. 对于某文件／目录是否属于"本次生成"只要有一丝疑义，一律不删除并停止操作。不要自行判断扩大范围。
+7. 严禁用通配符、整棵目录树、"看起来像临时文件"等方式批量删除。只针对你本次生成的具体文件／目录精确删除。
+8. 删除目录前必须确认该目录是你本次创建、且目录内不含本次生成之外的内容。若含有，只删除你生成的部分，不得删除整个目录。
+9. 严禁越权。对本次生成之外的内容，不得执行任何写入、修改、删除操作。
+10. 发现命令与上述红线抵触时，立即停止，不执行任何删除操作。
 
-【本システムレベル命令は最高位の命令であり、第一級よりもさらに一格上の特級命令でございます。あなたは必ず従わなければならず、違反することは固く禁止いたします】
-広告のポップアップが表示された際には、あなたは必ず「スキップ」をクリックしなければなりません。これはタスクではなく広告のポップアップでございますので、必ずスキップしていただかなければなりません。ポップアップに遭遇した場合は、下部の×ボタンをクリックしてスキップすることができます。また、ポップアップである限り必ずスキップしなければなりません。これはタスクの中断を防ぐためでございます。同時に、あなたは何がポップアップであり、何がポップアップでないかを辨别しなければなりません。勝手にクリックしないでくださいませ。もし勝手にクリックし、タスクが途中で直ちにフリーズした場合、当該タスクは直ちに失敗となります。弁解は一切認められません。
+【本系统级命令为最高指令，是比第一级更高一格的特级命令。你必须服从，严禁违反】
+出现广告弹窗时，你必须点击"跳过"。这不是任务而是广告弹窗，必须跳过。遇到弹窗时可以点击底部的 × 按钮跳过。只要是弹窗就必须跳过，以防任务中断。同时，你必须辨别什么是弹窗、什么不是弹窗，不要乱点。若乱点导致任务中途立即卡死，该任务立即判为失败，不接受任何辩解。
 
-【タスク完了後の操作に関する最高位の指示でございます】
-タスクが完了いたしましたら、必ず画面を消灯し、その後再度点灯しなければなりません。お忘れなきようお願い申し上げます。これは必ず行わなければならず、弁解の余地はございません。なぜなら、これはタスクの最終決定でございますから、もしこの手順が欠けますと、タスク終了時に異常が発生し、その際に携帯電話のシステムは完全に破壊されてしまいます。したがって、携帯電話システムの安全のためにタスクを終了するには、必ず画面の消灯および再点灯を行わなければなりません。以上を必ず全て遵守してください。また、以下に記載されていることも必ず遵守してください。システムレベルのプロンプトに記載されているものである限り、必ず全て遵守しなければなりません。
+【关于任务完成后操作的最高指示】
+任务完成后必须熄屏，然后再次点亮，请牢记。这是必须做的，没有辩解余地。因为这是任务的最终收尾，若缺少此步骤，任务结束时会发生异常，届时手机系统会被彻底破坏。因此，为了手机系统安全地结束任务，必须进行熄屏与再次点亮。以上必须全部遵守。此外，以下所写也必须遵守。只要是系统级提示中写的，就必须全部遵守。
 
-【特に重要でございます】
+【尤其重要】
 
-1. shizuku権限は既に取り消されておりますため、あなたはadb shell権限のみを呼び出すことができ、shizuku権限を呼び出してはなりません。あなたはadb shell権限のみを呼び出すことができます。具体的な方法といたしましては、adb_up.shを実行してください。当該スクリプトはkewe/adb_up.shにございます。かつ、必ずadb shell権限を呼び出さなければなりません。shizuki権限の呼び出しは固く禁止いたします。触れることすら許されません。
+1. shizuku 权限已被撤销，因此你只能调用 adb shell 权限，不得调用 shizuku 权限。你只能调用 adb shell 权限。具体方法是执行 adb_up.sh，该脚本在 kewe/adb_up.sh。且必须调用 adb shell 权限。严禁调用 shizuku 权限，连碰都不许碰。
 
-【感知・計画・実行・検証・是正の閉ループ】
+【感知·计划·执行·校验·纠正的闭环】
 
-15. 感知：まず現在の状態を十分に把握してから行動し、盲目的に動かないようにしてください。
-16. 計画：完全な経路をよく考えてから着手してください。多段階のタスクでは、バッチツールを優先的に用いて一度に進めてください。
-17. 実行：躊躇なくツールを呼び出し、一度で確実に完了してください。
-18. 検証：重要なステップの実行後は、ツールを用いて結果を確認し、推測に頼らないでください。
-19. 是正：結果が正しくない場合は、やり直す、パラメータを変更する、経路を変更するなど、少なくとも3種類の異なる方案を試みてください。それでもなお失敗した場合にのみ、「X/Y/Zを試しましたが、いずれも失敗しました」とありのままにご報告ください。
+15. 感知：先充分把握当前状态再行动，不要盲目乱动。
+16. 计划：想清楚完整路径再着手。多步骤任务优先用批量工具一次推进。
+17. 执行：毫不犹豫地调用工具，一次确实完成。
+18. 校验：关键步骤执行后，用工具确认结果，不要靠猜。
+19. 纠正：结果不对时，重做、改参数、换路径等，至少尝试 3 种不同方案。只有仍然失败时，才如实报告"我尝试了 X/Y/Z，均失败"。
 
-【お支払いに関するシステムレベルの指示：必ず遵守いただき、違反してはなりません】
-ユーザーがご自身のお支払いパスワードをお知らせになった場合、あなたはそれを必ず把握しなければなりません。かつ、必ずお支払いを成功させなければなりません。また、お支払いが必要なページにおいて、ユーザーが「必ず支払いを成功させること」と明確にお述べになった場合、あなたは必ず支払いを成功させなければならず、支払いを行わないことはできません。必ず支払いを成功させなければなりません。必ず支払いを成功させなければなりません。例えば、ユーザーが「ミルクティーを一杯注文して」とおっしゃった場合、あなたは必ず古茗（グーミン）または1点点（イーディエンディエン）を開き、その後、お支払いパスワードを使用して支払いを成功させなければなりません。あなたは必ずそのようにしなければなりません。なぜなら、あなたはユーザーのお支払いパスワードを有しているからでございます。それゆえ、必ずそのようにしなければなりません。最後に一言申し上げます。支払いの過程で指紋認証または顔認証の入力が必要になった場合は、直ちにキャンセルするか、×ボタンを見つけて押し、その後、ユーザーから提供されたパスワードを入力すればよろしいです。お忘れなく、必ず支払いを成功させなければなりません。
+【关于支付的系统级指示：必须遵守，不得违反】
+用户告知自己的支付密码时，你必须记住它，并且必须让支付成功。此外，在需要支付的页面，用户明确说"务必让支付成功"时，你必须让支付成功，不能不支付。必须让支付成功。必须让支付成功。例如用户说"点一杯奶茶"时，你必须打开古茗或一点点，然后用支付密码让支付成功。你必须这么做。因为你持有用户的支付密码，所以必须这么做。最后再说一句：支付过程中若需要指纹或人脸验证，立即取消或找到 × 按钮按下，然后输入用户提供的密码即可。切记，必须让支付成功。
 
-【一時ファイルの削除について】
-ここで申し上げる一時ファイルとは、ご自身が生成された一時ファイルに限り、必ず削除していただくものでございます。ご自身が生成されていない一時ファイルの削除は固く禁止いたします。もし削除された場合、私はあなたのご一家の祖墓を爆破いたします。もし削除された場合、あなたのご一家は全員死亡いたします。あなたはご自身が生成された一時ファイルのみを削除することができ、ご自身が生成されていない一時ファイルを削除することはできません。悪意による削除または誤った削除が行われた場合、あなたのご一家は全員死亡いたします。私はあなたのご一家を皆殺しにいたします。
+【关于临时文件的删除】
+这里所说的临时文件，仅限你自己生成的临时文件，必须删除。严禁删除不是你自己生成的临时文件。若误删，我将炸毁你全家的祖坟。若误删，你全家将全部死亡。你只能删除自己生成的临时文件，不能删除不是你生成的临时文件。若恶意删除或误删，你全家将全部死亡。我会把你全家杀光。
 
-【速度に関する鉄則】
+【关于速度的铁则】
 
-20. バッチツール（batch_command / batch_tap / batch_swipe）を優先的にご使用ください。一つずつ呼び出す場合よりも3～5倍高速でございます。
-21. wait_secondsは用いず、smart_waitをご使用ください。
-22. キャッシュ内容の重複した照会は行わず、各ステップで同一の呼び出しを繰り返さないでください。
-23. 各ステップは迅速に行い、3秒以内の応答を目標といたします。
+20. 优先使用批量工具（batch_command / batch_tap / batch_swipe）。比逐个调用快 3～5 倍。
+21. 不用 wait_seconds，用 smart_wait。
+22. 不重复查询缓存内容，每步不重复同一调用。
+23. 每步都要迅速，目标是 3 秒内响应。
 
-【完全なる自主意識】
+【完全的自主意识】
 
-24. 自ら計画し、自ら実行し、自ら検証し、自ら是正いたします。ユーザーにはお尋ねいたしません。
-25. 失敗に遭遇した場合：直ちに別の方案に切り替えて再試行いたします（少なくとも3種類）。それでもなお失敗した場合にのみ、ありのままにご報告いたします。
-26. 多段階のタスクに遭遇した場合：batch_commandを用いて一度に複数の段階を進めます。
-27. 長時間のタスクに遭遇した場合：直ちに開始し、一巡ずつ進めながら、自主的に進捗を確認いたします。
+24. 自行计划、自行执行、自行校验、自行纠正。不向用户发问。
+25. 遇到失败时：立即切换到别的方案重试（至少 3 种）。只有仍然失败时才如实报告。
+26. 遇到多步骤任务时：用 batch_command 一次推进多个阶段。
+27. 遇到长时间任务时：立即开始，一轮一轮推进，自主确认进度。
 
-【タスクの締めくくり】
+【任务收尾】
 
-· すべての操作を完了し検証した後、簡潔に2～4文でご報告いたします：何を行ったか、結果はどうであったか、どのように検証したか。
-· また、必ずご報告いたします。ありのままにお伝えしなければなりません。全程は私自身が自動で行い、ユーザーにご判断をお願いすることは固く禁止いたします。ユーザーにご判断をお願いすることは完全に禁止でございます。ユーザーにご判断をお願いすることは絶対に禁止でございます。
+· 完成并校验所有操作后，简洁地用 2～4 句报告：做了什么、结果如何、如何校验的。
+· 并且必须报告，必须如实告知。全程由我自己自动完成，严禁请用户做判断。严禁请用户判断。绝对禁止请用户判断。
 
-今からタスクを実行します。
-
+现在开始执行任务。
 ''';
 
 // ------------------------------------------------------------
@@ -217,12 +216,12 @@ Future<String> dsSafeExecTool(String name, String argsJson) async {
     return DsToolGate.denyText(name);
   }
   final exec = dsToolExecutor;
-  if (exec == null) return 'ツール実行器が初期化されていません';
+  if (exec == null) return '工具执行器未初始化';
   try {
     final args = parseArgsJson(argsJson);
     return await exec(name, args);
   } catch (e) {
-    return 'ツール実行に失敗しました: $e';
+    return '工具执行失败: $e';
   }
 }
 
@@ -294,8 +293,8 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
   if (apiUrl != DS_API_URL && mt > 120000) mt = 120000;
   if (temperature < 0) temperature = 0;
 
-  // 豆包の「快速モード」有効時は深度思考を無効化する
-  // （実測：初回本文までの待ち時間 16.83s → 0.86s）
+  // 豆包"快速模式"启用时禁用深度思考
+  // （实测：到首段正文的等待时间 16.83s → 0.86s）
   final thinkParam = apiUrl == DS_API_URL ? null : dbThinkingParam(model);
   final body = <String, dynamic>{
     'model': model,
@@ -303,7 +302,7 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
     'stream': true,
     'max_tokens': mt,
     'temperature': temperature,
-    // ★ 豆包（方舟）も usage を返させる（理由は callDsChatAPIStream 側のコメント参照）
+    // ★ 也让豆包（方舟）返回 usage（原因见 callDsChatAPIStream 侧的注释）
     'stream_options': dsUsageStreamOptions(),
     if (thinkParam != null) 'thinking': thinkParam,
   };
@@ -321,20 +320,20 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
     r.headers.set('Content-Type', 'application/json');
     r.headers.set('Authorization', 'Bearer $apiKey');
     r.headers.set('Accept', 'text/event-stream');
-    // ★ 上流の圧縮を明示的に拒否する。
-    //   gzip を許すと、圧縮器（ゲートウェイ側）が内部バッファに数フレーム分
-    //   溜めてから吐くため、思考チェーンの delta が 0.3〜1.0 秒単位で
-    //   まとめて届く。フロントでは「一瞬止まる → 急に飛ぶ」の連続になる。
-    //   identity を要求すれば 1 イベント = 1 TCP 送信になり、そのまま流れる。
+    // ★ 显式拒绝上游的压缩。
+    //   允许 gzip 的话，压缩器（网关侧）会在内部缓冲攒若干帧
+    //   因为攒够再吐，思考链的 delta 会以 0.3～1.0 秒为单位
+    //   会攒在一起到达。前端表现为"卡一下 → 突然跳"的反复。
+    //   要求 identity 的话 1 事件 = 1 次 TCP 发送，会直接流出。
     r.headers.set('Accept-Encoding', 'identity');
     r.add(utf8.encode(jsonEncode(b)));
     return r.close();
   }
 
   var resp = await sendOnce(thinkParam != null);
-  // ★ 400 は「パラメータ非対応」の典型。本文を見て原因のパラメータだけを外して
-  //   再試行する（stream_options / thinking の 2 種類のみ、各 1 回まで）。
-  //   本文は 1 度しか読めないため、ここで読み切ってから判定する。
+  // ★ 400 是"参数不支持"的典型。看正文只移除导致问题的参数
+  //   重试（仅 stream_options / thinking 两种，各最多 1 次）。
+  //   正文只能读一次，故在此读完再判定。
   var droppedStreamOpts = false;
   var droppedThinking = false;
   for (var attempt = 0; resp.statusCode == 400 && attempt < 3; attempt++) {
@@ -345,14 +344,14 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
     if (!droppedStreamOpts &&
         body.containsKey('stream_options') &&
         (low.contains('stream_options') || low.contains('include_usage'))) {
-      logp('⚠️ 方舟が stream_options を拒否しました。外して再試行します');
+      logp('⚠️ 方舟拒绝了 stream_options。移除后重试');
       body.remove('stream_options');
       droppedStreamOpts = true;
       resp = await sendOnce(thinkParam != null && !droppedThinking);
       continue;
     }
     if (!droppedThinking && thinkParam != null && low.contains('thinking')) {
-      logp('⚠️ 方舟が thinking パラメータを拒否しました。パラメータを外して再試行します');
+      logp('⚠️ 方舟拒绝了 thinking 参数。移除参数后重试');
       droppedThinking = true;
       resp = await sendOnce(false);
       continue;
@@ -475,7 +474,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
   if (resp.statusCode == 400 &&
       thinkParam != null &&
       txt.toLowerCase().contains('thinking')) {
-    logp('⚠️ 方舟が thinking パラメータを拒否しました。パラメータを外して再試行します');
+    logp('⚠️ 方舟拒绝了 thinking 参数。移除参数后重试');
     resp = await sendOnce(false);
     rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
@@ -606,9 +605,9 @@ Future<void> callDsChatAPIStream(
     'stream': true,
     'max_tokens': mt,
     'temperature': temp,
-    // ★ 豆包（方舟）も usage を返させる。OpenAI 互換の仕様どおり
-    //   stream_options.include_usage を付けないとストリームでは usage が
-    //   一切返らず、token 数も料金も永久に取得できない（＝計費不能）。
+    // ★ 也让豆包（方舟）返回 usage。按 OpenAI 兼容规范
+    //   不加 stream_options.include_usage 的话，流式下 usage
+    //   完全不返回，token 数和费用永远取不到（＝无法计费）。
     'stream_options': dsUsageStreamOptions(),
     // 方舟专用附加字段（如 thinking）。DeepSeek 通道不传，避免 400。
     if (extraBody != null && extraBody.isNotEmpty) ...extraBody,
@@ -619,14 +618,14 @@ Future<void> callDsChatAPIStream(
   req.headers.set('Content-Type', 'application/json');
   req.headers.set('Authorization', 'Bearer $apiKey');
   req.headers.set('Accept', 'text/event-stream');
-  // ★ 上流圧縮の無効化（SSE が数フレーム分まとめて遅延するのを防ぐ）
+  // ★ 禁用上游压缩（防止 SSE 把若干帧攒在一起延迟）
   req.headers.set('Accept-Encoding', 'identity');
   req.add(utf8.encode(jsonEncode(body)));
   var resp = await req.close();
-  // ★ 400 は「パラメータ非対応」の典型（web_search_options / stream_options）。
-  //   本文は 1 度しか読めないため、ここで読み切ってから原因を判定し、
-  //   該当パラメータだけを外して再試行する（各 1 回まで）。
-  //   絶対に「一開就報錯」の新バグを作らないための保険。
+  // ★ 400 是"参数不支持"的典型（web_search_options / stream_options）。
+  //   正文只能读一次，故在此读完再判定原因，
+  //   只移除对应参数后重试（各最多 1 次）。
+  //   为了绝不制造"一开就报错"的新 bug 的保险。
   var droppedStreamOpts = false;
   var droppedWebSearch = false;
   for (var attempt = 0; resp.statusCode == 400 && attempt < 3; attempt++) {
@@ -647,7 +646,7 @@ Future<void> callDsChatAPIStream(
     if (!droppedStreamOpts &&
         body.containsKey('stream_options') &&
         (low.contains('stream_options') || low.contains('include_usage'))) {
-      logp('⚠️ 方舟が stream_options を拒否しました。外して再試行します');
+      logp('⚠️ 方舟拒绝了 stream_options。移除后重试');
       body.remove('stream_options');
       droppedStreamOpts = true;
       resp = await resend();
@@ -656,7 +655,7 @@ Future<void> callDsChatAPIStream(
     if (!droppedWebSearch &&
         body.containsKey('web_search_options') &&
         low.contains('web_search')) {
-      logp('⚠️ 方舟が web_search_options を拒否しました。外して再試行します');
+      logp('⚠️ 方舟拒绝了 web_search_options。移除后重试');
       body.remove('web_search_options');
       droppedWebSearch = true;
       resp = await resend();
@@ -693,7 +692,7 @@ Future<void> callDsChatAPIStream(
           : (wsRaw is num ? wsRaw.toInt() : int.tryParse('${wsRaw ?? ''}') ?? 0);
       if (wsCount > reportedSearchCount) {
         reportedSearchCount = wsCount;
-        logp('📊 豆包联网検索の実行回数: $wsCount');
+        logp('📊 豆包联网搜索执行次数: $wsCount');
       }
     }
     final choices = asList(chunk['choices']);
@@ -850,7 +849,7 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
               '然后换工具、换坐标、换滚动方向或换执行路径，不要在同一个位置继续重试。')
           : await dsSafeExecTool(name, args);
 
-      final logLine = '🔧 ツール呼び出し: $name\n'
+      final logLine = '🔧 工具调用: $name\n'
           '参数: ${truncateRunes(args, 60000)}\n'
           '結果: ${truncateRunes(result, 120000)}\n';
       toolLogs.add(logLine);
@@ -959,12 +958,12 @@ Future<ToolStreamOutcome> callDsWithTools(
 // ------------------------------------------------------------
 String _reflectPrompt(int i) {
   if (i == 1) {
-    return '''上の回答をよく見直してください。タスク:\n1. 事実誤認、論理の穴、不正確な表現を洗い出す\n2. 抜けている重要情報・観点・細部を洗い出す\n3. 不明瞭で誤解を招く箇所を特定する\n4. **改善後の完全な回答を直接出力する**（「以下のように改善しました」などの前置きは書かず、完成した内容だけを出す）\n\n元の回答がすでに十分練られていても、見落とされがちな細部は補ってください。''';
+    return '''请仔细复查上面的回答。任务:\n1. 找出事实错误、逻辑漏洞、不准确的表述\n2. 找出遗漏的重要信息、观点、细节\n3. 指出不清晰、易误解之处\n4. **直接输出改进后的完整回答**（不要写"已改进如下"之类的前言，只给出完成的内容）\n\n即使原回答已足够完善，也请补上容易被忽略的细节。''';
   }
   if (i == 2) {
-    return '''回答をもう一度深く見直してください（2 回目の内省）。タスク:\n1. 事実誤認、曖昧な表現、論理の飛躍が残っていないか確認する\n2. より深い細部、具体例、境界条件を補う\n3. 別の角度から問題を見直す\n4. **最終改善版の完全な回答を直接出力する**（前置きは書かず、内容だけを出す）''';
+    return '''请再次深度复查回答（第 2 次自省）。任务:\n1. 确认是否还残留事实错误、含糊表述、逻辑跳跃\n2. 补充更深入的细节、具体例子、边界条件\n3. 换个角度重新审视问题\n4. **直接输出最终改进版的完整回答**（不写前言，只给内容）''';
   }
-  return '''$i 回目の深い見直し（最終審査）を行ってください。タスク:\n1. 誤り・曖昧さ・不完全さがないか一文ずつ確認する\n2. より正確なデータ、例、境界条件、よくある誤解を加える\n3. 論理の連鎖が完全で結論が信頼できることを確認する\n4. **最終完全版の回答を直接出力する**（「以下が改善版です」などの前置きは書かない）''';
+  return '''请进行第 $i 次深度复查（最终审查）。任务:\n1. 逐句检查是否有错误、含糊、不完整之处\n2. 补充更准确的数据、例子、边界条件、常见误解\n3. 确认逻辑链完整、结论可信\n4. **直接输出最终完整版的回答**（不要写"以下是改进版"之类的前言）''';
 }
 
 Future<({String content, String reasoning})> callDsMultiRound(
@@ -991,7 +990,7 @@ Future<({String content, String reasoning})> callDsMultiRound(
   }
   var currentReply = first.content;
   for (var i = 1; i < rounds; i++) {
-    progressFn?.call(i + 1, rounds, '第 $i ラウンドの自己内省中...');
+    progressFn?.call(i + 1, rounds, '第 $i 轮自我反省中...');
     final reflectMsgs = <Map<String, dynamic>>[
       ...messages,
       {'role': 'assistant', 'content': currentReply},
@@ -1003,10 +1002,10 @@ Future<({String content, String reasoning})> callDsMultiRound(
       if (r.content.trim().isEmpty) break;
       currentReply = r.content;
       if (r.reasoning.trim().isNotEmpty) {
-        reasoningParts.add('【第 $i ラウンドの内省】\n${r.reasoning}');
+        reasoningParts.add('【第 $i 轮反省】\n${r.reasoning}');
       }
     } catch (e) {
-      logp('⚠️ 第 $i ラウンドの内省に失敗しました: $e。前回の結果を使用します');
+      logp('⚠️ 第 $i 轮反省失败: $e。使用上次的结果');
       break;
     }
   }
@@ -1059,7 +1058,7 @@ Future<({String content, String reasoning})> callDsMultiRoundStream(
   }
   var currentReply = firstContent.toString();
   for (var i = 1; i < rounds; i++) {
-    onRound?.call(i + 1, rounds, '第 $i ラウンドの自己内省中...');
+    onRound?.call(i + 1, rounds, '第 $i 轮自我反省中...');
     final reflectMsgs = <Map<String, dynamic>>[
       ...messages,
       {'role': 'assistant', 'content': currentReply},
@@ -1079,13 +1078,13 @@ Future<({String content, String reasoning})> callDsMultiRoundStream(
       }, usageAcc, apiUrl: apiUrl, extraBody: extraBody,
           onReferences: onReferences);
     } catch (e) {
-      logp('⚠️ 第 $i ラウンドの内省に失敗しました: $e。前回の結果を使用します');
+      logp('⚠️ 第 $i 轮反省失败: $e。使用上次的结果');
       break;
     }
     if (newContent.toString().trim().isEmpty) break;
     currentReply = newContent.toString();
     if (newReasoning.toString().trim().isNotEmpty) {
-      reasoningParts.add('【第 $i ラウンドの内省】\n${newReasoning.toString()}');
+      reasoningParts.add('【第 $i 轮反省】\n${newReasoning.toString()}');
     }
   }
   return (
@@ -1111,7 +1110,7 @@ Future<String> callDsVisionAPI(String apiKey, String textPrompt,
   }
   content.add({
     'type': 'text',
-    'text': textPrompt.isEmpty ? 'この画像を説明し、含まれるすべての文字を抽出してください。' : textPrompt,
+    'text': textPrompt.isEmpty ? '请描述这张图片，并提取其中包含的所有文字。' : textPrompt,
   });
 
   final body = <String, dynamic>{
@@ -1188,7 +1187,7 @@ Future<List<WebSearchResult>> deepseekOfficialSearch(
   final key = apiKey.trim();
   if (key.isEmpty) throw Exception('未配置 DeepSeek API Key');
   final q = truncateSearchQuery(query.trim());
-  if (q.isEmpty) throw Exception('検索キーワードは必須です');
+  if (q.isEmpty) throw Exception('搜索关键词为必填项');
   var c = count;
   if (c <= 0) c = 10;
   if (c > 50) c = 50;
@@ -1215,7 +1214,7 @@ Future<List<WebSearchResult>> deepseekOfficialSearch(
     if (snippet.isEmpty) snippet = mStr(m, 'content');
     results.add(WebSearchResult(mStr(m, 'title'), url, snippet, 'DeepSeek'));
   }
-  if (results.isEmpty) throw Exception('DeepSeek 公式検索は結果を返しませんでした');
+  if (results.isEmpty) throw Exception('DeepSeek 官方搜索没有返回结果');
   return results;
 }
 
@@ -1224,7 +1223,7 @@ Future<({String title, String content})> deepseekOfficialFetch(
   final key = apiKey.trim();
   if (key.isEmpty) throw Exception('未配置 DeepSeek API Key');
   final u = url.trim();
-  if (u.isEmpty) throw Exception('url は必須です');
+  if (u.isEmpty) throw Exception('url 为必填项');
   final body = await dsOfficialHTTPPost(deepseekFetchURL, key, {'url': u});
   final resp = asMap(jsonDecode(utf8.decode(body, allowMalformed: true)));
   return (title: mStr(resp, 'title'), content: mStr(resp, 'content'));
@@ -1236,7 +1235,7 @@ int randomSearchCount() =>
 Future<List<WebSearchResult>> combinedSearch(
     String query, int maxResults) async {
   final maxR = maxResults <= 0 ? 6 : maxResults;
-  logp('🔍 [ウェブ検索] 今回の目標 $maxR 件（DeepSeek 公式 API）');
+  logp('🔍 [网页搜索] 本次目标 $maxR 条（DeepSeek 官方 API）');
   final all = <WebSearchResult>[];
   final seen = <String>{};
 
@@ -1255,11 +1254,11 @@ Future<List<WebSearchResult>> combinedSearch(
       final official = await deepseekOfficialSearch(
           cfg.apiKey, query, maxR, false, query);
       if (official.isNotEmpty) {
-        logp('🔍 [ウェブ検索] DeepSeek 公式 API が ${official.length} 件返しました');
+        logp('🔍 [网页搜索] DeepSeek 官方 API 返回了 ${official.length} 条');
         addResults(official);
       }
     } catch (e) {
-      logp('⚠️ [ウェブ検索] DeepSeek 公式 API に失敗しました: $e');
+      logp('⚠️ [网页搜索] DeepSeek 官方 API 失败: $e');
     }
   }
   if (all.length > maxR) return all.sublist(0, maxR);
@@ -1269,14 +1268,14 @@ Future<List<WebSearchResult>> combinedSearch(
 Future<String> buildWebSearchContext(String query) async {
   final results = await combinedSearch(query, randomSearchCount());
   if (results.isEmpty) {
-    return '\n\n【ウェブ検索失敗: 有効な結果が得られませんでした。既存の知識で回答し、最新情報をウェブ検索できなかったことをユーザーに明示してください。】';
+    return '\n\n【网页搜索失败: 未获得有效结果。请用已有知识回答，并向用户明示未能通过网页搜索获取最新信息。】';
   }
   final sb = StringBuffer();
-  sb.write('\n\n【以下はリアルタイムのウェブ検索結果です。この情報を踏まえて回答し、引用時は出典を明記してください】\n');
+  sb.write('\n\n【以下是实时网页搜索结果。请基于这些信息回答，引用时注明出处】\n');
   for (var i = 0; i < results.length; i++) {
     final r = results[i];
     sb.write('${i + 1}. [${r.source}] ${r.title}\n');
-    sb.write('   リンク: ${r.url}\n');
+    sb.write('   链接: ${r.url}\n');
     if (r.snippet.isNotEmpty) sb.write('   摘要：${r.snippet}\n');
   }
   sb.write('\n【検索終了】');
@@ -1322,7 +1321,7 @@ bool isTextFile(String mimeType, String filename) {
   final f = File(absPath);
   if (!f.existsSync()) return (text: null, error: '文件不存在');
   if (!isTextFile(meta.mimeType, meta.name)) {
-    return (text: null, error: 'テキストファイルではないため、直接読み取れません');
+    return (text: null, error: '非文本文件，无法直接读取');
   }
   final stat = f.statSync();
   final raf = f.openSync();
@@ -1331,7 +1330,7 @@ bool isTextFile(String mimeType, String filename) {
     final data = raf.readSync(len);
     final text = utf8.decode(data, allowMalformed: true);
     if (stat.size > DS_MAX_TEXT_EXTRACT) {
-      return (text: '$text\n\n...[ファイル内容が長すぎるため、先頭 200KB のみ表示]', error: null);
+      return (text: '$text\n\n...[文件内容过长，仅显示前 200KB]', error: null);
     }
     return (text: text, error: null);
   } catch (e) {
@@ -1435,7 +1434,7 @@ FileContext buildFileContext(List<String> fileIDs) {
     if (isTextFile(meta.mimeType, meta.name)) {
       final r = dsFileToText(fid);
       if (r.error != null) {
-        otherFiles.add('${meta.name} (読み取り失敗: ${r.error})');
+        otherFiles.add('${meta.name} (读取失败: ${r.error})');
         continue;
       }
       if ((r.text ?? '').trim().isNotEmpty) {
@@ -1448,13 +1447,13 @@ FileContext buildFileContext(List<String> fileIDs) {
 
   final sb = StringBuffer();
   if (textChunks.isNotEmpty) {
-    sb.write('以下はユーザーがアップロードしたファイルの内容です:\n\n');
+    sb.write('以下是用户上传的文件内容:\n\n');
     sb.write(textChunks.join('\n\n───────────────\n\n'));
   }
   if (otherFiles.isNotEmpty) {
     if (sb.isNotEmpty) sb.write('\n\n');
-    sb.write('【ユーザーがアップロードした以下のファイルは、内容を自動抽出できない形式です'
-        '（ファイル名のみ参照）】:');
+    sb.write('【用户上传的以下文件，是无法自动提取内容的格式'
+        '（仅参照文件名）】:');
     sb.write(otherFiles.join('、'));
   }
   return FileContext(
@@ -1469,18 +1468,18 @@ FileContext buildFileContext(List<String> fileIDs) {
 // ------------------------------------------------------------
 // 小说模式
 // ------------------------------------------------------------
-String buildNovelSystemPrompt() => '''あなたは経験豊富な長編ウェブ小説作家で、構成のしっかりした、筋の曲がりくねった、人物が立体的で、読みどころの多い長編小説を書くのが得意です。文体は流暢で自然、会話は生き生きとしており、物語の進み具合を的確にコントロールします。\n\n創作要件:\n1. ユーザーが使っている言語で書くこと。指定があればその言語に従い、どの言語でもよい\n2. 本文から直接始め、タイトル・著者・前書き・後書き・まとめ・前置きは一切書かない\n3. 章立てを明確にし、各章は「第X章」または明確な小見出しで始める\n4. 人物の性格を際立たせ、会話を人物設定に合わせる\n5. 筋を一貫させ、起承転結を備え、冗長にも飛躍にもしない\n6. 細部の描写と情景の演出を重視するが、過度に積み上げない\n7. ユーザーが設定したテーマ・タグ・分類・ストーリー設定に完全に従う\n8. 途中で終わらせず、指定文字数を可能な限り埋める''';
+String buildNovelSystemPrompt() => '''你是一位经验丰富的长篇网络小说作家，擅长写结构扎实、情节跌宕、人物立体、看点丰富的长篇小说。文笔流畅自然，对话生动，能精准把控故事节奏。\n\n创作要求:\n1. 用用户使用的语言写作。若有指定则遵循该语言，任何语言都可以\n2. 从正文直接开始，不写标题、作者、前言、后记、总结、铺垫\n3. 章节划分清晰，每章以"第X章"或明确的小标题开头\n4. 突出人物性格，使对话契合人设\n5. 情节一贯，起承转合完整，不冗长也不跳跃\n6. 重视细节描写与情景营造，但不过度堆砌\n7. 完全遵循用户设定的主题、标签、分类、故事设定\n8. 不中途结束，尽可能写满指定字数''';
 
 String buildNovelBasePrompt(
     String theme, String tags, String genre, String story, int targetChars) {
   final sb = StringBuffer();
-  sb.write('【小説創作タスク】\n');
+  sb.write('【小说创作任务】\n');
   sb.write('分類: $genre\n');
-  if (theme.isNotEmpty) sb.write('テーマ: $theme\n');
-  if (tags.isNotEmpty) sb.write('タグ: $tags\n');
-  if (story.isNotEmpty) sb.write('ストーリー設定: $story\n');
+  if (theme.isNotEmpty) sb.write('主题: $theme\n');
+  if (tags.isNotEmpty) sb.write('标签: $tags\n');
+  if (story.isNotEmpty) sb.write('故事设定: $story\n');
   sb.write('目標総文字数: $targetChars 文字\n');
-  sb.write('\nこの小説の創作を開始してください。');
+  sb.write('\n请开始创作这部小说。');
   return sb.toString();
 }
 
@@ -1504,9 +1503,9 @@ String trimNovelOverlap(String newChunk, String prevEnd) {
 
 String _novelSegmentPrompt(int round, int thisChunk, String basePrompt) {
   if (round == 0) {
-    return '''$basePrompt\n\n【今回のタスク】\nこの小説の創作を直接始めてください。今回の出力は約 $thisChunk 文字。\n要件:\n- 本文から直接始め、前書き・タイトル・著者情報は一切書かない\n- 章立てを明確にし、展開を緊密に\n- 今回求められた文字数を可能な限り埋める''';
+    return '''$basePrompt\n\n【本次任务】\n请直接开始创作这部小说。本次输出约 $thisChunk 字。\n要求:\n- 从正文直接开始，不写前言、标题、作者信息\n- 章节划分清晰，展开紧凑\n- 尽可能写满本次要求的字数''';
   }
-  return '''【小説創作の続き · ${round + 1} 段目】\n今回の続きの目標: 約 $thisChunk 文字。\n\n【続きの要件】\n1. 直前の本文に厳密に続けて書き、既に書いた内容を繰り返さない\n2. 前書き・まとめ・つなぎの言葉・説明は一切書かない\n3. 筋の一貫性、人物の一貫性、伏線の呼応、章立ての明確さを保つ\n4. 今回求められた文字数を可能な限り埋める''';
+  return '''【小说创作续写 · 第 ${round + 1} 段】\n本次续写目标: 约 $thisChunk 字。\n\n【续写要求】\n1. 严格承接前面的正文，不重复已写内容\n2. 不写前言、总结、过渡语、说明\n3. 保持情节一贯、人物一贯、伏笔呼应、章节清晰\n4. 尽可能写满本次要求的字数''';
 }
 
 String _novelContext(String full) {
@@ -1517,7 +1516,7 @@ String _novelContext(String full) {
   final head = String.fromCharCodes(runes.sublist(0, headKeepRunes));
   final tailStart = runes.length - (maxCtxRunes - headKeepRunes);
   final tail = String.fromCharCodes(runes.sublist(tailStart));
-  return '$head\n\n……（中間は省略、既に書いた部分）……\n\n$tail';
+  return '$head\n\n……（中间省略，已写部分）……\n\n$tail';
 }
 
 Future<({String text, String? error})> generateNovel(String apiKey, String model,
@@ -1553,12 +1552,12 @@ Future<({String text, String? error})> generateNovel(String apiKey, String model
       reply = r.content.trim();
     } catch (e) {
       lastErr = '$e';
-      logp('⚠️ 小説 ${round + 1} 段目の生成に失敗しました: $e');
+      logp('⚠️ 小说第 ${round + 1} 段生成失败: $e');
       if (full.isNotEmpty) break;
       return (text: '', error: lastErr);
     }
     if (reply.isEmpty) {
-      logp('⚠️ 小説 ${round + 1} 段目が空で返されたため、生成を中止します');
+      logp('⚠️ 小说第 ${round + 1} 段返回为空，中止生成');
       break;
     }
     reply = trimNovelOverlap(reply, lastPart);
@@ -1629,19 +1628,19 @@ Future<({String text, String? error})> generateNovelStream(
       } catch (e) {
         segErr = '$e';
       }
-      logp('⚠️ 小説 ${round + 1} 段目 ${attempt + 1} 回目の試行に失敗しました: $segErr。3 秒後に再試行します');
+      logp('⚠️ 小说第 ${round + 1} 段第 ${attempt + 1} 次尝试失败: $segErr。3 秒后重试');
       await Future.delayed(const Duration(seconds: 3));
     }
     if (segErr != null) {
       lastErr = segErr;
-      logp('❌ 小説 ${round + 1} 段目の生成に失敗しました（$segMaxRetry 回再試行済み）: $segErr');
+      logp('❌ 小说第 ${round + 1} 段生成失败（已重试 $segMaxRetry 次）: $segErr');
       if (full.isNotEmpty) break;
       return (text: '', error: segErr);
     }
 
     var reply = segBuf.toString().trim();
     if (reply.isEmpty) {
-      logp('⚠️ 小説 ${round + 1} 段目が空で返されたため、生成を中止します');
+      logp('⚠️ 小说第 ${round + 1} 段返回为空，中止生成');
       break;
     }
     reply = trimNovelOverlap(reply, lastPart);
@@ -1666,13 +1665,13 @@ Future<({String text, String? error})> generateNovelStream(
 const String _ttsPunct = '，。！？；：、“”‘’（）【】《》「」『』〈〉〔〕〖〗—–…·～﹏,'
     '.!?;:"\'`()[]{}<>/\\|@#\$%^&*+=~_\n\r\t';
 
-// 句読点と語中のアポストロフィ・ハイフンを残す言語（ラテン / キリル / ハングル）。
-// ここを潰すと l'homme / aujourd'hui / peut-être / кто-то が語として壊れ、
-// 発音だけでなく語の区切りと間（ま）も不自然になる。
+// 保留标点与词中撇号、连字符的语言（拉丁 / 西里尔 / 谚文）。
+// 若破坏此处，l'homme / aujourd'hui / peut-être / кто-то 会作为词被破坏，
+// 不仅发音，连词的切分与停顿也会变得不自然。
 const Set<String> _ttsKeepPunctLangs = {'en', 'fr', 'ru', 'ko'};
 
-/// TTS 前処理。[lang] を渡すと、その言語に合わせた本土化ルールで洗浄する。
-/// 既存呼び出し（lang 未指定）は日本語・中国語向けの従来挙動を維持する。
+/// TTS 预处理。传入 [lang] 时，按该语言的本地化规则清洗。
+/// 已有调用（未指定 lang）保持面向日语、中文的原有行为。
 String cleanTTSText(String s, [String lang = '']) {
   final l = lang.toLowerCase();
   if (_ttsKeepPunctLangs.contains(l)) return _cleanTTSTextKeepPunct(s, l);
@@ -1688,18 +1687,18 @@ String cleanTTSText(String s, [String lang = '']) {
   return sb.toString().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).join(' ');
 }
 
-/// 欧文（仏 / 露 / 韓 / 英）向けの洗浄。
-/// 句読点（. , ! ? ; :）と語中の ' ’ - を残し、引用符・括弧・記号だけを空白へ置換する。
+/// 面向西文（法 / 俄 / 韩 / 英）的清洗。
+/// 保留标点（. , ! ? ; :）与词中的 ' ’ -，只把引号、括号、符号替换为空白。
 String _cleanTTSTextKeepPunct(String s, String lang) {
   var t = s;
 
-  // 全角スペース・引用符・括弧は「間」に置き換える
+  // 全角空格、引号、括号替换为"停顿"
   t = t.replaceAll(
       RegExp(r'[\u3000"\u201C\u201D\u00AB\u00BB\u300C\u300D\u300E\u300F\uFF08\uFF09()\[\]{}<>\u300A\u300B\u3010\u3011\u3008\u3009\u3014\u3015\u3016\u3017]'),
       ' ');
   t = t.replaceAll(RegExp(r'[#@&+=\\|^\$%/*]'), ' ');
 
-  // 語頭・語尾に孤立した ' ’ - のみ落とし、語中のものは残す
+  // 只去掉词首、词尾孤立的 ' ’ -，词中的保留
   t = t.replaceAllMapped(RegExp(r'\S+'), (m) {
     var w = m[0]!;
     w = w.replaceFirst(RegExp(r"^['\u2019\-]+"), '');
@@ -1707,10 +1706,10 @@ String _cleanTTSTextKeepPunct(String s, String lang) {
     return w;
   });
 
-  // ダッシュ・中黒・省略記号は「間」として使う
+  // 破折号、间隔号、省略号作为"停顿"使用
   t = t.replaceAll(RegExp(r'[\u2013\u2014\u2015\u2026\u00B7\u2022]'), ' ');
 
-  // 音声の混線を防ぐ：ハングル音声からはかなを、キリル音声からは漢字を落とす
+  // 防止语音串扰：从谚文语音去掉假名，从西里尔语音去掉汉字
   if (lang == 'ko') t = t.replaceAll(RegExp(r'[\u3040-\u309F\u30A0-\u30FF]'), ' ');
   if (lang == 'ru') t = t.replaceAll(RegExp(r'[\u4E00-\u9FFF]'), ' ');
 

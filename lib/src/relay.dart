@@ -126,7 +126,7 @@ RelayConfig getRelayConfig() {
     _relayCfgCacheRaw = raw;
     return cfg;
   } catch (e) {
-    logp('⚠️ 中转站設定の読み込みに失敗しました: $e');
+    logp('⚠️ 中转站设置读取失败: $e');
     return RelayConfig();
   }
 }
@@ -141,7 +141,7 @@ bool saveRelayConfig(RelayConfig cfg) {
     _relayCfgCacheRaw = raw;
     return true;
   } catch (e) {
-    logp('❌ 中转站設定の保存に失敗しました: $e');
+    logp('❌ 中转站设置保存失败: $e');
     return false;
   }
 }

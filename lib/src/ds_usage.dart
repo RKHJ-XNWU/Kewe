@@ -16,13 +16,13 @@ class DsTokenUsage {
   int totalTokens;
   int apiCalls;
 
-  /// ★ 音声入力 token（豆包 2.1-lite の音声単価 12 元/百万 tokens の対象）
-  ///   方舟の usage.prompt_tokens_details.audio_tokens をそのまま積む。
+  /// ★ 语音输入 token（豆包 2.1-lite 语音单价 12 元/百万 tokens 的对象）
+  ///   原样累加方舟的 usage.prompt_tokens_details.audio_tokens。
   int audioInputTokens;
 
-  /// ★ この usage を生成したモデル ID。
-  ///   料金表はモデルごとに違うため、後から別モデルへ切り替えても
-  ///   過去メッセージの金額が変わらないよう、usage 自身に持たせて永続化する。
+  /// ★ 生成此 usage 的模型 ID。
+  ///   价目表因模型而异，即使之后切换到其他模型
+  ///   为了历史消息的金额不变，让 usage 自身持有并持久化。
   String model;
 
   DsTokenUsage({
@@ -112,8 +112,8 @@ class RawDsUsage {
       promptCacheMissTokens: intArgDefault(m, 'prompt_cache_miss_tokens', 0),
       cachedTokens: intArgDefault(pd, 'cached_tokens', 0),
       reasoningTokens: intArgDefault(cd, 'reasoning_tokens', 0),
-      // 方舟は prompt_tokens_details.audio_tokens、OpenAI 系は prompt_tokens_details
-      // 配下に input_audio_tokens を置く実装もあるため両方を拾う
+      // 方舟用 prompt_tokens_details.audio_tokens，OpenAI 系用 prompt_tokens_details
+      // 也有实现把 input_audio_tokens 放在其下，故两处都取
       audioTokens: () {
         final a = intArgDefault(pd, 'audio_tokens', 0);
         if (a > 0) return a;
@@ -129,33 +129,33 @@ class DsUsageAcc {
   bool _used = false;
   final DsTokenUsage _total = DsTokenUsage();
 
-  /// 直近に積んだモデル ID（snapshot に焼き込んで永続化する）
+  /// 最近累加的模型 ID（烧进 snapshot 并持久化）
   String model = '';
 
   bool get used => _used;
 
   void addRaw(RawDsUsage? r) {
     if (r == null) return;
-    // ① 命中：公式フィールドを優先し、無ければ prompt_tokens_details.cached_tokens へ回落
+    // ① 命中：优先用官方字段，没有则回落到 prompt_tokens_details.cached_tokens
     var hit = r.promptCacheHitTokens;
     if (hit == 0) hit = r.cachedTokens;
     var miss = r.promptCacheMissTokens;
-    // ② 入力総量：prompt_tokens が欠けていれば「命中 + 未命中」で補う
+    // ② 输入总量：若缺少 prompt_tokens 则用"命中 + 未命中"补齐
     var prompt = r.promptTokens;
     if (prompt == 0) prompt = hit + miss;
     if (hit < 0) hit = 0;
     if (miss < 0) miss = 0;
     if (prompt < 0) prompt = 0;
-    // ③ 不変条件 hit + miss == prompt を強制する。
-    //    未命中が 0 や欠損で返る実装があり、そのまま加算すると過少計上になる
-    //    （単価は 未命中 > 出力 > 命中 の順に高く、取りこぼしの影響が最も大きい）
+    // ③ 强制不变式 hit + miss == prompt。
+    //    有的实现未命中返回 0 或缺失，直接累加会少计
+    //    （单价按 未命中 > 输出 > 命中 递减，漏计影响最大）
     if (hit > prompt) hit = prompt;
     if (prompt > 0) {
       miss = prompt - hit;
     } else if (miss > 0) {
       prompt = hit + miss;
     }
-    // ④ 出力：completion に reasoning が含まれない実装があるため大きい方を採る
+    // ④ 输出：有的实现 completion 不含 reasoning，故取较大的一方
     var outTok = r.completionTokens;
     if (outTok < r.reasoningTokens) outTok = r.reasoningTokens;
     var total = r.totalTokens;

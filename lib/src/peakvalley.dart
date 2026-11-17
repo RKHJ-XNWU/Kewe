@@ -542,16 +542,16 @@ class _ChannelTypeMeta {
 
 const List<_ChannelTypeMeta> _channelTypes = [
   _ChannelTypeMeta('serverchan', 'Server酱', '微信推送，填写 SendKey', ['key']),
-  _ChannelTypeMeta('bark', 'Bark', 'iOS プッシュ。DeviceKey を入力。自前サーバーの指定は任意',
+  _ChannelTypeMeta('bark', 'Bark', 'iOS 推送。输入 DeviceKey。自建服务器地址可选',
       ['key', 'server']),
-  _ChannelTypeMeta('dingtalk', 'DingTalk ボット', 'Webhook アドレスを入力。署名用シークレットは任意',
+  _ChannelTypeMeta('dingtalk', '钉钉机器人', '输入 Webhook 地址。签名密钥可选',
       ['server', 'secret']),
-  _ChannelTypeMeta('wecom', 'WeCom ボット', '填写 Webhook 地址或 key', ['server', 'key']),
+  _ChannelTypeMeta('wecom', '企业微信机器人', '填写 Webhook 地址或 key', ['server', 'key']),
   _ChannelTypeMeta('telegram', 'Telegram', '填写 Bot Token 与 Chat ID',
       ['key', 'chatId', 'server'], true),
-  _ChannelTypeMeta('feishu', 'Feishu ボット', 'Webhook アドレスを入力。署名用シークレットは任意',
+  _ChannelTypeMeta('feishu', '飞书机器人', '输入 Webhook 地址。签名密钥可选',
       ['server', 'secret']),
-  _ChannelTypeMeta('webhook', 'カスタム Webhook', '任意 URL，支持 {title} {content} 占位',
+  _ChannelTypeMeta('webhook', '自定义 Webhook', '任意 URL，支持 {title} {content} 占位',
       ['server', 'method', 'body']),
 ];
 
@@ -611,7 +611,7 @@ PVConfig pvDefaultConfig() => PVConfig(
           leadMinutes: 0,
           channel: 'all',
           times: '',
-          title: 'DeepSeek ピーク時間の開始',
+          title: 'DeepSeek 高峰时段开始',
           content: '{phase}開始: {start}～{end}\n現在時刻: {time}',
         ),
         PVReminder(
@@ -619,7 +619,7 @@ PVConfig pvDefaultConfig() => PVConfig(
           leadMinutes: 0,
           channel: 'all',
           times: '',
-          title: 'DeepSeek オフピーク時間の開始',
+          title: 'DeepSeek 低谷时段开始',
           content: '{phase}開始: {start}～{end}\n現在時刻: {time}',
         ),
       ),
@@ -646,10 +646,10 @@ void pvLoad() {
       if (sanitized.error == null) {
         cfg = sanitized.config!;
       } else {
-        logp('⚠️ ピーク／オフピーク通知の設定が無効です。既定値を使用します: ${sanitized.error}');
+        logp('⚠️ 高峰／低谷通知的设置无效。使用默认值: ${sanitized.error}');
       }
     } catch (e) {
-      logp('⚠️ ピーク／オフピーク通知の設定解析に失敗しました: $e');
+      logp('⚠️ 高峰／低谷通知的设置解析失败: $e');
     }
   }
   _pvCfg = cfg;
@@ -677,7 +677,7 @@ void pvSaveLocked() {
     File(tmp).writeAsStringSync(raw);
     File(tmp).renameSync(pvConfigPath);
   } catch (e) {
-    logp('⚠️ ピーク／オフピーク通知の設定保存に失敗しました: $e');
+    logp('⚠️ 高峰／低谷通知的设置保存失败: $e');
   }
 }
 
@@ -918,7 +918,7 @@ PVBadgePos pvSanitizeBadgePos(PVBadgePos input, PVBadgePos def) {
     windows.add(PVWindow(pvFormatHM(s), pvFormatHM(e)));
   }
   if (windows.isEmpty) {
-    return (config: out, error: '有効なピーク時間帯が少なくとも 1 つ必要です（開始時刻は終了時刻より前にしてください）');
+    return (config: out, error: '至少需要 1 个有效的高峰时段（开始时间须早于结束时间）');
   }
   out.windows = windows;
   if (['auto', 'peak', 'valley'].contains(input.override)) {
@@ -1207,7 +1207,7 @@ Future<PVChannelResult> pvSendChannel(
   } catch (e) {
     return fail('$e', 0);
   }
-  return fail('不明なチャネル種別です: ${c.type}', 0);
+  return fail('未知的渠道类型: ${c.type}', 0);
 }
 
 Future<PVPushResult> pvDispatch(
@@ -1231,7 +1231,7 @@ Future<PVPushResult> pvDispatch(
 
   final res = PVPushResult(total: targets.length);
   if (targets.isEmpty) {
-    res.error = '有効なプッシュチャネルがありません（先に設定でチャネルを追加し有効化してください）';
+    res.error = '没有有效的推送渠道（请先在设置中添加并启用渠道）';
     return res;
   }
   for (final c in targets) {
@@ -1240,7 +1240,7 @@ Future<PVPushResult> pvDispatch(
     if (r.ok) res.sent++;
   }
   res.ok = res.sent > 0;
-  if (!res.ok && res.error.isEmpty) res.error = 'すべてのチャネルで送信に失敗しました';
+  if (!res.ok && res.error.isEmpty) res.error = '所有渠道均发送失败';
   return res;
 }
 
@@ -1287,7 +1287,7 @@ Future<void> pvFireReminder(String phase) async {
     final content = pvRenderTemplate(r.content, vals);
     final result = await pvDispatch(cfg, title, content, r.channel);
     pvUpdateReminderResult(phase, result);
-    logp('🔔 ピーク／オフピーク通知を発火 [$key] 成功 ${result.sent}/${result.total}');
+    logp('🔔 触发高峰／低谷通知 [$key] 成功 ${result.sent}/${result.total}');
   }
 
   // 2) 阶段内固定时间
@@ -1309,7 +1309,7 @@ Future<void> pvFireReminder(String phase) async {
     final content = pvRenderTemplate(r.content, vals);
     final result = await pvDispatch(cfg, title, content, r.channel);
     pvUpdateReminderResult(phase, result);
-    logp('🔔 ピーク／オフピーク定期通知を発火 [$key] 成功 ${result.sent}/${result.total}');
+    logp('🔔 触发高峰／低谷定期通知 [$key] 成功 ${result.sent}/${result.total}');
   }
 }
 
@@ -1318,7 +1318,7 @@ Future<void> pvTick() async {
     await pvFireReminder(PVPeak);
     await pvFireReminder(PVValley);
   } catch (e) {
-    logp('⚠️ ピーク／オフピークスケジューラで例外: $e');
+    logp('⚠️ 高峰／低谷调度器异常: $e');
   }
 }
 
@@ -1338,7 +1338,7 @@ Future<void> pvJSONWrite(HttpResponse res, int code, Object? v) async {
   try {
     body = jsonEncode(v);
   } catch (_) {
-    body = '{"ok":false,"error":{"code":"ENCODE","message":"シリアライズに失敗しました"}}';
+    body = '{"ok":false,"error":{"code":"ENCODE","message":"序列化失败"}}';
   }
   try {
     res.statusCode = code;
@@ -1619,7 +1619,7 @@ Future<void> pvHandleAPI(HttpRequest r) async {
       }
       final input = PVChannel.fromJson(asMap(rawCh));
       if (!pvValidChannelType(input.type)) {
-        await pvFail(res, 400, 'bad-request', '不明なチャネル種別です');
+        await pvFail(res, 400, 'bad-request', '未知的渠道类型');
         return;
       }
       final cfg = pvGetConfig();
@@ -1677,8 +1677,8 @@ Future<void> pvHandleAPI(HttpRequest r) async {
         return;
       }
       final now = DateTime.now();
-      final res1 = await pvSendChannel(target, 'ピーク／オフピーク通知テスト',
-          'これは「ピーク／オフピーク通知」からのテストメッセージです。\n時刻: ${fmtDate(now)} ${fmtClock(now).substring(0, 5)}');
+      final res1 = await pvSendChannel(target, '高峰／低谷通知测试',
+          '这是来自“高峰／低谷通知”的测试消息。\n时间: ${fmtDate(now)} ${fmtClock(now).substring(0, 5)}');
       await pvOk(res, res1.toJson());
       return;
 
@@ -1692,12 +1692,12 @@ Future<void> pvHandleAPI(HttpRequest r) async {
       String title;
       String content;
       if (kind == 'custom') {
-        vals['phase'] = 'カスタムテスト';
-        title = pvStr(payload, 'title', 'ピーク／オフピーク通知テスト').trim();
-        content = pvStr(payload, 'content', 'これはピーク／オフピーク通知からのテストメッセージです。');
+        vals['phase'] = '自定义测试';
+        title = pvStr(payload, 'title', '高峰／低谷通知测试').trim();
+        content = pvStr(payload, 'content', '这是来自高峰／低谷通知的测试消息。');
       } else {
         if (phase != PVPeak && phase != PVValley) {
-          await pvFail(res, 400, 'bad-request', '不明なテスト種別です "$kind"');
+          await pvFail(res, 400, 'bad-request', '未知的测试类型 "$kind"');
           return;
         }
         final r = phase == PVPeak ? cfg.reminders.peak : cfg.reminders.valley;
@@ -1719,13 +1719,13 @@ Future<void> pvHandleAPI(HttpRequest r) async {
     case 'fireNow':
       final phase = pvStr(payload, 'phase', 'peak');
       if (phase != PVPeak && phase != PVValley) {
-        await pvFail(res, 400, 'bad-request', '不明なフェーズです "$phase"');
+        await pvFail(res, 400, 'bad-request', '未知的阶段 "$phase"');
         return;
       }
       final cfg = pvGetConfig();
       final r = phase == PVPeak ? cfg.reminders.peak : cfg.reminders.valley;
       if (!r.enabled) {
-        await pvOk(res, {'skipped': true, 'reason': 'このフェーズの通知は有効になっていません'});
+        await pvOk(res, {'skipped': true, 'reason': '该阶段的通知未启用'});
         return;
       }
       final vals = pvBuildValues(cfg, phase, DateTime.now());

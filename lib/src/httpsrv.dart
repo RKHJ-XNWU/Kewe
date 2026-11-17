@@ -55,7 +55,7 @@ Future<List<int>> readBodyBytes(HttpRequest req, {int? limit}) async {
   await for (final chunk in req) {
     builder.add(chunk);
     if (limit != null && builder.length > limit) {
-      throw const FormatException('リクエストボディがサイズ上限を超えています');
+      throw const FormatException('请求体超过大小上限');
     }
   }
   return builder.takeBytes();
@@ -76,7 +76,7 @@ Future<Map<String, dynamic>> readJsonBody(HttpRequest req, {int? limit}) async {
   try {
     return asMap(jsonDecode(text));
   } catch (_) {
-    throw const FormatException('リクエストボディが有効な JSON ではありません');
+    throw const FormatException('请求体不是有效的 JSON');
   }
 }
 
@@ -88,7 +88,7 @@ Future<void> jsonResponse(HttpResponse res, int code, Object? data) async {
   try {
     body = jsonEncode(data);
   } catch (_) {
-    body = '{"error":"シリアライズに失敗しました"}';
+    body = '{"error":"序列化失败"}';
   }
   await _writeJsonRaw(res, code, body);
 }
@@ -200,7 +200,7 @@ class Sse {
     try {
       data = jsonEncode(payload);
     } catch (_) {
-      data = '{"error":"payload のシリアライズに失敗しました"}';
+      data = '{"error":"payload 序列化失败"}';
     }
     return _write('event: $event\ndata: $data\n\n');
   }
@@ -425,7 +425,7 @@ Future<void> serveFile(HttpRequest req, File file,
     await raf.close();
     await res.flush();
   } catch (e) {
-    logp('⚠️ ファイル送信に失敗しました ${file.path}: $e');
+    logp('⚠️ 文件发送失败 ${file.path}: $e');
   } finally {
     try {
       await res.close();

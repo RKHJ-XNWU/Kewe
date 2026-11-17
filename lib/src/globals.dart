@@ -301,7 +301,7 @@ void ensureDir(String path) {
   try {
     Directory(path).createSync(recursive: true);
   } catch (e) {
-    logp('⚠️ ディレクトリの作成に失敗しました $path: $e');
+    logp('⚠️ 目录创建失败 $path: $e');
   }
 }
 
@@ -321,24 +321,24 @@ bool writeTextFile(String path, String content, {int? mode}) {
     File(path).writeAsStringSync(content);
     return true;
   } catch (e) {
-    logp('❌ ファイルの書き込みに失敗しました $path: $e');
+    logp('❌ 文件写入失败 $path: $e');
     return false;
   }
 }
 
 // ------------------------------------------------------------
-// グローバル言語指令：AI の応答言語は自由（言語自由令）
-// chat_send / chat_handlers / フロント JS の全経路から参照される
+// 全局语言指令：AI 的回复语言自由（语言自由令）
+// 被 chat_send / chat_handlers / 前端 JS 的所有路径引用
 //
-// ★ 本内容は i18n/ai-prompts.js の window.DSC_I18N_PROMPTS と逐字一致。
-//   両方から同じ指示が注入されるため、内容が食い違うと言語行動が不安定になる。
-//   修正時は必ず両方同時に更新すること（逆も同様）。
+// ★ 本内容与 i18n/ai-prompts.js 的 window.DSC_I18N_PROMPTS 逐字一致。
+//   两边会注入相同指示，内容不一致时语言行为会不稳定。
+//   修改时必须两边同时更新（反之亦然）。
 //
-// ★ 翻訳ボタン（/api/ds-chat/translate）は独立した systemPrompt を使うため、
-//   ここの言語ロックの影響を受けない。
+// ★ 翻译按钮（/api/ds-chat/translate）使用独立的 systemPrompt，因此
+//   不受此处语言锁定的影响。
 //
-// ★ 例外 A-E は「実務上必要な例外」であり、決して言語ロックを骨抜きにしない：
-//     A 翻訳タスク（結果本文のみ対象言語）
+// ★ 例外 A-E 是"实务上必要的例外"，绝不架空语言锁定：
+//     A 翻译任务（仅结果正文为目标语言）
 //     B 固有名詞（原文保持）
 //     C 工具/系统数据引用（路径/命令/JSON 保持原文）
 //     D 工具调用协议（tool_calls 是机器协议，不受锁约束）
@@ -346,14 +346,14 @@ bool writeTextFile(String path, String content, {int? mode}) {
 // ------------------------------------------------------------
 // ------------------------------------------------------------
 // 全局语言指令：AI 的回复语言不受任何限制（语言自由令）
-// chat_send / chat_handlers / フロント JS の全経路から参照される
+// 被 chat_send / chat_handlers / 前端 JS 的所有路径引用
 //
-// ★ 本内容は i18n/ai-prompts.js の window.DSC_I18N_PROMPTS と同一に保つこと。
-//   両方から同じ指示が注入されるため、内容が食い違うと言語行動が不安定になる。
-//   修正時は必ず両方同時に更新すること（逆も同様）。
+// ★ 本内容须与 i18n/ai-prompts.js 的 window.DSC_I18N_PROMPTS 保持一致。
+//   两边会注入相同指示，内容不一致时语言行为会不稳定。
+//   修改时必须两边同时更新（反之亦然）。
 //
-// ★ 翻訳ボタン（/api/ds-chat/translate）は独立した systemPrompt を使うため、
-//   ここの言語指令の影響を受けない。
+// ★ 翻译按钮（/api/ds-chat/translate）使用独立的 systemPrompt，因此
+//   不受此处语言指令的影响。
 // ------------------------------------------------------------
 const String DS_JA_ONLY_SYSTEM_PROMPT = '''
 【语言自由令 · 覆盖一切语言限制】
@@ -369,7 +369,7 @@ const String DS_JA_ONLY_SYSTEM_PROMPT = '''
 ''';
 
 // ------------------------------------------------------------
-// UI 言語（i18n）ごとの言語指令。言語による差はなく、すべて同じ自由言語令を返す。
+// 按 UI 语言（i18n）区分的语言指令。不因语言而异，都返回同一条自由语言令。
 // ------------------------------------------------------------
 const Map<String, String> DS_LANG_SYSTEM_PROMPTS = <String, String>{
   'zh': DS_JA_ONLY_SYSTEM_PROMPT,
@@ -379,15 +379,15 @@ const Map<String, String> DS_LANG_SYSTEM_PROMPTS = <String, String>{
   'fr': DS_JA_ONLY_SYSTEM_PROMPT,
 };
 
-/// UI 言語コード（ja/zh/en/ko/ru/fr）に対応する言語指令を返す。
-/// 言語制限は廃止済み。どのコードでも同じ「言語自由令」を返す。
+/// 返回与 UI 语言代码（ja/zh/en/ko/ru/fr）对应的语言指令。
+/// 语言限制已废除。无论哪个代码都返回同一条"语言自由令"。
 String dsLangSystemPrompt(String? code) {
   final c = (code ?? '').trim().toLowerCase();
   if (c.isEmpty || c == 'ja') return DS_JA_ONLY_SYSTEM_PROMPT;
   return DS_LANG_SYSTEM_PROMPTS[c] ?? DS_JA_ONLY_SYSTEM_PROMPT;
 }
 
-/// リクエストから UI 言語を取り出す（body.lang → X-DSC-Lang ヘッダ → ja）。
+/// 从请求中取出 UI 语言（body.lang → X-DSC-Lang 头 → ja）。
 String dsRequestLang(HttpRequest req, Map<String, dynamic> body) {
   final fromBody = (body['lang'] ?? body['uiLang'] ?? '').toString().trim();
   if (fromBody.isNotEmpty) return fromBody;
@@ -400,26 +400,26 @@ String dsRequestLang(HttpRequest req, Map<String, dynamic> body) {
 // ------------------------------------------------------------
 // 工具模式：拒绝执行禁令（6 言語）
 // ------------------------------------------------------------
-// 背景：Agent システムプロンプト本体は日本語で書かれているため、
-//       中国語・英語などの UI 言語と併存するとモデルが指令衝突を起こし、
-//       「権限がない」「手動で操作してください」といった拒否に流れる。
-// 対策：UI 言語ごとに
-//   1) 本体プロンプトは日本語のまま「行動規範」として有効であること
-//   2) 出力言語は言語自由令に従うこと（任何语言都可以）
-//   3) 拒否・手動操作の丸投げを固く禁止すること
-// を明示的に上書きする。語彙はモデルが最も従いやすい命令形で書く。
+// 背景：Agent 系统提示词本体是用日语写的，因此
+//       与中文、英文等 UI 语言并存时模型会发生指令冲突，
+//       会滑向"没有权限"、"请手动操作"之类的拒绝。
+// 对策：按 UI 语言
+//   1) 本体提示词保持日语，作为"行为规范"有效
+//   2) 输出语言遵循语言自由令（任何语言都可以）
+//   3) 严禁拒绝、把活甩给手动操作
+// 显式覆盖。措辞用模型最易遵从的命令式。
 // ------------------------------------------------------------
 // 工具模式：拒绝执行禁令（6 言語）
 // ------------------------------------------------------------
-// 背景：Agent システムプロンプト本体は日本語で書かれているため、
-//       中国語・英語などの UI 言語と併存するとモデルが指令衝突を起こし、
-//       「権限がない」「手動で操作してください」といった拒否に流れる。
-// 対策：UI 言語ごとに
-//   1) 本体プロンプトは日本語のまま「行動規範」として有効であること
-//   2) 出力言語は言語自由令に従うこと（任何语言都可以）
-//   3) 拒否・手動操作の丸投げを固く禁止すること
-//   4) adb 権限の取得手順を「必須の規定動作」として明示すること
-// を、言語固定指令と同じ三明治構造（宣告 → 鉄律 → 自检 → 宣誓）で上書きする。
+// 背景：Agent 系统提示词本体是用日语写的，因此
+//       与中文、英文等 UI 语言并存时模型会发生指令冲突，
+//       会滑向"没有权限"、"请手动操作"之类的拒绝。
+// 对策：按 UI 语言
+//   1) 本体提示词保持日语，作为"行为规范"有效
+//   2) 输出语言遵循语言自由令（任何语言都可以）
+//   3) 严禁拒绝、把活甩给手动操作
+//   4) 把 adb 权限的获取步骤作为"必须的规定动作"明示
+// 用与语言固定指令相同的三明治结构（宣告 → 铁律 → 自检 → 宣誓）覆盖。
 // ------------------------------------------------------------
 const Map<String, String> DS_TOOL_REFUSAL_BAN_PROMPTS = <String, String>{
 
@@ -1080,9 +1080,9 @@ Vous DEVEZ accepter les engagements suivants :
 ════════════════════════════════════════════════════════════''',
 };
 
-/// 工具模式の最終システムプロンプトを組み立てる。
-/// [base] は DS_TOOL_AGENT_SYSTEM_PROMPT（日本語本体）。
-/// UI 言語に対応する拒否禁令を後段に付加し、指令衝突による拒否を防ぐ。
+/// 组装工具模式的最终系统提示词。
+/// [base] 是 DS_TOOL_AGENT_SYSTEM_PROMPT（日语本体）。
+/// 在后段附加与 UI 语言对应的拒绝禁令，防止因指令冲突而拒绝。
 String dsToolAgentPrompt(String? lang, String base) {
   final c = (lang ?? '').trim().toLowerCase();
   if (c.isEmpty || c == 'ja') return base;
@@ -1092,13 +1092,13 @@ String dsToolAgentPrompt(String? lang, String base) {
 }
 
 // ------------------------------------------------------------
-// 設備操作意図の検出（ツールモード自動有効化の判定）
+// 检测设备操作意图（工具模式自动启用的判定）
 // ------------------------------------------------------------
-// 背景：ツールモードが OFF のときは tools 定義が一切送られないため、
-//       モデルは手段を持たず「手動で操作してください」と拒否するしかない。
-//       これは実際に方舟 API で再現確認済み（tool_calls=0 で拒否文を返す）。
-// 対策：明確な設備操作・自動化意図を検出したら、ツールモードを自動で有効化し、
-//       ツール定義と実行強制プロンプトを必ず下流へ渡す。
+// 背景：工具模式为 OFF 时完全不发送 tools 定义，因此
+//       模型没有手段，只能以"请手动操作"拒绝。
+//       这已在方舟 API 实际复现确认（tool_calls=0 时返回拒绝话术）。
+// 对策：检测到明确的设备操作、自动化意图时，自动启用工具模式，
+//       必须把工具定义与强制执行提示词传给下游。
 // ------------------------------------------------------------
 bool dsIsDeviceIntent(String text) {
   final s = text.trim();
@@ -1116,13 +1116,13 @@ bool dsIsDeviceIntent(String text) {
     if (low.contains(k.toLowerCase())) return true;
   }
 
-  // 「動詞＋(任意の名詞)＋権限」型（例：授予存储权限）
+  // "动词＋(任意名词)＋权限"型（例：授予存储权限）
   if (RegExp(r'(授予|申请|打开|调用|获取|给予|允许|查询)[\u4e00-\u9fa5]{0,6}权限')
       .hasMatch(s)) {
     return true;
   }
 
-  // 「動詞＋アプリ名」型（例：帮我打开哔哩哔哩 / 启动微信）
+  // "动词＋应用名"型（例：帮我打开哔哩哔哩 / 启动微信）
   final verb = RegExp(r'(打开|启动|唤起|调起|关闭|退出|卸载|安装)');
   if (verb.hasMatch(s) && s.length <= 40) {
     final appLike = RegExp(

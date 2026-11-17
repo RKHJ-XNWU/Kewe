@@ -57,7 +57,7 @@ Future<void> handleDsChatConfig(HttpRequest req) async {
       try {
         body = await readJsonBody(req);
       } catch (_) {
-        await dsJSONErr(res, 400, '無効なリクエストボディです');
+        await dsJSONErr(res, 400, '无效的请求体');
         return;
       }
       final old = getDsConfig();
@@ -65,7 +65,7 @@ Future<void> handleDsChatConfig(HttpRequest req) async {
       final nm = trimOr(mStr(body, 'model'), old.model);
       final nik = trimOr(mStr(body, 'imgKey'), old.imgKey);
       if (!saveDsConfig(nk, nm, nik)) {
-        await dsJSONErr(res, 500, '保存に失敗しました');
+        await dsJSONErr(res, 500, '保存失败');
         return;
       }
       await dsJSONOk(res, 200, {'success': true});
@@ -108,15 +108,15 @@ Future<void> handleDsChatSessions(HttpRequest req) async {
         body = <String, dynamic>{};
       }
       var id = mStr(body, 'id');
-      final title = trimOr(mStr(body, 'title'), '新しい会話');
+      final title = trimOr(mStr(body, 'title'), '新对话');
       if (id.trim().isNotEmpty) {
         final sess = getDsSession(id);
         if (sess == null) {
-          await dsJSONErr(res, 404, 'セッションが存在しません');
+          await dsJSONErr(res, 404, '会话不存在');
           return;
         }
         if (!updateDsSession(id, title, rfc3339(DateTime.now()))) {
-          await dsJSONErr(res, 500, '名前の変更に失敗しました');
+          await dsJSONErr(res, 500, '重命名失败');
           return;
         }
         await dsJSONOk(res, 200, {'success': true, 'id': id, 'title': title});
@@ -131,7 +131,7 @@ Future<void> handleDsChatSessions(HttpRequest req) async {
         updatedAt: rfc3339(now),
       );
       if (!saveDsSession(sess)) {
-        await dsJSONErr(res, 500, '作成に失敗しました');
+        await dsJSONErr(res, 500, '创建失败');
         return;
       }
       await dsJSONOk(res, 200, {'success': true, 'session': sess.toJson()});
@@ -162,7 +162,7 @@ Future<void> handleDsChatSessionsBatchDelete(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final ids = asList(body['ids']).map((e) => '$e').toList();
@@ -362,7 +362,7 @@ Future<void> handleDsChatTest(HttpRequest req) async {
   }
   try {
     final r = await callDsChatAPI(apiKey, model, [
-      {'role': 'user', 'content': 'こんにちは'}
+      {'role': 'user', 'content': '你好'}
     ], 8192, 1.0, null, apiUrl: callUrl);
     await dsJSONOk(
         res, 200, {'success': true, 'reply': r.content, 'model': model});
@@ -397,12 +397,12 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final prompt = mStr(body, 'prompt').trim();
   if (prompt.isEmpty) {
-    await dsJSONErr(res, 400, 'プロンプトは必須です');
+    await dsJSONErr(res, 400, '提示词为必填项');
     return;
   }
   var width = intArgDefault(body, 'width', 1024);
@@ -420,12 +420,12 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
     final r = await client.getUrl(Uri.parse(imgURL));
     final resp = await r.close();
     if (resp.statusCode != 200) {
-      await dsJSONErr(res, 500, '生成サービスが ${resp.statusCode} を返しました');
+      await dsJSONErr(res, 500, '生成服务返回了 ${resp.statusCode}');
       return;
     }
     imgData = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
   } catch (e) {
-    await dsJSONErr(res, 500, '画像生成に失敗しました: $e');
+    await dsJSONErr(res, 500, '图片生成失败: $e');
     return;
   }
 
@@ -436,7 +436,7 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
   try {
     File(absPath).writeAsBytesSync(imgData);
   } catch (_) {
-    await dsJSONErr(res, 500, '保存に失敗しました');
+    await dsJSONErr(res, 500, '保存失败');
     return;
   }
 
@@ -474,16 +474,16 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final text = mStr(body, 'text').trim();
   if (text.isEmpty) {
-    await dsJSONErr(res, 400, 'テキストは必須です');
+    await dsJSONErr(res, 400, '文本为必填项');
     return;
   }
   var voice = mStr(body, 'voice');
-  // 'fr' / 'fr-FR' / 'ru-RU' のいずれでも受けられるよう先頭 2 文字に正規化する
+  // 为了能接受 'fr' / 'fr-FR' / 'ru-RU' 等，归一化为前 2 个字符
   final ttsLangRaw = mStr(body, 'lang').toLowerCase();
   final ttsLang = ttsLangRaw.length >= 2 ? ttsLangRaw.substring(0, 2) : ttsLangRaw;
   if (voice.isEmpty) {
@@ -511,7 +511,7 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
 
   final chunks = splitTextForTTS(text, DS_TTS_CHUNK_RUNES, DS_TTS_CHUNK_HARD_MAX);
   if (chunks.isEmpty) {
-    await dsJSONErr(res, 400, 'テキストが空です');
+    await dsJSONErr(res, 400, '文本为空');
     return;
   }
   final cleaned = <String>[];
@@ -520,12 +520,12 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
     if (cc.trim().isNotEmpty) cleaned.add(cc);
   }
   if (cleaned.isEmpty) {
-    await dsJSONErr(res, 400, 'テキストが空です（クリーニング後）');
+    await dsJSONErr(res, 400, '文本为空（清理后）');
     return;
   }
 
   final totalRunes = runeLen(text);
-  logp('🔊 TTS リクエスト: $totalRunes 文字、${cleaned.length} ブロック、音声=$voice pitch=$pitch rate=$rate');
+  logp('🔊 TTS 请求: $totalRunes 字、${cleaned.length} 块、音色=$voice pitch=$pitch rate=$rate');
 
   res.statusCode = 200;
   res.headers.contentType = ContentType('audio', 'mpeg');
@@ -534,7 +534,7 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
 
   var okChunks = 0;
   for (var i = 0; i < cleaned.length; i++) {
-    logp('🎙️ TTS ${i + 1}/${cleaned.length} ブロック目（${runeLen(cleaned[i])} 文字）');
+    logp('🎙️ TTS 第 ${i + 1}/${cleaned.length} 块（${runeLen(cleaned[i])} 字）');
     final ok = await synthesizeEdgeTts(cleaned[i], voice, (audio) async {
       try {
         res.add(audio);
@@ -544,10 +544,10 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
     if (ok) {
       okChunks++;
     } else {
-      logp('❌ TTS ${i + 1} ブロック目の合成に失敗しました');
+      logp('❌ TTS 第 ${i + 1} 块合成失败');
     }
   }
-  logp('✅ TTS 完了: $okChunks/${cleaned.length} ブロック成功');
+  logp('✅ TTS 完成: $okChunks/${cleaned.length} 块成功');
   try {
     await res.close();
   } catch (_) {}
@@ -582,12 +582,12 @@ Future<void> handleDsChatSTT(HttpRequest req) async {
   try {
     audioData = await readBodyBytes(req, limit: 20 * 1024 * 1024);
   } catch (_) {
-    await dsJSONErr(res, 400, '音声の読み込みに失敗しました');
+    await dsJSONErr(res, 400, '音频读取失败');
     return;
   }
   // multipart 包装：提取二进制主体（保持 Go 的宽松行为）
   if (audioData.length < 500) {
-    await dsJSONErr(res, 400, '音声が短すぎます');
+    await dsJSONErr(res, 400, '音频过短');
     return;
   }
 
@@ -601,8 +601,8 @@ Future<void> handleDsChatSTT(HttpRequest req) async {
         'ffmpeg', ['-y', '-loglevel', 'error', '-i', inFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavFile],
         timeout: const Duration(seconds: 120));
     if (ff.code != 0) {
-      logp('❌ STT 音声変換に失敗しました: ${ff.out}');
-      await dsJSONErr(res, 500, '音声変換に失敗しました');
+      logp('❌ STT 音频转换失败: ${ff.out}');
+      await dsJSONErr(res, 500, '音频转换失败');
       return;
     }
     final modelPath = '$BASE_DIR/models/ggml-base-q5_1.bin';
@@ -611,8 +611,8 @@ Future<void> handleDsChatSTT(HttpRequest req) async {
         mainBin, ['-m', modelPath, '-f', wavFile, '-l', 'zh', '-nt', '-np'],
         timeout: const Duration(seconds: 300));
     if (wh.code != 0) {
-      logp('❌ STT 認識に失敗しました: ${wh.out}');
-      await dsJSONErr(res, 500, '音声認識に失敗しました');
+      logp('❌ STT 识别失败: ${wh.out}');
+      await dsJSONErr(res, 500, '语音识别失败');
       return;
     }
     final text = cleanWhisperText(wh.out);
@@ -643,7 +643,7 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final sessionID = mStr(body, 'sessionId');
@@ -664,11 +664,11 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
       : (dbIsChatModel(abortModel) ? DS_DIM_DB : DS_DIM_DS);
 
   if (sessionID.trim().isEmpty) {
-    await dsJSONErr(res, 400, 'セッション ID がありません');
+    await dsJSONErr(res, 400, '缺少会话 ID');
     return;
   }
   if (!File(dsSessionPath(sessionID)).existsSync()) {
-    await dsJSONErr(res, 404, 'セッションが存在しません');
+    await dsJSONErr(res, 404, '会话不存在');
     return;
   }
 
@@ -677,7 +677,7 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
 
   if (messageID.trim().isNotEmpty) {
     if (aiContent.trim().isEmpty) {
-      await dsJSONErr(res, 400, '内容が空です');
+      await dsJSONErr(res, 400, '内容为空');
       return;
     }
     final upd = updateDsMessageContent(
@@ -690,11 +690,11 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
     aiMsg = upd;
   } else {
     if (content.trim().isEmpty && fileIDs.isEmpty) {
-      await dsJSONErr(res, 400, '内容は必須です');
+      await dsJSONErr(res, 400, '内容为必填项');
       return;
     }
     final now = DateTime.now();
-    final savedContent = content.isEmpty ? '[アップロード済みファイル]' : content;
+    final savedContent = content.isEmpty ? '[已上传文件]' : content;
     final u = DsMessage(
       id: 'dsm_${fmtStamp14(now)}_${randomHex(6)}',
       sessionId: sessionID,
@@ -705,7 +705,7 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
       dim: abortDim,
     );
     if (!appendDsMessage(u)) {
-      await dsJSONErr(res, 500, 'ユーザーメッセージの保存に失敗しました');
+      await dsJSONErr(res, 500, '用户消息保存失败');
       return;
     }
     userMsg = u;
@@ -721,7 +721,7 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
         dim: abortDim,
       );
       if (!appendDsMessage(a)) {
-        await dsJSONErr(res, 500, '回答の保存に失敗しました');
+        await dsJSONErr(res, 500, '回答保存失败');
         return;
       }
       aiMsg = a;
@@ -730,7 +730,7 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
     final sess = getDsSession(sessionID);
     if (sess != null) {
       var title = sess.title;
-      if (title.isEmpty || title == '新しい会話') {
+      if (title.isEmpty || title == '新对话') {
         final runes = content.runes.toList();
         if (runes.length > 18) {
           title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
@@ -765,7 +765,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final sessionID = mStr(body, 'sessionId');
@@ -775,17 +775,17 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   var level = intArgDefault(body, 'reasoningLevel', 1);
 
   if (sessionID.trim().isEmpty) {
-    await dsJSONErr(res, 400, 'セッション ID がありません');
+    await dsJSONErr(res, 400, '缺少会话 ID');
     return;
   }
   final cfg = getDsConfig();
   final model = trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model);
 
-  // ★ 维度：ST も含めてリクエストから確定させる（モデル名では区別できない）
+  // ★ 维度：连 ST 也从请求中确定（模型名无法区分）
   final contDim = dsDimFromReq(req, model);
 
   // 通道判定：中转站 > 豆包（方舟）> DeepSeek。
-  // 豆包模型の継続生成は方舟へ送る（DeepSeek の Key と用量には一切触れない）
+  // 豆包模型的继续生成发给方舟（完全不碰 DeepSeek 的 Key 与用量）
   final dbCfg = getDbConfig();
   final relayCfg = getRelayConfig();
   final useRelay = isRelayModel(model);
@@ -804,7 +804,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
       return;
     }
   } else if (cfg.apiKey.isEmpty) {
-    await dsJSONErr(res, 400, '先に DeepSeek API Key を設定してください');
+    await dsJSONErr(res, 400, '请先设置 DeepSeek API Key');
     return;
   }
   final callKey = useDoubao
@@ -813,7 +813,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   final callUrl = useDoubao
       ? dbChatEndpoint()
       : (useRelay ? relayChatEndpoint() : DS_API_URL);
-  // 豆包モデルの継続生成でも「考えてから書く」を維持する
+  // 豆包模型继续生成时也保持"先想再写"
   final extraBody = useDoubao ? dbThinkingEnableParam(model) : null;
 
   // ★ 只把「同一维度」的历史发给模型，豆包与 DeepSeek 互不可见
@@ -830,20 +830,20 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     }
   }
   if (base.trim().isEmpty) {
-    await dsJSONErr(res, 400, '継続生成できる内容がありません');
+    await dsJSONErr(res, 400, '没有可继续生成的内容');
     return;
   }
   if (level < 1) level = 1;
   if (level > 50) level = 50;
   final params = levelToParams(level);
 
-  // i18n：継続生成でも UI 言語に一致した言語固定プロンプトを注入
+  // i18n：继续生成时也注入与 UI 语言一致的语言固定提示词
   final uiLang = dsRequestLang(req, body);
   final sysParts = <String>[
     dsLangSystemPrompt(uiLang),
-    'あなたは同じ回答の残りを続けて書いています。直前の assistant メッセージの最後の文字に続けて出力してください。既出の内容の繰り返し、書き直し、説明・見出し・まとめの出力は禁止です。'
+    '你正在接着写同一个回答的剩余部分。请承接上一条 assistant 消息的最后一个字符继续输出。禁止重复、改写已有内容，禁止输出说明、标题、总结。'
   ];
-  if (deepThink) sysParts.add('深い多段階の推論が可能です。思考プロセスを十分に示してください。');
+  if (deepThink) sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
 
   final apiMessages = <Map<String, dynamic>>[
     {'role': 'system', 'content': sysParts.join('\n')},
@@ -857,11 +857,11 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   apiMessages.add({'role': 'assistant', 'content': base});
   apiMessages.add({
     'role': 'user',
-    'content': '（継続指示）中断箇所から続けて書いてください。直前の最後の文字に続け、繰り返しや冒頭の言い直しはしないこと。',
+    'content': '（继续指令）请从中断处接着写。承接上一个最后的字符，不要重复或重说开头。',
   });
 
   final sse = Sse(res);
-  logp('▶️ 継続生成: session=$sessionID 元テキスト=${runeLen(base)} 文字 model=$model');
+  logp('▶️ 继续生成: session=$sessionID 原文本=${runeLen(base)} 字 model=$model');
 
   final addBuf = StringBuffer();
   final reasoningBuf = StringBuffer();
@@ -888,7 +888,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
       extraBody: extraBody,
     );
   } catch (e) {
-    logp('⚠️ 継続生成が中断されました: $e');
+    logp('⚠️ 继续生成被中断: $e');
     await sse.send('error', {'message': '$e'});
     await sse.done();
     return;
@@ -945,30 +945,30 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
 }
 
 // ------------------------------------------------------------
-// /api/ds-chat/translate（AI 返信を簡体字中国語へ翻訳／履歴には保存しない）
+// /api/ds-chat/translate（把 AI 回复翻译成简体中文／不保存到历史）
 // ------------------------------------------------------------
-/// 翻訳結果の Markdown を壊さないための後処理。
-/// - モデルが付けた「訳文：」等のラベルを除去
-/// - 出力全体を包む ```lang ... ``` を剥がす（本文ではないため）
-/// - コードフェンスが奇数個なら閉じる
-/// - CRLF 統一・ゼロ幅文字除去・行末空白除去・空行圧縮
+/// 用于不破坏翻译结果 Markdown 的后处理。
+/// - 去除模型加的"译文："等标签
+/// - 剥除包裹整个输出的 ```lang ... ```（因为不是正文）
+/// - 代码围栏为奇数个则补闭合
+/// - 统一 CRLF・去除零宽字符・去除行尾空白・压缩空行
 String dsSanitizeTranslatedMarkdown(String raw) {
   var s = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
   s = s.replaceAll('\u200B', '').replaceAll('\uFEFF', '');
   s = s.trim();
 
-  // 先頭ラベル（「翻訳：」「译文：」「訳文：」…）を除去
+  // 去除开头标签（"翻译："、"译文："、"訳文："…）
   final label = RegExp(
       r'^(?:翻訳|翻譯|訳文|译文|譯文|中文翻译|中文翻譯|翻訳結果|译文如下)\s*[:：]\s*');
   s = s.replaceFirst(label, '').trim();
 
-  // 出力全体が 1 個のコードフェンスで包まれている場合のみ剥がす
+  // 仅当整个输出被 1 个代码围栏包裹时才剥除
   final wrapped = RegExp(r'^```[a-zA-Z0-9_+\-]*[ \t]*\n([\s\S]*?)\n?```$');
   final m = wrapped.firstMatch(s);
   if (m != null) {
     final inner = (m.group(1) ?? '').trim();
     if (inner.isNotEmpty && !inner.contains('```')) {
-      // 中身が Markdown 構造を含むなら「包み直された本文」と判断して剥がす
+      // 若内容含 Markdown 结构，判定为"被重新包裹的正文"并剥除
       final mdLike = RegExp(
               r'(^#{1,6}\s)|(^\s*[-*+]\s)|(^\s*\d+\.\s)|(^\s*\|)|(^>)',
               multiLine: true)
@@ -977,11 +977,11 @@ String dsSanitizeTranslatedMarkdown(String raw) {
     }
   }
 
-  // コードフェンスが奇数個なら閉じる（レンダラの閉じ忘れ対策）
+  // 代码围栏为奇数个则补闭合（防止渲染器漏闭合）
   final fences = RegExp(r'```').allMatches(s).length;
   if (fences.isOdd) s = '$s\n```';
 
-  // 行末空白を除去し、3 連以上の空行を 2 連へ圧縮
+  // 去除行尾空白，把 3 个以上连续空行压缩为 2 个
   s = s
       .split('\n')
       .map((l) => l.replaceAll(RegExp(r'[ \t]+$'), ''))
@@ -1000,52 +1000,52 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
   try {
     body = await readJsonBody(req);
   } catch (_) {
-    await dsJSONErr(res, 400, '無効なリクエストボディです');
+    await dsJSONErr(res, 400, '无效的请求体');
     return;
   }
   final text = mStr(body, 'text');
   final target = trimOr(mStr(body, 'target'), '簡体字中国語（简体中文）');
   if (text.trim().isEmpty) {
-    await dsJSONErr(res, 400, '翻訳するテキストが空です');
+    await dsJSONErr(res, 400, '要翻译的文本为空');
     return;
   }
-  // ★ 翻訳ボタンは必ず DeepSeek 公式チャンネル（模型：deepseek-v4.1-flash-1017）
-  //   豆包（方舟）は一切使わない：翻訳の課金・応答は DeepSeek 側に固定する。
+  // ★ 翻译按钮必须走 DeepSeek 官方通道（模型：deepseek-v4.1-flash-1017）
+  //   完全不用豆包（方舟）：翻译的计费、响应固定在 DeepSeek 侧。
   const String translateModel = 'deepseek-flash';
   final dsCfg = getDsConfig();
   if (dsCfg.apiKey.trim().isEmpty) {
-    await dsJSONErr(res, 400, '先に DeepSeek API Key を設定してください');
+    await dsJSONErr(res, 400, '请先设置 DeepSeek API Key');
     return;
   }
   var model = translateModel;
   final callKey = dsCfg.apiKey;
   final callUrl = DS_API_URL;
 
-  // ★ Markdown を 1 文字も壊さないための厳格プロンプト
-  const systemPrompt = 'あなたは Markdown に精通した優秀な翻訳者です。入力テキストを指定された言語へ翻訳します。\n'
+  // ★ 一个字符也不破坏 Markdown 的严格提示词
+  const systemPrompt = '你是精通 Markdown 的优秀翻译者。将输入文本翻译成指定语言。\n'
       '【厳守事項】\n'
-      '1. 出力は翻訳後の本文のみ。前置き・解説・注釈・「訳文：」等のラベル・原文の繰り返しは一切禁止。\n'
-      '2. Markdown 記法を 1 文字も崩さない：見出しの #、箇条書きの - / * / +、番号付きリストの 1.、'
-      '引用の >、表の | と区切り行 |---|、強調の ** / * / ~~、リンク [text](url) はすべて保持する。\n'
-      '3. 表は列数・行数を原文と完全に同一に保つ。区切り行（|---|）は翻訳せずそのまま維持する。'
-      'セル内の改行やパイプの追加・削除も禁止。\n'
-      '4. 段落間の空行を維持し、複数のブロックを 1 行に連結しない。リスト項目を段落に潰さない。\n'
-      '5. 入れ子リストのインデント（半角スペース 2 個単位）を維持する。\n'
-      '6. コードブロック・インラインコード・コマンド・URL・ファイルパス・API 名・パッケージ名・'
-      '変数名・数式（\$...\$ / \$\$...\$\$）は翻訳せず原文のまま残す。\n'
-      '7. 出力全体を ``` で囲まない（コードフェンスを付けない）。HTML タグを追加しない。\n'
-      '8. 原文が Markdown でない平文なら、平文のまま翻訳する。';
+      '1. 只输出翻译后的正文。禁止任何前言、解说、注释、"译文："等标签以及原文重复。\n'
+      '2. 一个字符也不破坏 Markdown 语法：标题的 #、无序列表的 - / * / +、有序列表的 1.、'
+      '引用的 >、表格的 | 与分隔行 |---|、强调的 ** / * / ~~、链接 [text](url) 全部保留。\n'
+      '3. 表格的列数、行数与原文完全保持一致。分隔行（|---|）不翻译，原样保留。'
+      '也禁止增删单元格内的换行或竖线。\n'
+      '4. 保持段落间的空行，不把多个块连接成一行。不要把列表项压成段落。\n'
+      '5. 保持嵌套列表的缩进（以 2 个半角空格为单位）。\n'
+      '6. 代码块、行内代码、命令、URL、文件路径、API 名、包名、'
+      '变量名、公式（\$...\$ / \$\$...\$\$）不翻译，原样保留。\n'
+      '7. 不要用 ``` 包裹整个输出（不加代码围栏）。不添加 HTML 标签。\n'
+      '8. 若原文是非 Markdown 的纯文本，则按纯文本翻译。';
 
   final messages = <Map<String, dynamic>>[
     {'role': 'system', 'content': systemPrompt},
     {
       'role': 'user',
-      'content': '以下の内容を$targetに翻訳してください。'
-          'Markdown 記法と行構造・空行・インデントは原文のまま保持し、翻訳後の本文だけを返してください。\n\n$text'
+      'content': '请把以下内容翻译成$target。'
+          '请保持 Markdown 语法、行结构、空行和缩进与原文一致，只返回翻译后的正文。\n\n$text'
     },
   ];
 
-  // ★ 実際の usage を集計（料金表示用・永続化はしない）
+  // ★ 汇总实际 usage（用于费用显示・不持久化）
   final usageAcc = DsUsageAcc();
   try {
     String out = '';
@@ -1054,8 +1054,8 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
       final r = await callDsChatAPI(callKey, model, messages, 300000, 0.2, usageAcc, apiUrl: callUrl);
       out = r.content;
     } catch (e1) {
-      // 非流式呼び出しが失敗した場合はストリーミングへ自動フォールバック
-      logp('⚠️ 翻訳（非流式）失敗、ストリーミングで再試行: $e1');
+      // 非流式调用失败时自动回退到流式
+      logp('⚠️ 翻译（非流式）失败，用流式重试: $e1');
       final buf = StringBuffer();
       await callDsChatAPIStream(
         callKey,
@@ -1073,11 +1073,11 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
     }
     final clean = dsSanitizeTranslatedMarkdown(out);
     if (clean.isEmpty) {
-      // ★ 日本語を返さない：UI 側が error コードで自言語に描画する
+      // ★ 不返回日语：由 UI 侧用 error 码渲染成本地语言
       await dsJSONOk(res, 502, {'error': 'translate_empty', 'detail': ''});
       return;
     }
-    // 壊れ検知：構造カウントがずれたらログに残す（表示側は原文を壊さない）
+    // 破坏检测：结构计数不一致则记日志（显示侧不破坏原文）
     try {
       int cnt(String s, String pat) =>
           RegExp(pat, multiLine: true).allMatches(s).length;
@@ -1088,7 +1088,7 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
       final srcT = cnt(text, r'^\s*\|');
       final dstT = cnt(clean, r'^\s*\|');
       if (srcH != dstH || srcF != dstF || srcT != dstT) {
-        logp('⚠️ 翻訳後の Markdown 構造差: 見出し $srcH→$dstH / フェンス $srcF→$dstF / 表行 $srcT→$dstT');
+        logp('⚠️ 翻译后 Markdown 结构差异: 标题 $srcH→$dstH / 围栏 $srcF→$dstF / 表行 $srcT→$dstT');
       }
     } catch (_) {}
     final usage = usageAcc.snapshot();
@@ -1102,7 +1102,7 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
     });
   } catch (e) {
     logp('❌ 翻訳失敗: $e');
-    // ★ 日本語を返さない：詳細（HTTP 402 等）だけを渡し、文言は UI 側で決める
+    // ★ 不返回日语：只传详情（HTTP 402 等），文案由 UI 侧决定
     await dsJSONOk(res, 502, {'error': 'translate_failed', 'detail': e.toString()});
   }
 }

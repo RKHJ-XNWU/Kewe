@@ -232,9 +232,9 @@ DbVideoArkConfig dbVideoArkConfig() {
       ensureDir(dsChatDir);
       f.writeAsStringSync(
           const JsonEncoder.withIndent('  ').convert(def.toJson()));
-      logp('🧩 豆包大视频設定を作成しました: $dbVideoArkConfigPath');
+      logp('🧩 已创建豆包大视频配置: $dbVideoArkConfigPath');
     } catch (e) {
-      logp('⚠️ 豆包大视频設定ファイルを作成できませんでした: $e');
+      logp('⚠️ 无法创建豆包大视频配置文件: $e');
     }
     _cfgCache = def;
     _cfgCacheStamp = 0;
@@ -248,7 +248,7 @@ DbVideoArkConfig dbVideoArkConfig() {
     _cfgCacheStamp = stamp;
     return cfg;
   } catch (e) {
-    logp('⚠️ 豆包大视频設定の解析に失敗しました（既定値を使用）: $e');
+    logp('⚠️ 豆包大视频配置解析失败（使用默认值）: $e');
     final def = DbVideoArkConfig();
     _cfgCache = def;
     _cfgCacheStamp = stamp;
@@ -369,8 +369,8 @@ Future<List<File>> _dbSplitVideo(
   tmpDir.createSync(recursive: true);
   final pattern = '${tmpDir.path}/part_%04d.mp4';
 
-  logp('✂️ 動画を分割します: ${dbFmtSize(size)} / ${_dbFmtClock(dur)} → '
-      '1 片あたり約 ${_dbFmtClock(segSec)}（上限 ${dbFmtSize(maxBytes)}）');
+  logp('✂️ 分割视频: ${dbFmtSize(size)} / ${_dbFmtClock(dur)} → '
+      '每片约 ${_dbFmtClock(segSec)}（上限 ${dbFmtSize(maxBytes)}）');
   onProgress?.call('split_start', 0);
 
   final r = await Process.run('ffmpeg', [
@@ -397,7 +397,7 @@ Future<List<File>> _dbSplitVideo(
   ]);
   if (r.exitCode != 0) {
     // 有些容器（如 mkv/ts）copy 切片会失败：退回整体重编码成 mp4 再切
-    logp('⚠️ 無劣化分割に失敗しました（${r.exitCode}）。再エンコードで再試行します: '
+    logp('⚠️ 无损分割失败（${r.exitCode}）。用重新编码重试: '
         '${'${r.stderr}'.trim()}');
     final normalized = File('${tmpDir.path}/normalized.mp4');
     final r2 = await Process.run('ffmpeg', [
@@ -442,8 +442,8 @@ Future<List<File>> _dbSplitVideo(
   for (var i = 0; i < parts.length; i++) {
     var p = parts[i];
     if (p.lengthSync() > maxBytes) {
-      logp('🎞️ 分片 ${i + 1} が上限超過（${dbFmtSize(p.lengthSync())}）。'
-          'この分片だけ圧縮します');
+      logp('🎞️ 分片 ${i + 1} 超过上限（${dbFmtSize(p.lengthSync())}）。'
+          '仅压缩此分片');
       final out = File('${tmpDir.path}/fixed_${i.toString().padLeft(4, '0')}.mp4');
       await _dbCompressTo(p, (maxBytes * 0.9).round(), out);
       if (out.existsSync() && out.lengthSync() > 0) p = out;
@@ -570,7 +570,7 @@ Future<String> _dbDescribeSegment({
   var text = mStr(msg, 'content').trim();
   if (text.isEmpty) text = mStr(msg, 'reasoning_content').trim();
   final cost = DateTime.now().difference(started).inSeconds;
-  logp('🎬 第 ${index + 1}/$total 段の理解が完了（${clock} から '
+  logp('🎬 第 ${index + 1}/$total 段理解完成（从 ${clock} '
       '${_dbFmtClock(endSec)}、${cost} 秒、${runeLen(text)} 文字）');
   return text;
 }
@@ -670,13 +670,13 @@ Future<({List<Map<String, dynamic>> parts, String text})>
   for (final id in videoFileIds) {
     final meta = getDsFileMeta(id);
     if (meta == null) {
-      logp('⚠️ 動画メタデータが見つかりません（送信しません）: $id');
+      logp('⚠️ 未找到视频元数据（不发送）: $id');
       continue;
     }
     final absPath = '$DSFilesBlobDir/${meta.relPath}';
     final f = File(absPath);
     if (!f.existsSync()) {
-      logp('⚠️ 動画ファイルが存在しません（送信しません）: ${meta.name}');
+      logp('⚠️ 视频文件不存在（不发送）: ${meta.name}');
       continue;
     }
     final size = f.lengthSync();
@@ -706,11 +706,11 @@ Future<({List<Map<String, dynamic>> parts, String text})>
         onProgress: (info) => onProgress?.call({...tag, ...info}),
       );
       parts.add(part);
-      logp('🎬 TOS 経由で送信: ${meta.name}');
+      logp('🎬 经由 TOS 发送: ${meta.name}');
       index++;
       continue;
     }
-    logp('🎬 大容量動画を分割理解します: ${meta.name} (${dbFmtSize(size)})');
+    logp('🎬 分割理解大容量视频: ${meta.name} (${dbFmtSize(size)})');
     final desc = await _dbDescribeLargeVideo(
       file: f,
       meta: meta,
@@ -790,7 +790,7 @@ Future<String> _dbDescribeLargeVideo({
             '${_dbFmtClock(start)} - ${_dbFmtClock(end)}】\n$text');
       } catch (e) {
         failed++;
-        logp('⚠️ 第 ${i + 1} 段の理解に失敗しました（続行します）: $e');
+        logp('⚠️ 第 ${i + 1} 段理解失败（继续）: $e');
         descs.add('【第 ${i + 1}/${segs.length} 段 · '
             '${_dbFmtClock(start)} - ${_dbFmtClock(end)}】\n（本段理解失败：$e）');
       }
@@ -819,7 +819,7 @@ Future<String> _dbDescribeLargeVideo({
       try {
         if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
       } catch (e) {
-        logp('⚠️ 一時ファイルの削除に失敗: $e');
+        logp('⚠️ 临时文件删除失败: $e');
       }
     }
   }
@@ -869,7 +869,7 @@ void _dbArkCacheSave(Map<String, dynamic> m) {
     ensureDir(dsChatDir);
     File(_dbArkCachePath).writeAsStringSync(jsonEncode(m));
   } catch (e) {
-    logp('⚠️ 豆包 ark file_id キャッシュの保存に失敗しました: $e');
+    logp('⚠️ 豆包 ark file_id 缓存保存失败: $e');
   }
 }
 
@@ -960,7 +960,7 @@ Future<String> _dbArkUploadLocalFile({
       'multipart/form-data; boundary=$boundary');
   req.headers.contentLength = headBytes.length + total + tailBytes.length;
 
-  logp('☁️ 方舟 Files API へのアップロード開始: $fileName '
+  logp('☁️ 开始上传到方舟 Files API: $fileName '
       '(${dbFmtSize(total)}, fps=${_dbFpsStr(fps)})');
 
   final raf = await file.open();
@@ -1010,7 +1010,7 @@ Future<String> _dbArkUploadLocalFile({
   if (id.isEmpty) {
     throw DbVideoArkException('方舟未返回 file id：${_dbErrText(body)}');
   }
-  logp('✅ 方舟ファイル作成: $id (status=${mStr(j, 'status')})');
+  logp('✅ 方舟文件创建: $id (status=${mStr(j, 'status')})');
   return id;
 }
 
@@ -1109,14 +1109,14 @@ Future<void> dbArkWaitFileActive({
       info = await dbArkFileInfo(apiKey: apiKey, fileId: fileId);
     } catch (e) {
       onTick?.call('retry', waited.inSeconds);
-      logp('⚠️ ファイル状態の問い合わせに失敗（再試行します）: $e');
+      logp('⚠️ 查询文件状态失败（将重试）: $e');
       await Future<void>.delayed(const Duration(seconds: 3));
       continue;
     }
     final status = mStr(info, 'status').toLowerCase();
     onTick?.call(status, waited.inSeconds);
     if (status == 'active' || status == 'processed') {
-      logp('✅ 方舟の動画前処理が完了: $fileId （${waited.inSeconds} 秒）');
+      logp('✅ 方舟视频预处理完成: $fileId （${waited.inSeconds} 秒）');
       return;
     }
     if (status == 'failed' || status == 'error') {
@@ -1243,19 +1243,19 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         },
       );
     }
-    // ★ 修复「方舟前処理が 0 秒のまま」表示バグ（2026-11）
-    //   旧実装は 2 点で壊れていた：
-    //     1) preprocess_wait を waited 無しで送っていた → 前端は (obj.waited || 0) で常に 0
-    //     2) dbArkWaitFileActive に onTick を渡していなかった → ポーリング中は
-    //        一切の進捗が流れず、完了するまで「0 秒」で固定表示されていた
-    //   ここで待機開始時刻を起点に、ティックごとに実経過秒を配信する。
+    // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
+    //   旧实现有 2 处损坏：
+    //     1) 发送 preprocess_wait 时没带 waited → 前端 (obj.waited || 0) 恒为 0
+    //     2) 没有把 onTick 传给 dbArkWaitFileActive → 轮询期间
+    //        没有任何进度流动，直到完成都固定显示"0 秒"
+    //   以此处等待开始时刻为起点，每个 tick 下发实际经过秒数。
     onProgress?.call({'stage': 'preprocess_wait', 'arkFileId': arkId, 'waited': 0});
     final waitStartedAt = DateTime.now();
     await dbArkWaitFileActive(
       apiKey: apiKey,
       fileId: arkId,
       onTick: (status, waitedSec) {
-        // 初回ティックは waitedSec が 0 になり得るため、ローカル経過時間で底上げする
+        // 首个 tick 的 waitedSec 可能为 0，用本地经过时间兜底
         final local = DateTime.now().difference(waitStartedAt).inSeconds;
         onProgress?.call({
           'stage': 'preprocess',
@@ -1272,7 +1272,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
       try {
         if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
       } catch (e) {
-        logp('⚠️ 一時ファイルの削除に失敗: $e');
+        logp('⚠️ 临时文件删除失败: $e');
       }
     }
   }
@@ -1603,7 +1603,7 @@ Future<void> _dbTosUploadFile({
     throw DbVideoArkException('TOS 上传：文件为空', code: 'tos_empty');
   }
   final partCount = (total + _dbTosPartSize - 1) ~/ _dbTosPartSize;
-  logp('☁️ TOS への自動アップロード開始: $objectKey '
+  logp('☁️ 开始自动上传到 TOS: $objectKey '
       '(${dbFmtSize(total)}, $partCount 分片)');
 
   final uploadId = await _dbTosInitMultipart(

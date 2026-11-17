@@ -193,7 +193,7 @@ Future<void> handleBackup(HttpRequest req) async {
           try {
             await tar.addFile(rel, e.readAsBytesSync(), stat.modified);
           } catch (err) {
-            logp('⚠️ バックアップをスキップしました ${e.path}: $err');
+            logp('⚠️ 已跳过备份 ${e.path}: $err');
           }
         }
       }
@@ -208,16 +208,16 @@ Future<void> handleBackup(HttpRequest req) async {
       final f = File(tmpPath);
       if (f.existsSync()) f.deleteSync();
     } catch (_) {}
-    await errJson(res, 500, 'アーカイブ作成に失敗しました: $e');
+    await errJson(res, 500, '归档创建失败: $e');
     return;
   }
 
   final f = File(tmpPath);
   if (!f.existsSync()) {
-    await errJson(res, 500, '一時ファイルを開けませんでした');
+    await errJson(res, 500, '无法打开临时文件');
     return;
   }
-  logp('✅ バックアップ完了: $filename (${f.lengthSync()} バイト)');
+  logp('✅ 备份完成: $filename (${f.lengthSync()} 字节)');
   await serveFile(req, f, downloadName: filename, attachment: true);
   try {
     f.deleteSync();
@@ -303,7 +303,7 @@ Future<void> handleRestore(HttpRequest req) async {
   try {
     body = Uint8List.fromList(await readBodyBytes(req, limit: MAX_UPLOAD_SIZE));
   } catch (_) {
-    await errJson(res, 400, 'ファイルが大きすぎるか、解析に失敗しました');
+    await errJson(res, 400, '文件过大或解析失败');
     return;
   }
 
@@ -317,7 +317,7 @@ Future<void> handleRestore(HttpRequest req) async {
     archive = body;
   }
   if (archive == null || archive.isEmpty) {
-    await errJson(res, 400, 'バックアップファイルをアップロードしてください');
+    await errJson(res, 400, '请上传备份文件');
     return;
   }
 
@@ -360,7 +360,7 @@ Future<void> handleRestore(HttpRequest req) async {
       parts.add(seg);
     }
     if (bad || parts.isEmpty) {
-      logp('⚠️ 不正なパスをスキップしました: $name');
+      logp('⚠️ 已跳过非法路径: $name');
       continue;
     }
     name = parts.join('/');
@@ -375,15 +375,15 @@ Future<void> handleRestore(HttpRequest req) async {
         extracted++;
       }
     } catch (err) {
-      await errJson(res, 500, 'ファイルの書き込みに失敗しました: $err');
+      await errJson(res, 500, '文件写入失败: $err');
       return;
     }
   }
 
-  logp('✅ 復元完了: $extracted 個のファイルを展開しました');
+  logp('✅ 恢复完成: 已展开 $extracted 个文件');
   await dsJSONOk(res, 200, {
     'success': true,
-    'message': '復元に成功しました',
+    'message': '恢复成功',
     'extracted': extracted,
   });
 }
