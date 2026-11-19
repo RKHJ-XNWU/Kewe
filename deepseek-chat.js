@@ -943,9 +943,9 @@
         },
         // ★ 豆包 2.1-pro / 2.1-turbo / evolving：用户提供的单价（元 / 百万 tokens）。
         //   仅给出输入与输出单价，缓存命中单价未提供，故 hit 与 miss 取同一输入单价（不低估费用）。
-        'doubao-seed-2-1-pro-260628': { hit: 6, miss: 6, out: 30, flat: true },
-        'doubao-seed-2-1-turbo-260628': { hit: 3, miss: 3, out: 15, flat: true },
-        'doubao-seed-evolving-latest-version': { hit: 6, miss: 6, out: 30, flat: true },
+        'doubao-seed-2-1-pro-260628': { hit: 1.2, miss: 6, out: 30, flat: true },
+        'doubao-seed-2-1-turbo-260628': { hit: 0.6, miss: 3, out: 15, flat: true },
+        'doubao-seed-evolving-latest-version': { hit: 1.2, miss: 6, out: 30, flat: true },
         // ★ 豆包（火山方舟）Seed-Character：入力 token 数（コンテキスト窓）による段階料金
         //   単位は元 / 100 万 tokens（火山方舟 公式価格ページ）
         //     入力 ≦ 32K  ：未命中 0.8 / 命中 0.16 / 出力 2.0
