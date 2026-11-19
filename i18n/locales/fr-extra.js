@@ -447,3 +447,91 @@ Seed-Audioの音声生成専用。ARKキーとは別に設定します。|Unique
 生成中…（最大2分ほどかかる場合があります）|Génération en cours… (peut prendre jusqu'à 2 minutes)
 ファイル名：{0}|Nom du fichier : {0}
 `);
+
+/* 追加：未翻译 UI 文言（维度 / 豆包 / 中转站 / 插件） */
+I18N.add('fr', `
+DeepSeek カスタムモデルを追加|Ajouter un modèle DeepSeek personnalisé
+DeepSeek カスタムモデル名（例：my-model）|Nom du modèle DeepSeek (ex. my-model)
+DeepSeek モデルがありません|Aucun modèle DeepSeek
+DeepSeek モデルモジュールが未初期化です|Le module de modèles DeepSeek n'est pas initialisé
+✅ DeepSeek カスタムモデルを追加しました：|✅ Modèle DeepSeek personnalisé ajouté : 
+✅ 中转站カスタムモデルを追加しました：|✅ Modèle relais personnalisé ajouté : 
+✅ 中转站モデルに切り替えました：|✅ Passé au modèle relais : 
+✅ 豆包カスタムモデルを追加しました：|✅ Modèle Doubao personnalisé ajouté : 
+。前回の結果を使用します|. Utilisation du résultat précédent.
+」を豆包モードへ移行しました|」 a été migré vers le mode Doubao
+このカスタムモデルを削除|Supprimer ce modèle personnalisé
+このプラグインは豆包モードでのみ利用可能です|Ce plugin n'est disponible qu'en mode Doubao
+この分区にカスタムモデルを追加|Ajouter un modèle personnalisé à cette section
+そのモデル名は既に別の维度に存在します：|Ce nom de modèle existe déjà dans une autre dimension : 
+に戻しました|Rétabli à 
+アーカイブ作成に失敗しました|Échec de la création de l'archive
+カスタムモデルを削除しました：|Modèle personnalisé supprimé : 
+カスタムモデルを追加（現在の分区）|Ajouter un modèle (section actuelle)
+テキストファイルではないため、直接読み取れません|Ce n'est pas un fichier texte, lecture directe impossible
+ディメンションを切り替えました：|Dimension changée : 
+バックアップファイルをアップロードしてください|Veuillez importer un fichier de sauvegarde
+ファイルが大きすぎるか、解析に失敗しました|Fichier trop volumineux ou échec de l'analyse
+ファイルの書き込みに失敗しました|Échec de l'écriture du fichier
+プラグインを無効化しました|Plugin désactivé
+モデル名を入力（例：gpt-4o）|Saisissez le nom du modèle (ex. gpt-4o)
+一時ファイルを開けませんでした|Impossible d'ouvrir le fichier temporaire
+中转站カスタムモデルを追加|Ajouter un modèle relais personnalisé
+中转站カスタムモデル名（例：gpt-4o）|Nom du modèle relais personnalisé (ex. gpt-4o)
+中转站モジュールが未初期化です|Le module relais n'est pas initialisé
+中转站モデルがありません（＋ で追加）|Aucun modèle relais (appuyez sur ＋ pour en ajouter)
+以下はユーザーがアップロードしたファイルの内容です:|Voici le contenu du fichier téléversé par l'utilisateur :
+削除対象が見つかりません|Élément à supprimer introuvable
+取消する注入はありません|Aucune injection à annuler
+墨迹天気：クリックで有効化、もう一度クリックで無効化（頭条記事と同時に有効化できます）|Moji Weather : appuyer pour activer, à nouveau pour désactiver (activable avec les articles Toutiao)
+開启内蔵ウェブ検索后需配置融合信息搜索 API Key（volc_websearch_api_key）|Après avoir activé la recherche web intégrée, configurez la clé API Fusion Information Search (volc_websearch_api_key)
+豆包の対話モデルがありません（＋ で追加）|Aucun modèle de conversation Doubao (appuyez sur ＋ pour en ajouter)
+豆包カスタムモデル名（例：doubao-seed-2-2-pro）|Nom du modèle Doubao (ex. doubao-seed-2-2-pro)
+追加・編集・削除・一括削除・すべて削除・一键注入全部・一键取消全部に対応|Prend en charge l'ajout, la modification, la suppression, la suppression par lot, la suppression totale, l'injection et l'annulation globales
+頭条記事：クリックで有効化、もう一度クリックで無効化（墨迹天気と同時に有効化できます）|Articles Toutiao : appuyer pour activer, à nouveau pour désactiver (activable avec Moji Weather)
+ST ディメンション|Dimension ST
+ST ディメンションへ移動しました（会話は完全に独立しています）|Passé à la dimension ST (conversations totalement séparées)
+ST ディメンションを離れました|Sortie de la dimension ST
+ST ディメンション：オフ|Dimension ST : désactivée
+ST ディメンション：オン（独立した会話）|Dimension ST : activée (conversations indépendantes)
+Seed-Audioの音声生成専用、ARKキーとは別に設定します|Réservé à la génération vocale Seed-Audio, à configurer séparément de la clé ARK
+OpenSpeech API Key を入力|Saisissez la clé API OpenSpeech
+コピーに失敗:|Échec de la copie :
+テキストを入力...|Saisissez du texte...
+作成に失敗しました：|Échec de la création : 
+例：2025年の人工知能分野の最新動向|ex. Dernières tendances de l'IA en 2025
+例：マイポッドキャスト|ex. Mon podcast
+例：今日は人工知能の発展史について、チューリングテストからディープラーニングまで語ります。|ex. Aujourd'hui, l'histoire de l'IA, du test de Turing à l'apprentissage profond.
+保存に失敗しました：|Échec de l'enregistrement : 
+全双工エンドツーエンド · 豆包 Vivi ネイティブ音色 · 同時通話・割り込み対応|Full-duplex de bout en bout · voix native Doubao Vivi · conversation simultanée et interruption
+切り替えに失敗:|Échec du changement :
+抖音百科が有効中のため、ツールモードは利用できません|Douyin Encyclopedia est activé, le mode outils n'est pas disponible
+消去に失敗：|Échec de l'effacement : 
+生成に失敗：|Échec de la génération : 
+空欄なら Vivi 2.0（zh_female_vv_uranus_bigtts）|Laisser vide pour utiliser Vivi 2.0 (zh_female_vv_uranus_bigtts)
+翻訳に失敗:|Échec de la traduction :
+翻訳に失敗しました:|Échec de la traduction :
+融合信息搜索 API Key（開启内蔵ウェブ検索后需配置）|Clé API Fusion Information Search (requise après activation de la recherche web intégrée)
+読み上げに失敗：|Échec de la lecture à voix haute : 
+豆包専用ツールモードが利用可能です（99ツール・ラウンド無制限）|Mode outils Doubao disponible (99 outils, tours illimités)
+豆包専用ツールモードを有効化しました（99ツール・ラウンド無制限）|Mode outils Doubao activé (99 outils, tours illimités)
+豆包専用ツールモードを無効化しました|Mode outils Doubao désactivé
+豆包専用ツールモード：有効（クリックで無効）|Mode outils Doubao : activé (appuyer pour désactiver)
+豆包専用ツールモード：無効（クリックで有効）|Mode outils Doubao : désactivé (appuyer pour activer)
+通話を終了しました。|Appel terminé.
+頭条記事プラグインを有効化しました|Plugin Toutiao Articles activé
+墨迹天気プラグインを有効化しました|Plugin Moji Weather activé
+`);
+
+/* 追加：保存结果提示 */
+I18N.add('fr', `
+DeepSeek モデルの保存に失敗：|Échec de l'enregistrement du modèle DeepSeek : 
+そのモデル名は既に中转站（st 维度）に存在します：|Ce nom de modèle existe déjà dans le relais (dimension st) : 
+中转站モデルの保存に失敗しました：|Échec de l'enregistrement du modèle relais : 
+中转站モデルの保存に失敗：|Échec de l'enregistrement du modèle relais : 
+中转站設定の保存に失敗:|Échec de l'enregistrement des paramètres relais : 
+保存しました（DeepSeek · ds 维度）：|Enregistré (DeepSeek · dimension ds) : 
+保存しました（中转站 · st 维度）：|Enregistré (relais · dimension st) : 
+开启内蔵ウェブ検索后需配置融合信息搜索 API Key（volc_websearch_api_key）|Après avoir activé la recherche web intégrée, configurez la clé API Fusion Information Search (volc_websearch_api_key)
+既に追加されています：|Déjà ajouté : 
+`);

@@ -56,6 +56,10 @@ const Map<String, TokenPrice> _PRICE = {
   '[kiro]claude-haiku-5-5': TokenPrice(hit: 0.021, miss: 0.21, out: 1.05, flat: true),
   '[asp]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
   '[抗截断]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
+  // 豆包 2.1-pro / 2.1-turbo / evolving：用户提供的单价（元 / 100 万 tokens）；缓存命中单价未提供，取输入单价
+  'doubao-seed-2-1-pro-260628': TokenPrice(hit: 6, miss: 6, out: 30, flat: true),
+  'doubao-seed-2-1-turbo-260628': TokenPrice(hit: 3, miss: 3, out: 15, flat: true),
+  'doubao-seed-evolving-latest-version': TokenPrice(hit: 6, miss: 6, out: 30, flat: true),
   'doubao-seed-2-1-lite-260915': TokenPrice(
     hit: 0.16, miss: 0.8, out: 2.7,
     audio: 12, audioHit: 2.4, flat: true,
@@ -66,6 +70,9 @@ const Map<String, TokenPrice> _PRICE = {
 const List<List<String>> _PRICE_PREFIX = [
   ['doubao-seed-2-1-lite', 'doubao-seed-2-1-lite-260915'],
   ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915'],
+  ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260628'],
+  ['doubao-seed-2-1-turbo', 'doubao-seed-2-1-turbo-260628'],
+  ['doubao-seed-evolving', 'doubao-seed-evolving-latest-version'],
 ];
 
 /// 中国法定节假日（与 deepseek-chat.js DSC_HOLIDAYS 对齐，按需维护）

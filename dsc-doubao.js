@@ -3283,6 +3283,8 @@ var EDGE_VOICE_POOL = {
         try { localStorage.setItem(DB_MODE_KEY, on ? '1' : '0'); } catch (e) {}
         // ★ 维度互斥：进入豆包维度时，必须离开 ST 维度
         if (on) { try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {} }
+        // ★ 离开豆包维度：残留的豆包模型切回 DeepSeek 模型
+        if (!on) { try { window.dscEnsureDsModel && window.dscEnsureDsModel(); } catch (e) {} }
         syncDbModeUI();
         try { syncStModeUI(); } catch (e) {}
         // ★ 维度切换：同一个聊天窗口，豆包 / DeepSeek 的消息流互不可见
@@ -3371,6 +3373,8 @@ var EDGE_VOICE_POOL = {
         try { localStorage.setItem(ST_DIM_KEY, on ? '1' : '0'); } catch (e) {}
         // ★ 维度互斥：进入 ST 维度时，必须关闭豆包模式
         if (on) { try { localStorage.setItem(DB_MODE_KEY, '0'); } catch (e) {} }
+        // ★ 离开 ST 维度：残留的中转站模型切回 DeepSeek 模型（否则 DeepSeek 维度会被判成 st）
+        if (!on) { try { window.dscEnsureDsModel && window.dscEnsureDsModel(); } catch (e) {} }
         syncDbModeUI();
         syncStModeUI();
         // 维度切换：消息流立即换成目标维度（与ポータル演出并行）

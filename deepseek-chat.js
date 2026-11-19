@@ -941,6 +941,11 @@
             hit: 0.16, miss: 0.8, out: 2.7,
             audio: 12, audioHit: 2.4, flat: true
         },
+        // ★ 豆包 2.1-pro / 2.1-turbo / evolving：用户提供的单价（元 / 百万 tokens）。
+        //   仅给出输入与输出单价，缓存命中单价未提供，故 hit 与 miss 取同一输入单价（不低估费用）。
+        'doubao-seed-2-1-pro-260628': { hit: 6, miss: 6, out: 30, flat: true },
+        'doubao-seed-2-1-turbo-260628': { hit: 3, miss: 3, out: 15, flat: true },
+        'doubao-seed-evolving-latest-version': { hit: 6, miss: 6, out: 30, flat: true },
         // ★ 豆包（火山方舟）Seed-Character：入力 token 数（コンテキスト窓）による段階料金
         //   単位は元 / 100 万 tokens（火山方舟 公式価格ページ）
         //     入力 ≦ 32K  ：未命中 0.8 / 命中 0.16 / 出力 2.0
@@ -967,7 +972,10 @@
         // ハイフン形（方舟の正式 ID）と、ドット形（一部の集約サイト表記）の両方を受ける
         ['doubao-seed-2-1-lite', 'doubao-seed-2-1-lite-260915'],
         ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915'],
-        ['doubao-seed-character', 'doubao-seed-character-260628']
+        ['doubao-seed-character', 'doubao-seed-character-260628'],
+        ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260628'],
+        ['doubao-seed-2-1-turbo', 'doubao-seed-2-1-turbo-260628'],
+        ['doubao-seed-evolving', 'doubao-seed-evolving-latest-version']
     ];
 
     function dscPriceEntry(model) {
@@ -5761,11 +5769,32 @@
         return dim;
     };
 
+    // ★ 离开 ST / 豆包维度时调用：若当前模型仍是中转站或豆包模型，切回最近使用的 DeepSeek 模型。
+    //   否则模型名仍显示中转站模型，发送与历史加载也会沿用它，导致 DeepSeek 维度显示成 ST。
+    window.dscEnsureDsModel = function () {
+        var cur = String(state.currentModel || '').trim();
+        if (cur && window.dscDimForModel(cur) === 'ds') return cur;
+        var next = '';
+        try { next = String(localStorage.getItem('dsc_last_ds_model') || '').trim(); } catch (e) {}
+        if (!next || window.dscDimForModel(next) !== 'ds') next = 'deepseek-flash';
+        state.currentModel = next;
+        try { localStorage.setItem('dsc_currentModel', next); } catch (e) {}
+        try { applyModelToSelects(next); } catch (e) {}
+        try { updateTitle(); } catch (e) {}
+        fetch('/api/ds-chat/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: next })
+        }).catch(function () {});
+        return next;
+    };
+
     window.dscSetChatModel = function (model, persist) {
         var m = String(model == null ? '' : model).trim();
         if (!m) return '';
         state.currentModel = m;
         applyModelToSelects(m);
+        try { if (window.dscDimForModel(m) === 'ds') localStorage.setItem('dsc_last_ds_model', m); } catch (e) {}
         // ★ 切换对话模型的同时切换维度（内部会播放全屏动画 + 跨维度重载消息）
         try { window.dscSyncDimForModel(m, false); } catch (e) {}
         try { localStorage.setItem('dsc_currentModel', m); } catch (e) {}

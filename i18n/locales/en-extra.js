@@ -447,3 +447,91 @@ Seed-Audioの音声生成専用。ARKキーとは別に設定します。|For Se
 生成中…（最大2分ほどかかる場合があります）|Generating… (may take up to 2 minutes)
 ファイル名：{0}|File name: {0}
 `);
+
+/* 追加：未翻译 UI 文言（维度 / 豆包 / 中转站 / 插件） */
+I18N.add('en', `
+DeepSeek カスタムモデルを追加|Add DeepSeek custom model
+DeepSeek カスタムモデル名（例：my-model）|DeepSeek custom model name (e.g. my-model)
+DeepSeek モデルがありません|No DeepSeek models
+DeepSeek モデルモジュールが未初期化です|DeepSeek model module is not initialized
+✅ DeepSeek カスタムモデルを追加しました：|✅ DeepSeek custom model added: 
+✅ 中转站カスタムモデルを追加しました：|✅ Relay custom model added: 
+✅ 中转站モデルに切り替えました：|✅ Switched to relay model: 
+✅ 豆包カスタムモデルを追加しました：|✅ Doubao custom model added: 
+。前回の結果を使用します|. Using the previous result.
+」を豆包モードへ移行しました|」 was moved to Doubao mode
+このカスタムモデルを削除|Delete this custom model
+このプラグインは豆包モードでのみ利用可能です|This plugin is only available in Doubao mode
+この分区にカスタムモデルを追加|Add a custom model to this section
+そのモデル名は既に別の维度に存在します：|This model name already exists in another dimension: 
+に戻しました|Reverted to 
+アーカイブ作成に失敗しました|Failed to create archive
+カスタムモデルを削除しました：|Custom model deleted: 
+カスタムモデルを追加（現在の分区）|Add custom model (current section)
+テキストファイルではないため、直接読み取れません|Not a text file, so it cannot be read directly
+ディメンションを切り替えました：|Dimension switched: 
+バックアップファイルをアップロードしてください|Please upload a backup file
+ファイルが大きすぎるか、解析に失敗しました|File is too large or parsing failed
+ファイルの書き込みに失敗しました|Failed to write file
+プラグインを無効化しました|Plugin disabled
+モデル名を入力（例：gpt-4o）|Enter model name (e.g. gpt-4o)
+一時ファイルを開けませんでした|Could not open the temporary file
+中转站カスタムモデルを追加|Add relay custom model
+中转站カスタムモデル名（例：gpt-4o）|Relay custom model name (e.g. gpt-4o)
+中转站モジュールが未初期化です|Relay module is not initialized
+中转站モデルがありません（＋ で追加）|No relay models (tap ＋ to add)
+以下はユーザーがアップロードしたファイルの内容です:|The following is the content of the file uploaded by the user:
+削除対象が見つかりません|Item to delete not found
+取消する注入はありません|No injections to cancel
+墨迹天気：クリックで有効化、もう一度クリックで無効化（頭条記事と同時に有効化できます）|Moji Weather: tap to enable, tap again to disable (can be enabled together with Toutiao articles)
+開启内蔵ウェブ検索后需配置融合信息搜索 API Key（volc_websearch_api_key）|After enabling built-in web search, configure the Fusion Information Search API Key (volc_websearch_api_key)
+豆包の対話モデルがありません（＋ で追加）|No Doubao chat models (tap ＋ to add)
+豆包カスタムモデル名（例：doubao-seed-2-2-pro）|Doubao custom model name (e.g. doubao-seed-2-2-pro)
+追加・編集・削除・一括削除・すべて削除・一键注入全部・一键取消全部に対応|Supports add, edit, delete, batch delete, delete all, inject all, and cancel all injections
+頭条記事：クリックで有効化、もう一度クリックで無効化（墨迹天気と同時に有効化できます）|Toutiao articles: tap to enable, tap again to disable (can be enabled together with Moji Weather)
+ST ディメンション|ST dimension
+ST ディメンションへ移動しました（会話は完全に独立しています）|Moved to ST dimension (conversations are fully separate)
+ST ディメンションを離れました|Left ST dimension
+ST ディメンション：オフ|ST dimension: off
+ST ディメンション：オン（独立した会話）|ST dimension: on (independent conversations)
+Seed-Audioの音声生成専用、ARKキーとは別に設定します|Only for Seed-Audio speech generation; set separately from the ARK key
+OpenSpeech API Key を入力|Enter OpenSpeech API Key
+コピーに失敗:|Copy failed:
+テキストを入力...|Enter text...
+作成に失敗しました：|Creation failed: 
+例：2025年の人工知能分野の最新動向|e.g. Latest trends in AI in 2025
+例：マイポッドキャスト|e.g. My podcast
+例：今日は人工知能の発展史について、チューリングテストからディープラーニングまで語ります。|e.g. Today we talk about the history of AI, from the Turing test to deep learning.
+保存に失敗しました：|Save failed: 
+全双工エンドツーエンド · 豆包 Vivi ネイティブ音色 · 同時通話・割り込み対応|Full-duplex end-to-end · Doubao Vivi native voice · supports simultaneous talk and interruption
+切り替えに失敗:|Switch failed:
+抖音百科が有効中のため、ツールモードは利用できません|Douyin Encyclopedia is enabled, so tool mode is unavailable
+消去に失敗：|Clear failed: 
+生成に失敗：|Generation failed: 
+空欄なら Vivi 2.0（zh_female_vv_uranus_bigtts）|Leave blank to use Vivi 2.0 (zh_female_vv_uranus_bigtts)
+翻訳に失敗:|Translation failed:
+翻訳に失敗しました:|Translation failed:
+融合信息搜索 API Key（開启内蔵ウェブ検索后需配置）|Fusion Information Search API Key (required after enabling built-in web search)
+読み上げに失敗：|Read-aloud failed: 
+豆包専用ツールモードが利用可能です（99ツール・ラウンド無制限）|Doubao tool mode is available (99 tools, unlimited rounds)
+豆包専用ツールモードを有効化しました（99ツール・ラウンド無制限）|Doubao tool mode enabled (99 tools, unlimited rounds)
+豆包専用ツールモードを無効化しました|Doubao tool mode disabled
+豆包専用ツールモード：有効（クリックで無効）|Doubao tool mode: on (tap to turn off)
+豆包専用ツールモード：無効（クリックで有効）|Doubao tool mode: off (tap to turn on)
+通話を終了しました。|Call ended.
+頭条記事プラグインを有効化しました|Toutiao articles plugin enabled
+墨迹天気プラグインを有効化しました|Moji Weather plugin enabled
+`);
+
+/* 追加：保存结果提示 */
+I18N.add('en', `
+DeepSeek モデルの保存に失敗：|Failed to save DeepSeek model: 
+そのモデル名は既に中转站（st 维度）に存在します：|This model name already exists in the relay (st dimension): 
+中转站モデルの保存に失敗しました：|Failed to save relay model: 
+中转站モデルの保存に失敗：|Failed to save relay model: 
+中转站設定の保存に失敗:|Failed to save relay settings: 
+保存しました（DeepSeek · ds 维度）：|Saved (DeepSeek · ds dimension): 
+保存しました（中转站 · st 维度）：|Saved (relay · st dimension): 
+开启内蔵ウェブ検索后需配置融合信息搜索 API Key（volc_websearch_api_key）|After enabling built-in web search, configure the Fusion Information Search API Key (volc_websearch_api_key)
+既に追加されています：|Already added: 
+`);
