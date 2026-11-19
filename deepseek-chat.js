@@ -5789,12 +5789,38 @@
         return next;
     };
 
+    // ★ 进入 ST 维度时：若当前模型不是中转站模型，切到最近使用的中转站模型（无则用第一个预置中转站模型）。
+    //   否则 UI / 发送仍沿用 DeepSeek 模型，出现「ST 维度下却是 DeepSeek 模型」的串维度 bug。
+    window.dscEnsureStModel = function () {
+        var cur = String(state.currentModel || '').trim();
+        if (cur && window.dscDimForModel(cur) === 'st') return cur;
+        var next = '';
+        try { next = String(localStorage.getItem('dsc_last_st_model') || '').trim(); } catch (e) {}
+        if (!next || window.dscDimForModel(next) !== 'st') {
+            var pool = [];
+            try { pool = Object.keys(RELAY_MODEL_IDS).concat(window.__dscRelayCustomList ? window.__dscRelayCustomList() : []); } catch (e) {}
+            next = pool.length ? String(pool[0]) : '';
+        }
+        if (!next) return cur;
+        state.currentModel = next;
+        try { localStorage.setItem('dsc_currentModel', next); } catch (e) {}
+        try { applyModelToSelects(next); } catch (e) {}
+        try { updateTitle(); } catch (e) {}
+        fetch('/api/ds-chat/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: next })
+        }).catch(function () {});
+        return next;
+    };
+
     window.dscSetChatModel = function (model, persist) {
         var m = String(model == null ? '' : model).trim();
         if (!m) return '';
         state.currentModel = m;
         applyModelToSelects(m);
         try { if (window.dscDimForModel(m) === 'ds') localStorage.setItem('dsc_last_ds_model', m); } catch (e) {}
+        try { if (window.dscDimForModel(m) === 'st') localStorage.setItem('dsc_last_st_model', m); } catch (e) {}
         // ★ 切换对话模型的同时切换维度（内部会播放全屏动画 + 跨维度重载消息）
         try { window.dscSyncDimForModel(m, false); } catch (e) {}
         try { localStorage.setItem('dsc_currentModel', m); } catch (e) {}

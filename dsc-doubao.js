@@ -3375,6 +3375,8 @@ var EDGE_VOICE_POOL = {
         if (on) { try { localStorage.setItem(DB_MODE_KEY, '0'); } catch (e) {} }
         // ★ 离开 ST 维度：残留的中转站模型切回 DeepSeek 模型（否则 DeepSeek 维度会被判成 st）
         if (!on) { try { window.dscEnsureDsModel && window.dscEnsureDsModel(); } catch (e) {} }
+        // ★ 进入 ST 维度：当前模型必须切为中转站模型（否则 ST 维度下仍是 DeepSeek 模型）
+        if (on) { try { window.dscEnsureStModel && window.dscEnsureStModel(); } catch (e) {} }
         syncDbModeUI();
         syncStModeUI();
         // 维度切换：消息流立即换成目标维度（与ポータル演出并行）
