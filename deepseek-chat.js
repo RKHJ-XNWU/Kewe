@@ -981,6 +981,9 @@
     function dscPriceEntry(model) {
         var m = String(model || '').toLowerCase().trim();
         if (!m) return null;
+        // ★ 翻译按钮経由の火山方舟 DeepSeek Flash。方舟の単価は未登録のため、
+        //   DeepSeek 公式単価へ寄せると誤計上になる。ここでは null（料金非表示・token は表示）。
+        if (m === 'deepseek-v4-1-flash-261017') return null;
         if (DSC_PRICE[m]) return DSC_PRICE[m];
         for (var i = 0; i < DSC_PRICE_PREFIX.length; i++) {
             if (m.indexOf(DSC_PRICE_PREFIX[i][0]) === 0) return DSC_PRICE[DSC_PRICE_PREFIX[i][1]];

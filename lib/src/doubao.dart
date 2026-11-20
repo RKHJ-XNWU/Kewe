@@ -755,6 +755,24 @@ Future<String> dbChatText(
   double temperature = 0.8,
   Duration timeout = const Duration(seconds: 120),
 }) async {
+  final r = await dbChatTextWithUsage(systemPrompt, messages,
+      model: model,
+      maxTokens: maxTokens,
+      temperature: temperature,
+      timeout: timeout);
+  return r.text;
+}
+
+/// 同 dbChatText，但同时返回方舟响应中的原始 usage（JSON 值，可能为 null）。
+/// 用于需要计费/用量显示的调用方（如翻译按钮）。
+Future<({String text, dynamic usage})> dbChatTextWithUsage(
+  String systemPrompt,
+  List<Map<String, dynamic>> messages, {
+  String? model,
+  int maxTokens = 8192,
+  double temperature = 0.8,
+  Duration timeout = const Duration(seconds: 120),
+}) async {
   final cfg = getDbConfig();
   _requireKey(cfg);
   final useModel = trimOr(model, cfg.chatModel);
@@ -782,11 +800,12 @@ Future<String> dbChatText(
   if (choices.isEmpty) throw Exception('豆包 API 返回了空响应');
   final msg = asMap(asMap(choices[0])['message']);
   final c = mStr(msg, 'content');
+  final usage = j['usage'];
   if (c.trim().isEmpty) {
     final rc = mStr(msg, 'reasoning_content');
-    if (rc.trim().isNotEmpty) return rc;
+    if (rc.trim().isNotEmpty) return (text: rc, usage: usage);
   }
-  return c;
+  return (text: c, usage: usage);
 }
 
 /// 单轮直连方舟：支持多模态 content（图片 / 音频 / 视频）与深度思考开关。

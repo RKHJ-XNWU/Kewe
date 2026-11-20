@@ -1046,7 +1046,7 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
   // ★ 汇总实际 usage（用于费用显示・不持久化）
   final usageAcc = DsUsageAcc();
   try {
-    final out = await dbChatText(
+    final resp = await dbChatTextWithUsage(
       '',
       messages,
       model: model,
@@ -1054,6 +1054,9 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
       temperature: 0.2,
       timeout: const Duration(seconds: 300),
     );
+    final out = resp.text;
+    usageAcc.addRaw(RawDsUsage.fromJson(resp.usage));
+    usageAcc.model = model;
     const bool streamed = false;
     final clean = dsSanitizeTranslatedMarkdown(out);
     if (clean.isEmpty) {
