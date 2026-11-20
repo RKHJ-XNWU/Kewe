@@ -5274,7 +5274,8 @@
                     });
                 }
             } catch (e2) { toast(dscErrText('中转站設定の保存に失敗: ', e2.message), 'error'); }
-            // ★ 设置里改模型也要立刻切进对应维度（ds / st / db），并播放全屏动画
+            // ★ 设置里改模型也要立刻同步对应维度（ds / st / db）。
+            //   仅跨维度时播放全屏动画；同维度切模型不播（dscSetDimForModel 内按 crossDim 判断）。
             try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, false); } catch (e0) {}
             state.currentModel = model;
             toast(dscT('設定を保存しました · モデル:') + ' ' + model, 'success');
@@ -5985,8 +5986,13 @@
             var m = String(model == null ? '' : model).trim();
             var d = (dim === 'db' || dim === 'st' || dim === 'ds') ? dim
                 : ((window.dscDimForModel ? window.dscDimForModel(m) : 'ds'));
-            // ★ 复用维度切换全屏动画（用户要求：切换模型用全屏动画）
-            if (window.dscPlayDimWarp) {
+            // ★ 修复（同维度切模型误播维度动画）：
+            //   只有目标维度与当前维度不同（真正跨维度）时，才复用全屏维度切换动画。
+            //   同维度内 A 模型 -> B 模型只播下面的轻量徽标 / 消息淡入淡出，
+            //   不再触发整套「穿越维度」全屏 warp。
+            var __curDim = 'ds';
+            try { __curDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (e) { __curDim = 'ds'; }
+            if (__curDim !== d && window.dscPlayDimWarp) {
                 try {
                     window.dscPlayDimWarp(d, function () { return Promise.resolve(); });
                     return true;

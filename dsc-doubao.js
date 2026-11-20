@@ -894,7 +894,8 @@ var EDGE_VOICE_POOL = {
                         var nv = String(selCfgChat.value || '').trim();
                         if (nv) {
                             setDbChatModelOverride(nv);
-                            // ★ 切换豆包对话模型 ⇒ 同时切进 db 维度（全屏动画）
+                            // ★ 切换豆包对话模型 ⇒ 同步 db 维度标志。
+                            //   同维度切模型不播全屏动画（crossDim=false 时 dscSetDimForModel 内部跳过 warp）。
                             if (window.dscSetDimForModel) window.dscSetDimForModel('db', nv, false);
                         }
                     } catch (e) {}
@@ -980,7 +981,8 @@ var EDGE_VOICE_POOL = {
             //   且 fillCfgForm() 末尾的 override 分支会把下拉框改回旧值，
             //   造成「设置里改成 glm / 其他模型后，状态行和下拉仍是旧模型」。
             try { setDbChatModelOverride(String(body.chatModel || '').trim()); } catch (e) {}
-            // ★ 保存豆包设置中的对话模型 ⇒ 立刻切进 db 维度（模型与维度不许脱节）
+            // ★ 保存豆包设置中的对话模型 ⇒ 同步 db 维度标志（模型与维度不许脱节）。
+            //   已在 db 维度时仅换模型，不播全屏维度动画；仅跨维度时才播放。
             try {
                 var __dbm = String(body.chatModel || '').trim();
                 if (__dbm) {
@@ -3423,8 +3425,13 @@ var EDGE_VOICE_POOL = {
             return Promise.resolve();
         };
         // ★ 全屏切换动画：复用维度切换动画（dbWarpDim）。启动同步（silent）不播放
+        // ★ 修复（同维度切模型误播维度动画）：
+        //   只有「真正跨维度」（crossDim === true）时才播放全屏维度切换动画。
+        //   同维度内仅切换模型（如豆包 A 模型 -> 豆包 B 模型、设置里保存豆包模型）时，
+        //   维度标志已在上面无条件同步，消息流也无需重载，这里绝不能再播 dbWarpDim，
+        //   否则用户只是换个模型却看到一整套「穿越维度」全屏动画。
         var warpDone = Promise.resolve();
-        if (silent) {
+        if (silent || !crossDim) {
             try { reload(); } catch (e) {}
         } else {
             try {
@@ -3437,7 +3444,9 @@ var EDGE_VOICE_POOL = {
                 try { reload(); } catch (e2) {}
             }
         }
-        if (!silent) {
+        // ★ 仅跨维度切换才提示「ディメンションを切り替えました」；
+        //   同维度切模型不打扰（模型切换本身的 toast 由各调用方负责）。
+        if (!silent && crossDim) {
             var nm = target === 'db' ? '豆包' : (target === 'st' ? '中转站' : 'DeepSeek');
             warpDone.then(function () {
                 try { toast(T('ディメンションを切り替えました：') + nm + (model ? (' · ' + model) : ''), 'info'); } catch (e) {}
@@ -3855,7 +3864,7 @@ var EDGE_VOICE_POOL = {
                     try { refreshCfgStatus(); } catch (e2) {}
                 }).catch(function () {});
             } catch (e) {}
-            // ★ 切换模型 ⇒ 同时进入 db 维度（全屏动画）
+            // ★ 切换模型 ⇒ 同步 db 维度；同维度切模型不播全屏动画（跨维度才播）
             window.dscSetDimForModel('db', v, false);
             syncDbModeUI();
             qmSyncBtn();
