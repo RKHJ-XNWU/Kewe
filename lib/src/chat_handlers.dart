@@ -1009,17 +1009,15 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
     await dsJSONErr(res, 400, '要翻译的文本为空');
     return;
   }
-  // ★ 翻译按钮必须走 DeepSeek 官方通道（模型：deepseek-v4.1-flash-1017）
-  //   完全不用豆包（方舟）：翻译的计费、响应固定在 DeepSeek 侧。
-  const String translateModel = 'deepseek-flash';
-  final dsCfg = getDsConfig();
-  if (dsCfg.apiKey.trim().isEmpty) {
-    await dsJSONErr(res, 400, '请先设置 DeepSeek API Key');
+  // ★ 翻译按钮走火山引擎（方舟）上的 DeepSeek Flash 模型：deepseek-v4-1-flash-261017
+  //   通过 doubao.dart 的 dbChatText 调用方舟 /chat/completions，不再使用 DeepSeek 官方通道。
+  const String translateModel = 'deepseek-v4-1-flash-261017';
+  final dbCfg = getDbConfig();
+  if (dbCfg.apiKey.trim().isEmpty) {
+    await dsJSONErr(res, 400, '请先设置火山方舟 API Key');
     return;
   }
   var model = translateModel;
-  final callKey = dsCfg.apiKey;
-  final callUrl = DS_API_URL;
 
   // ★ 一个字符也不破坏 Markdown 的严格提示词
   const systemPrompt = '你是精通 Markdown 的优秀翻译者。将输入文本翻译成指定语言。\n'
@@ -1048,29 +1046,15 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
   // ★ 汇总实际 usage（用于费用显示・不持久化）
   final usageAcc = DsUsageAcc();
   try {
-    String out = '';
-    var streamed = false;
-    try {
-      final r = await callDsChatAPI(callKey, model, messages, 300000, 0.2, usageAcc, apiUrl: callUrl);
-      out = r.content;
-    } catch (e1) {
-      // 非流式调用失败时自动回退到流式
-      logp('⚠️ 翻译（非流式）失败，用流式重试: $e1');
-      final buf = StringBuffer();
-      await callDsChatAPIStream(
-        callKey,
-        model,
-        messages,
-        300000,
-        0.2,
-        null,
-        (s) => buf.write(s),
-        usageAcc,
-        apiUrl: callUrl,
-      );
-      out = buf.toString();
-      streamed = true;
-    }
+    final out = await dbChatText(
+      '',
+      messages,
+      model: model,
+      maxTokens: 8192,
+      temperature: 0.2,
+      timeout: const Duration(seconds: 300),
+    );
+    const bool streamed = false;
     final clean = dsSanitizeTranslatedMarkdown(out);
     if (clean.isEmpty) {
       // ★ 不返回日语：由 UI 侧用 error 码渲染成本地语言

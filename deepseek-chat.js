@@ -6413,9 +6413,9 @@
                 body: JSON.stringify({
                     text: m.content,
                     target: '簡体字中国語（简体中文）',
-                    // ★ 翻译固定走 DeepSeek 通道（deepseek-v4.1-flash-1017）
-                    provider: 'deepseek',
-                    model: 'deepseek-flash'
+                    // ★ 翻译固定走火山引擎（方舟）通道：deepseek-v4-1-flash-261017
+                    provider: 'doubao',
+                    model: 'deepseek-v4-1-flash-261017'
                 })
             });
             var data = await res.json().catch(function () { return {}; });
