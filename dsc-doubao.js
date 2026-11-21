@@ -894,9 +894,17 @@ var EDGE_VOICE_POOL = {
                         var nv = String(selCfgChat.value || '').trim();
                         if (nv) {
                             setDbChatModelOverride(nv);
-                            // ★ 切换豆包对话模型 ⇒ 同步 db 维度标志。
-                            //   同维度切模型不播全屏动画（crossDim=false 时 dscSetDimForModel 内部跳过 warp）。
-                            if (window.dscSetDimForModel) window.dscSetDimForModel('db', nv, false);
+                            // ★【修复】设置面板里只修改「豆包对话模型」这一配置项，绝不切换维度。
+                            //   旧实现无条件 dscSetDimForModel('db', nv, false)：在 DeepSeek（ds）/
+                            //   中转站（st）维度下打开设置、只是动一下这个下拉框，目标维度被写死成 'db'，
+                            //   于是 crossDim = true → 播全套「穿越维度」全屏动画，并把用户拽进豆包维度。
+                            //   现在：仅当用户本来就在豆包维度时才静默同步模型；其它维度只更新 override。
+                            try {
+                                var __curDimA = (window.dscDimOn ? window.dscDimOn() : 'ds');
+                                if (__curDimA === 'db' && window.dscSetDimForModel) {
+                                    window.dscSetDimForModel('db', nv, true);
+                                }
+                            } catch (eA) {}
                         }
                     } catch (e) {}
                     setTimeout(function () {
@@ -981,12 +989,19 @@ var EDGE_VOICE_POOL = {
             //   且 fillCfgForm() 末尾的 override 分支会把下拉框改回旧值，
             //   造成「设置里改成 glm / 其他模型后，状态行和下拉仍是旧模型」。
             try { setDbChatModelOverride(String(body.chatModel || '').trim()); } catch (e) {}
-            // ★ 保存豆包设置中的对话模型 ⇒ 同步 db 维度标志（模型与维度不许脱节）。
-            //   已在 db 维度时仅换模型，不播全屏维度动画；仅跨维度时才播放。
+            // ★【修复】保存豆包设置只落配置，绝不切换维度、绝不播全屏维度动画。
+            //   旧实现无条件 dscSetDimForModel('db', __dbm, false)：目标维度被写死为 'db'，
+            //   在 DeepSeek（ds）/ 中转站（st）维度下点「豆包設定を保存」时 crossDim = true，
+            //   于是播放全套「穿越维度」全屏动画，并把用户强行拽进豆包维度。
+            //   正确行为：已在豆包维度 → 静默同步模型（silent=true，不播 warp、不重载消息）；
+            //   其它维度 → 仅保留 setDbChatModelOverride 写入的豆包模型，维度标志与消息流一概不动。
             try {
                 var __dbm = String(body.chatModel || '').trim();
                 if (__dbm) {
-                    if (window.dscSetDimForModel) window.dscSetDimForModel('db', __dbm, false);
+                    var __curDimB = (window.dscDimOn ? window.dscDimOn() : 'ds');
+                    if (__curDimB === 'db' && window.dscSetDimForModel) {
+                        window.dscSetDimForModel('db', __dbm, true);
+                    }
                 }
             } catch (e) {}
             fillCfgForm();
