@@ -5213,7 +5213,16 @@
             if (ms || $('dscRelayModelSelect')) {
                 var wantModel = data.model || 'deepseek-flash';
                 applyModelToSelects(wantModel);
-                state.currentModel = wantModel;
+                // ★【修复】打开设置只回显后端保存的 DeepSeek 配置，绝不覆盖当前维度的模型。
+                //   原实现无条件执行 state.currentModel = wantModel：在豆包（db）/
+                //   中转站（st）维度下打开设置也会把当前模型改成 DeepSeek 模型，
+                //   随后保存时就被判定成「跨维度」→ 播放维度切换动画并拉回 ds 维度。
+                var __openDim = 'ds';
+                try { __openDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (eDim) { __openDim = 'ds'; }
+                var __wantDim = 'ds';
+                try { __wantDim = (window.dscDimForModel ? window.dscDimForModel(wantModel) : 'ds'); } catch (eDim2) { __wantDim = 'ds'; }
+                // 仅当「配置模型所属维度 == 当前维度」或「当前就是 ds 维度」时同步当前模型
+                if (__openDim === 'ds' || __wantDim === __openDim) state.currentModel = wantModel;
             }
             if (ik) { ik.value = ''; ik.placeholder = data.hasImgKey ? dscT('保存済み。空欄なら変更しません') : dscT('（任意）'); }
             if (st) {
@@ -5274,10 +5283,29 @@
                     });
                 }
             } catch (e2) { toast(dscErrText('中转站設定の保存に失敗: ', e2.message), 'error'); }
-            // ★ 设置里改模型也要立刻同步对应维度（ds / st / db）。
-            //   仅跨维度时播放全屏动画；同维度切模型不播（dscSetDimForModel 内按 crossDim 判断）。
-            try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, false); } catch (e0) {}
-            state.currentModel = model;
+            // ★【修复】设置面板只负责保存配置，绝不因保存而切换维度。
+            //   原实现无条件 dscSyncDimForModel(model, false)：在豆包（db）/
+            //   中转站（st）维度下保存 DeepSeek 设置时，解析出的模型属于 ds 维度，
+            //   于是 crossDim = true → 播放全屏维度切换动画并把用户拉回 DeepSeek 维度。
+            //   现在：db / st 维度下保存 → 维度与当前模型保持不变（仅同维度模型才同步）；
+            //         ds 维度下保存 → 保留原有行为（显式选中转站模型仍可进入 st）。
+            var __saveDim = 'ds';
+            try { __saveDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (e0) { __saveDim = 'ds'; }
+            var __saveModelDim = 'ds';
+            try { __saveModelDim = (window.dscDimForModel ? window.dscDimForModel(model) : 'ds'); } catch (e0b) { __saveModelDim = 'ds'; }
+            if (__saveDim !== 'ds') {
+                // 显式维度（db / st）：绝不离开当前维度，不播动画、不重载消息
+                if (__saveModelDim === __saveDim) {
+                    try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, true); } catch (e0c) {}
+                    state.currentModel = model;
+                }
+                // 记下最近使用的 ds 模型，便于之后回到 ds 维度时生效
+                try { if (__saveModelDim === 'ds') localStorage.setItem('dsc_last_ds_model', model); } catch (e0e) {}
+            } else {
+                // ds 维度：保留原有行为（同维度不会播动画）
+                try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, false); } catch (e0d) {}
+                state.currentModel = model;
+            }
             toast(dscT('設定を保存しました · モデル:') + ' ' + model, 'success');
             updateTitle();
             closeSettings();
