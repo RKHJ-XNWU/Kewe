@@ -3429,10 +3429,14 @@ var EDGE_VOICE_POOL = {
         var cur = 'ds';
         try { cur = isDbMode() ? 'db' : (isStDim() ? 'st' : 'ds'); } catch (e) {}
         var crossDim = (cur !== target);
-        // ★ 维度标志必须无条件同步（同维度也保持一致，避免刷新后维度判定错乱）
-        try { localStorage.setItem(DB_MODE_KEY, target === 'db' ? '1' : '0'); } catch (e) {}
-        try { localStorage.setItem(ST_DIM_KEY, target === 'st' ? '1' : '0'); } catch (e) {}
-        try { syncDbModeUI(); syncStModeUI(); } catch (e) {}
+        // ★ 维度标志同步：同维度必须保持一致（避免刷新后维度判定错乱）；
+        //   但「静默同步（silent）且跨维度」时一律不写 —— 任何「保存配置 / 同步模型」类的
+        //   静默调用都不允许把用户悄悄拽进另一个维度（这是「点保存设置被切到 st 维度」的第二条根因）。
+        if (!(silent && crossDim)) {
+            try { localStorage.setItem(DB_MODE_KEY, target === 'db' ? '1' : '0'); } catch (e) {}
+            try { localStorage.setItem(ST_DIM_KEY, target === 'st' ? '1' : '0'); } catch (e) {}
+            try { syncDbModeUI(); syncStModeUI(); } catch (e) {}
+        }
         // ★ 跨维度时重载消息；同维度切模型不重载（消息流不跨维度）
         var reload = function () {
             if (!crossDim) return Promise.resolve();
@@ -3446,7 +3450,9 @@ var EDGE_VOICE_POOL = {
         //   维度标志已在上面无条件同步，消息流也无需重载，这里绝不能再播 dbWarpDim，
         //   否则用户只是换个模型却看到一整套「穿越维度」全屏动画。
         var warpDone = Promise.resolve();
-        if (silent || !crossDim) {
+        if (silent && crossDim) {
+            // 静默且跨维度：什么都不做（不写标志、不重载消息、不播动画）
+        } else if (silent || !crossDim) {
             try { reload(); } catch (e) {}
         } else {
             try {

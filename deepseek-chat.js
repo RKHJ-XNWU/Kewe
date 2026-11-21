@@ -5221,8 +5221,10 @@
                 try { __openDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (eDim) { __openDim = 'ds'; }
                 var __wantDim = 'ds';
                 try { __wantDim = (window.dscDimForModel ? window.dscDimForModel(wantModel) : 'ds'); } catch (eDim2) { __wantDim = 'ds'; }
-                // 仅当「配置模型所属维度 == 当前维度」或「当前就是 ds 维度」时同步当前模型
-                if (__openDim === 'ds' || __wantDim === __openDim) state.currentModel = wantModel;
+                // ★【修复 v3】只有「配置模型所属维度 == 当前维度」才同步当前模型。
+                //   旧条件里的 `__openDim === 'ds'` 会让 ds 维度下打开设置就被写入一个中转站（st）模型，
+                //   随后保存时被判定为跨维度 → 播全屏动画并切进 st 维度。
+                if (__wantDim === __openDim) state.currentModel = wantModel;
             }
             if (ik) { ik.value = ''; ik.placeholder = data.hasImgKey ? dscT('保存済み。空欄なら変更しません') : dscT('（任意）'); }
             if (st) {
@@ -5256,11 +5258,38 @@
     }
     async function saveSettings() {
         var apiKey = $('dscApiKeyInput') ? $('dscApiKeyInput').value.trim() : '';
-        var model = '';
+        // ★【修复 v3 · 根因】保存设置绝不允许改变维度。
+        //   旧实现无条件优先取 dscRelayModelSelect 的值：设置面板一旦回显了中转站模型，
+        //   用户在 DeepSeek 维度点「保存设置」就把中转站模型当作当前模型写下去，
+        //   随后被判定为跨维度 → 播放全屏维度切换动画 + 被拽进 st 维度。
+        //   现在：先确定当前维度，只从候选里挑「属于当前维度」的模型。
+        var __saveDim = 'ds';
+        try { __saveDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (eDim0) { __saveDim = 'ds'; }
+        var __dimOf = function (m) {
+            try { return window.dscDimForModel ? window.dscDimForModel(m) : 'ds'; } catch (eDim1) { return 'ds'; }
+        };
         var __selDs = $('dscModelSelect'), __selRelay = $('dscRelayModelSelect');
-        if (__selRelay && __selRelay.value) model = __selRelay.value;
-        else if (__selDs && __selDs.value) model = __selDs.value;
-        if (!model) model = state.currentModel || 'deepseek-flash';
+        var __cand = [];
+        if (__selRelay && __selRelay.value) __cand.push(__selRelay.value);
+        if (__selDs && __selDs.value) __cand.push(__selDs.value);
+        if (state.currentModel) __cand.push(String(state.currentModel));
+        try { if (localStorage.getItem('dsc_currentModel')) __cand.push(String(localStorage.getItem('dsc_currentModel'))); } catch (eDim2) {}
+        var model = '';
+        for (var __ci = 0; __ci < __cand.length; __ci++) {
+            var __cm = String(__cand[__ci] || '').trim();
+            if (__cm && __dimOf(__cm) === __saveDim) { model = __cm; break; }
+        }
+        // 面板里各维度的模型选择只作为「该维度的最近使用模型」记录，不影响当前维度
+        try { if (__selRelay && __selRelay.value && __dimOf(__selRelay.value) === 'st') localStorage.setItem('dsc_last_st_model', __selRelay.value); } catch (eDim3) {}
+        try { if (__selDs && __selDs.value && __dimOf(__selDs.value) === 'ds') localStorage.setItem('dsc_last_ds_model', __selDs.value); } catch (eDim4) {}
+        if (!model) {
+            if (__saveDim === 'st') { try { model = String(localStorage.getItem('dsc_last_st_model') || '').trim(); } catch (eDim5) {} }
+            else if (__saveDim === 'db') { try { model = String(localStorage.getItem('dsc_doubao_chat_model') || '').trim(); } catch (eDim7) {} }
+            else { try { model = String(localStorage.getItem('dsc_last_ds_model') || '').trim(); } catch (eDim6) {} }
+        }
+        if (!model && __saveDim === 'ds') model = 'deepseek-flash';
+        if (!model) model = String(state.currentModel || '').trim();
+        if (!model) model = 'deepseek-flash';
         var imgKey = $('dscImgKeyInput') ? $('dscImgKeyInput').value.trim() : '';
         var relayApiKey = $('dscRelayApiKeyInput') ? $('dscRelayApiKeyInput').value.trim() : '';
         var relayBaseUrl = $('dscRelayBaseUrlInput') ? $('dscRelayBaseUrlInput').value.trim() : '';
@@ -5283,28 +5312,14 @@
                     });
                 }
             } catch (e2) { toast(dscErrText('中转站設定の保存に失敗: ', e2.message), 'error'); }
-            // ★【修复】设置面板只负责保存配置，绝不因保存而切换维度。
-            //   原实现无条件 dscSyncDimForModel(model, false)：在豆包（db）/
-            //   中转站（st）维度下保存 DeepSeek 设置时，解析出的模型属于 ds 维度，
-            //   于是 crossDim = true → 播放全屏维度切换动画并把用户拉回 DeepSeek 维度。
-            //   现在：db / st 维度下保存 → 维度与当前模型保持不变（仅同维度模型才同步）；
-            //         ds 维度下保存 → 保留原有行为（显式选中转站模型仍可进入 st）。
-            var __saveDim = 'ds';
-            try { __saveDim = (window.dscDimOn ? window.dscDimOn() : 'ds'); } catch (e0) { __saveDim = 'ds'; }
-            var __saveModelDim = 'ds';
-            try { __saveModelDim = (window.dscDimForModel ? window.dscDimForModel(model) : 'ds'); } catch (e0b) { __saveModelDim = 'ds'; }
-            if (__saveDim !== 'ds') {
-                // 显式维度（db / st）：绝不离开当前维度，不播动画、不重载消息
-                if (__saveModelDim === __saveDim) {
-                    try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, true); } catch (e0c) {}
-                    state.currentModel = model;
-                }
-                // 记下最近使用的 ds 模型，便于之后回到 ds 维度时生效
-                try { if (__saveModelDim === 'ds') localStorage.setItem('dsc_last_ds_model', model); } catch (e0e) {}
-            } else {
-                // ds 维度：保留原有行为（同维度不会播动画）
-                try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, false); } catch (e0d) {}
+            // ★【修复 v3】model 已在函数开头被限定为「与当前维度一致」，这里只做同维度静默同步：
+            //   silent=true + crossDim=false ⇒ 不写维度标志、不重载消息、绝不播放全屏维度切换动画。
+            //   这是「点保存设置后触发维度切换动画 / 被切到 st 维度」的最终封堵点。
+            //   最后再加一道维度断言：即便兜底路径取到别的维度模型，也绝不动当前维度的模型与标志。
+            if (__dimOf(model) === __saveDim) {
+                try { if (window.dscSyncDimForModel) window.dscSyncDimForModel(model, true); } catch (e0c) {}
                 state.currentModel = model;
+                try { localStorage.setItem('dsc_currentModel', model); } catch (e0d) {}
             }
             toast(dscT('設定を保存しました · モデル:') + ' ' + model, 'success');
             updateTitle();
@@ -5365,23 +5380,28 @@
             var cfgModel = (data && data.model ? String(data.model) : '').trim();
             if (!cfgModel) return;
             var before = state.currentModel;
-            state.currentModel = cfgModel;
-            _modelSynced = true;
-            try { localStorage.setItem('dsc_currentModel', cfgModel); } catch (e) {}
-            applyModelToSelects(cfgModel);
-            // ★ 只同步模型，不纠正维度。维度由 dscDimKey()（优先 localStorage 标志）决定，
-            //   否则后端 deepseek-flash 会把用户显式开启的豆包（db）/ ST（st）维度错误切回 ds。
-            //   仅当中转站模型 + 当前无显式维度标志时，补设 ST 标志作为双保险。
-            try {
-                var cfgDim = window.dscDimForModel ? window.dscDimForModel(cfgModel) : 'ds';
-                var curDim = 'ds';
-                try { curDim = window.dscDimOn ? window.dscDimOn() : 'ds'; } catch (e) { curDim = 'ds'; }
-                if (cfgDim === 'st' && curDim === 'ds') {
-                    if (window.dscSetDimForModel) window.dscSetDimForModel('st', cfgModel, true);
-                }
-            } catch (e2) {}
+            var cfgDim = 'ds';
+            try { cfgDim = window.dscDimForModel ? window.dscDimForModel(cfgModel) : 'ds'; } catch (e) { cfgDim = 'ds'; }
+            var curDim = 'ds';
+            try { curDim = window.dscDimOn ? window.dscDimOn() : 'ds'; } catch (e) { curDim = 'ds'; }
+            if (cfgDim === curDim) {
+                state.currentModel = cfgModel;
+                _modelSynced = true;
+                try { localStorage.setItem('dsc_currentModel', cfgModel); } catch (e) {}
+                applyModelToSelects(cfgModel);
+            } else {
+                // ★【修复 v3】配置里的模型属于其它维度时，绝不切换维度。
+                //   旧实现会在「配置=中转站模型 且 当前=ds」时调用 dscSetDimForModel('st',...,true)，
+                //   而该函数会无条件写入 dsc_st_dim=1 —— 用户刷新页面就被拽进 st 维度。
+                //   现在只把它记成该维度的「最近使用模型」，维度与当前模型一律保持原样。
+                try {
+                    if (cfgDim === 'st') localStorage.setItem('dsc_last_st_model', cfgModel);
+                    else if (cfgDim === 'ds') localStorage.setItem('dsc_last_ds_model', cfgModel);
+                } catch (e3) {}
+                console.log('[DSC] 設定のモデルは別ディメンションのため、ディメンションは変更しません: ' + cfgModel + ' (' + cfgDim + ')');
+            }
             updateTitle();
-            if (before !== cfgModel) {
+            if (cfgDim === curDim && before !== cfgModel) {
                 console.log('[DSC] モデルを設定に合わせました: ' + before + ' -> ' + cfgModel);
             }
         } catch (e) { console.log('[DSC] モデルの設定同期に失敗:', e); }
