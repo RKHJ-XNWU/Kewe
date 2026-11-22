@@ -22,6 +22,33 @@ import 'dart:io';
 import 'globals.dart';
 import 'httpsrv.dart';
 
+// ============================================================
+// ★★★ 中转站（st 维度）全局停用开关（安全/隐私整改）★★★
+//   原因：中转站渠道会把用户聊天内容转发到第三方站点，存在严重的
+//         用户隐私泄露风险。现从前端到后端彻底停用该渠道：
+//           · 前端：任何进入 st 维度 / 选择中转站模型的操作都弹窗报错；
+//           · 后端：任何中转站配置、模型清单、聊天/续写/测试调用一律拒绝。
+//   DeepSeek（ds）与豆包（db）两个维度完全不受影响。
+//   该开关为编译期常量，恒为 true，不提供任何运行时重新开启的入口。
+// ============================================================
+const bool RELAY_DISABLED = true;
+
+/// 停用后对外统一返回的错误信息（前端弹窗与后端响应共用同一文案）。
+const String RELAY_DISABLED_MSG =
+    '中转站（st 维度）API 已停止服务：因该渠道存在泄露用户聊天隐私的风险，'
+    '现已从前端到后端全面停用，无法再调用任何中转站模型。'
+    'DeepSeek 与豆包维度可正常使用。';
+
+/// 后端统一拦截：只要中转站处于停用状态，任何请求都直接返回 403。
+/// 返回 true 表示已拦截并写好响应，调用方必须立即 return。
+Future<bool> relayRejectIfDisabled(HttpRequest req) async {
+  if (!RELAY_DISABLED) return false;
+  try {
+    await dsJSONErr(req.response, 403, RELAY_DISABLED_MSG);
+  } catch (_) {}
+  return true;
+}
+
 /// 默认中转站 base URL（OpenAI 兼容，含 /v1）。
 /// 用户给的连接信息：{"url":"https://sta1n.ai"} 但 API 接入网站是
 /// https://sta1n.ai/v1，因此 chat completions = <base>/chat/completions。
@@ -235,6 +262,8 @@ Map<String, dynamic> relayConfigJson() {
 // ------------------------------------------------------------
 Future<void> handleRelayConfig(HttpRequest req) async {
   final res = req.response;
+  // ★ 停用整改：中转站配置接口（GET/POST）一律拒绝，前端无法再读取或写入 Key/端点。
+  if (await relayRejectIfDisabled(req)) return;
   if (req.method == 'GET') {
     await dsJSONOk(res, 200, {'success': true, ...relayConfigJson()});
     return;
@@ -273,6 +302,8 @@ Future<void> handleRelayConfig(HttpRequest req) async {
 }
 
 Future<void> handleRelayModels(HttpRequest req) async {
+  // ★ 停用整改：中转站模型清单接口一律拒绝，前端拿不到任何可调用模型。
+  if (await relayRejectIfDisabled(req)) return;
   await dsJSONOk(req.response, 200, {
     'success': true,
     'models': relayModelListJson(),

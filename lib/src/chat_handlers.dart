@@ -343,6 +343,15 @@ Future<void> handleDsChatTest(HttpRequest req) async {
   var apiKey = mStr(body, 'apiKey').trim();
   final cfg = getDsConfig();
   var model = mStr(body, 'model').trim();
+
+  // ★★★ 停用整改：中转站（st 维度）聊天入口硬拦截 ★★★
+  //   无论前端如何传参，只要显式 dim=st 或模型命中中转站目录，一律 403 拒绝，
+  //   绝不发起任何对第三方中转站的请求，杜绝聊天内容外泄。
+  if (RELAY_DISABLED &&
+      (mStr(body, 'dim').trim() == DS_DIM_ST || isRelayModel(model))) {
+    await dsJSONErr(res, 403, RELAY_DISABLED_MSG);
+    return;
+  }
   if (model.isEmpty) model = cfg.model;
   if (model.isEmpty) model = DS_DEFAULT_MODEL;
   final relayCfg = getRelayConfig();
@@ -780,6 +789,15 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   }
   final cfg = getDsConfig();
   final model = trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model);
+
+  // ★★★ 停用整改：中转站（st 维度）聊天入口硬拦截 ★★★
+  //   无论前端如何传参，只要显式 dim=st 或模型命中中转站目录，一律 403 拒绝，
+  //   绝不发起任何对第三方中转站的请求，杜绝聊天内容外泄。
+  if (RELAY_DISABLED &&
+      (mStr(body, 'dim').trim() == DS_DIM_ST || isRelayModel(model))) {
+    await dsJSONErr(res, 403, RELAY_DISABLED_MSG);
+    return;
+  }
 
   // ★ 维度：连 ST 也从请求中确定（模型名无法区分）
   final contDim = dsDimFromReq(req, model);

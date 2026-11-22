@@ -13,6 +13,56 @@
 (function () {
     'use strict';
 
+    // ============================================================
+    // ★★★ 中转站（st 维度）前端全局停用（隐私整改）★★★
+    //   与后端 relay.dart 的 RELAY_DISABLED 对应。恒为 true，不提供
+    //   任何重新开启入口。DeepSeek(ds)/豆包(db) 两维度不受影响。
+    // ============================================================
+    window.DSC_RELAY_DISABLED = true;
+    window.DSC_RELAY_DISABLED_MSG =
+        '中转站（st 维度）API 已停止服务：因该渠道存在泄露用户聊天隐私的风险，' +
+        '现已从前端到后端全面停用，无法再调用任何中转站模型。' +
+        'DeepSeek 与豆包维度可正常使用。';
+
+    // 统一弹窗报错：优先用自定义模态框，退化到 alert，再退化到 toast。
+    // 保证用户一点击任何 st 入口都会被明确告知“已停用”。
+    window.dscRelayBlockedAlert = function () {
+        try {
+            var existing = document.getElementById('dscRelayBlockedModal');
+            if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+            var ov = document.createElement('div');
+            ov.id = 'dscRelayBlockedModal';
+            ov.className = 'dsc-modal-overlay open';
+            ov.style.zIndex = '100090';
+            ov.innerHTML =
+                '<div class="dsc-modal" style="max-width:420px;">' +
+                '<div class="dsc-modal-title">⛔ 该渠道已停用</div>' +
+                '<div style="line-height:1.7;padding:6px 4px 14px;">' +
+                window.DSC_RELAY_DISABLED_MSG +
+                '</div>' +
+                '<div class="dsc-modal-footer">' +
+                '<button type="button" class="dsc-btn primary" id="dscRelayBlockedOk">我知道了</button>' +
+                '</div></div>';
+            document.body.appendChild(ov);
+            var close = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
+            ov.addEventListener('click', function (e) { if (e.target === ov) close(); });
+            var ok = ov.querySelector('#dscRelayBlockedOk');
+            if (ok) ok.addEventListener('click', close);
+            try { if (window.vibrate) window.vibrate(30); } catch (e) {}
+            return;
+        } catch (e) {}
+        try { alert(window.DSC_RELAY_DISABLED_MSG); return; } catch (e2) {}
+        try { toast(window.DSC_RELAY_DISABLED_MSG, 'error'); } catch (e3) {}
+    };
+
+    // 判定一个模型是否属于被停用的中转站目录（预置 + 自定义）。
+    window.dscIsBlockedRelayModel = function (model) {
+        try {
+            if (window.__dscIsRelayModel && window.__dscIsRelayModel(model)) return true;
+        } catch (e) {}
+        return false;
+    };
+
     var API = '/api/doubao';
     var S = {
         cfg: null,
@@ -3048,7 +3098,9 @@ var EDGE_VOICE_POOL = {
     var ST_DIM_KEY = 'dsc_st_dim';
 
     function isStDim() {
-        try { return localStorage.getItem(ST_DIM_KEY) === '1'; } catch (e) { return false; }
+        // ★ 停用整改：st 维度已下线，恒返回 false，杜绝刷新后被拽回 st。
+        try { if (localStorage.getItem(ST_DIM_KEY) === '1') localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
+        return false;
     }
 
     // 全画面统一的维度标识：'ds' | 'db' | 'st'
@@ -3387,7 +3439,13 @@ var EDGE_VOICE_POOL = {
     }
 
     function setStDim(on, silent, noWarp) {
-        try { localStorage.setItem(ST_DIM_KEY, on ? '1' : '0'); } catch (e) {}
+        // ★ 停用整改：禁止进入 st 维度。强制清除残留标志并弹窗报错。
+        if (on) {
+            try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
+            window.dscRelayBlockedAlert();
+            return;
+        }
+        try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
         // ★ 维度互斥：进入 ST 维度时，必须关闭豆包模式
         if (on) { try { localStorage.setItem(DB_MODE_KEY, '0'); } catch (e) {} }
         // ★ 离开 ST 维度：残留的中转站模型切回 DeepSeek 模型（否则 DeepSeek 维度会被判成 st）
@@ -3425,6 +3483,12 @@ var EDGE_VOICE_POOL = {
     //   「UI 显示中转站模型，消息流却还在 DeepSeek 维度」这种串维度 bug。
     // ------------------------------------------------------------
     window.dscSetDimForModel = function (dim, model, silent) {
+        // ★ 停用整改：任何试图切到 st 维度的调用一律拦截，强制回落到 ds。
+        if (dim === 'st') {
+            try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
+            window.dscRelayBlockedAlert();
+            dim = 'ds';
+        }
         var target = (dim === 'db' || dim === 'st' || dim === 'ds') ? dim : 'ds';
         var cur = 'ds';
         try { cur = isDbMode() ? 'db' : (isStDim() ? 'st' : 'ds'); } catch (e) {}
@@ -3487,6 +3551,13 @@ var EDGE_VOICE_POOL = {
     };
 
     function injectStDimButton() {
+        // ★ 停用整改：st 维度入口按钮不再注入（物理下架）。
+        //   若历史 DOM 中残留该按钮，一并移除。
+        var oldBtn = $('dscStModeBtn');
+        if (oldBtn && oldBtn.parentNode) { try { oldBtn.parentNode.removeChild(oldBtn); } catch (e) {} }
+        try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
+        return;
+        // eslint-disable-next-line no-unreachable
         var dbBtn = $('dscDbModeBtn');
         if ($('dscStModeBtn')) { syncStModeUI(); return; }
         if (!dbBtn || !dbBtn.parentNode) return;
@@ -3796,21 +3867,9 @@ var EDGE_VOICE_POOL = {
             list.appendChild(qmItem('ds', { value: val, label: val, custom: true }, curDim === 'ds' && val === curModel));
         });
 
-        // ---------- 2. 中转站（预置 + st 自定义） ----------
-        list.appendChild(qmGroupHead('st'));
-        var stSeen = {};
-        (hub.relayPreset ? hub.relayPreset() : []).forEach(function (v) {
-            var val = String(v == null ? '' : v).trim();
-            if (!val || stSeen[val]) return;
-            stSeen[val] = 1;
-            list.appendChild(qmItem('st', { value: val, label: val }, curDim === 'st' && val === curModel));
-        });
-        (hub.relayCustom ? hub.relayCustom() : []).forEach(function (v) {
-            var val = String(v == null ? '' : v).trim();
-            if (!val || stSeen[val]) return;
-            stSeen[val] = 1;
-            list.appendChild(qmItem('st', { value: val, label: val, custom: true }, curDim === 'st' && val === curModel));
-        });
+        // ---------- 2. 中转站(st) ----------
+        // ★ 停用整改：st 维度已全面下线，快捷选择器不再渲染任何中转站模型分组。
+        //   （保留空占位注释，豆包分组序号不变）
 
         // ---------- 3. 豆包（方舟对话模型 + db 自定义） ----------
         list.appendChild(qmGroupHead('db'));
@@ -3875,6 +3934,13 @@ var EDGE_VOICE_POOL = {
     function qmApply(kind, value) {
         var v = String(value || '').trim();
         if (!v) return;
+        // ★ 停用整改：任何 st 模型应用一律拦截弹窗。
+        if (kind === 'st') {
+            try { localStorage.setItem(ST_DIM_KEY, '0'); } catch (e) {}
+            window.dscRelayBlockedAlert && window.dscRelayBlockedAlert();
+            try { qmClose(); } catch (e2) {}
+            return;
+        }
         if (kind === 'db') {
             setDbChatModelOverride(v);
             // 持久化到后端（只提交 chatModel，其它字段后端沿用旧值）

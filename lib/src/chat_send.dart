@@ -839,6 +839,15 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   final cfg = getDsConfig();
   var model = mStr(body, 'model').trim();
+
+  // ★★★ 停用整改：中转站（st 维度）聊天入口硬拦截 ★★★
+  //   无论前端如何传参，只要显式 dim=st 或模型命中中转站目录，一律 403 拒绝，
+  //   绝不发起任何对第三方中转站的请求，杜绝聊天内容外泄。
+  if (RELAY_DISABLED &&
+      (mStr(body, 'dim').trim() == DS_DIM_ST || isRelayModel(model))) {
+    await dsJSONErr(res, 403, RELAY_DISABLED_MSG);
+    return;
+  }
   if (model.isEmpty) model = cfg.model;
   if (model.isEmpty) model = DS_DEFAULT_MODEL;
 

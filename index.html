@@ -276,7 +276,7 @@
                         <label for="dscRelayModelSelect">中转站模型（st 维度 · 预置 + 自定义）
                             <button type="button" class="dsc-model-add-btn" id="dscModelAddBtn" title="中转站カスタムモデルを追加">＋</button>
                         </label>
-                        <select id="dscRelayModelSelect">
+                        <select id="dscRelayModelSelect" disabled aria-disabled="true">
                             <option value="">（未选择）</option>
                             <optgroup label="中转站 · sta1n.ai（OpenAI 兼容）">
                                 <option value="[次][抗截断]gemini-3.8-flash">[次][抗截断]gemini-3.8-flash（按次 0.025 元）</option>
@@ -300,19 +300,19 @@
                 </div>
 
                 <div class="dsc-settings-sec">
-                    <div class="dsc-settings-sec-title">中转站设定（OpenAI 兼容 · sta1n.ai）</div>
+                    <div class="dsc-settings-sec-title" style="opacity:.55;">中转站设定（已停用 · 因隐私风险全面下线，DeepSeek / 豆包不受影响）</div>
                     <div class="dsc-field">
                         <label for="dscRelayApiKeyInput">中转站 API Key</label>
-                        <input type="password" id="dscRelayApiKeyInput" placeholder="sk-..." autocomplete="off">
+                        <input type="password" id="dscRelayApiKeyInput" placeholder="该渠道已停用" autocomplete="off" disabled aria-disabled="true">
                     </div>
                     <div class="dsc-field">
                         <label for="dscRelayBaseUrlInput">中转站 Base URL（含 /v1）</label>
-                        <input type="text" id="dscRelayBaseUrlInput" placeholder="https://sta1n.ai/v1" autocomplete="off">
+                        <input type="text" id="dscRelayBaseUrlInput" placeholder="该渠道已停用" autocomplete="off" disabled aria-disabled="true">
                     </div>
                     <div class="dsc-field">
                         <label>流式输出（默认开启）</label>
                         <label class="dsc-switch" style="margin-top:8px;">
-                            <input type="checkbox" id="dscRelayStreamInput" checked>
+                            <input type="checkbox" id="dscRelayStreamInput" checked disabled aria-disabled="true">
                             <span class="dsc-switch-track"><span class="dsc-switch-thumb"></span></span>
                         </label>
                     </div>
@@ -333,7 +333,8 @@
                 <div class="dsc-modal-sub" style="margin-bottom:10px;">DeepSeek（ds）/ 中转站（st）/ 豆包（db）三套列表 + 各自独立的自定义模型</div>
                 <div class="dsc-model-tabs" id="dscModelTabs" role="tablist">
                     <button class="dsc-model-tab active" type="button" role="tab" data-tab="deepseek" aria-selected="true">DeepSeek</button>
-                    <button class="dsc-model-tab" type="button" role="tab" data-tab="relay" aria-selected="false">中转站</button>
+                    <!-- ★ 停用整改：中转站(st)维度已全面下线，入口物理隐藏 -->
+                    <button class="dsc-model-tab" type="button" role="tab" data-tab="relay" aria-selected="false" style="display:none;" aria-disabled="true" disabled>中转站（已停用）</button>
                     <button class="dsc-model-tab" type="button" role="tab" data-tab="doubao" aria-selected="false">豆包</button>
                 </div>
                 <div class="dsc-model-picker-list" id="dscModelPickerList"></div>
@@ -730,7 +731,7 @@
     <script src="i18n/ai-prompts.js?v=14"></script>
     <script src="ds-files.js?v=5"></script>
     <script src="ds-devtools.js?v=5"></script>
-    <script src="deepseek-chat.js?v=20261121savedim-v3"></script>
+    <script src="deepseek-chat.js?v=20261121relay-off-v1"></script>
     <script src="peakvalley.js?v=20261104i18n14"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->
@@ -1004,8 +1005,29 @@
 <script src="dsc-forum.js?v=3"></script>
 <script src="dsc-vocab.js?v=1"></script>
 <script src="dsc-model-route.js?v=1"></script>
-<script src="dsc-doubao.js?v=20261121savedim-v3"></script>
+<script src="dsc-doubao.js?v=20261121relay-off-v1"></script>
 <script src="dsc-doubao-tools.js?v=11"></script>
+    <script>
+    /* ★ 停用整改：页面启动即强制清除任何残留的中转站(st)维度状态，
+       保证刷新/历史 localStorage 也无法把用户带回 st 维度。 */
+    (function () {
+        try {
+            localStorage.setItem('dsc_st_dim', '0');
+            localStorage.removeItem('dsc_current_st_model');
+        } catch (e) {}
+        window.addEventListener('DOMContentLoaded', function () {
+            try { localStorage.setItem('dsc_st_dim', '0'); } catch (e) {}
+            // 兜底：再次隐藏 relay tab、禁用中转站控件
+            var rt = document.querySelector('.dsc-model-tab[data-tab="relay"]');
+            if (rt) { rt.style.display = 'none'; rt.setAttribute('aria-disabled', 'true'); }
+            ['dscRelayModelSelect', 'dscRelayApiKeyInput', 'dscRelayBaseUrlInput',
+             'dscRelayStreamInput'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) { el.disabled = true; el.setAttribute('aria-disabled', 'true'); }
+            });
+        });
+    })();
+    </script>
     <script src="dsc-doubao-plugins.js?v=11"></script>
 <script src="dsc-ja-fix.js?v=2"></script>
 <script src="dsc-duplex.js?v=12"></script>

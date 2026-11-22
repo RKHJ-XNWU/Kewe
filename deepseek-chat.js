@@ -821,6 +821,19 @@
                 }
             }
         } catch (e) {}
+        // ★ 停用整改：当前模型若为中转站(st)模型，强制回落 DeepSeek，杜绝发出 st 请求。
+        var cm = String(state.currentModel || '').trim();
+        if (cm && window.dscDimForModel && window.dscDimForModel(cm) === 'st') {
+            try { localStorage.setItem('dsc_st_dim', '0'); } catch (e2) {}
+            var fb = 'deepseek-flash';
+            try {
+                var lastDs = String(localStorage.getItem('dsc_last_ds_model') || '').trim();
+                if (lastDs && window.dscDimForModel(lastDs) === 'ds') fb = lastDs;
+            } catch (e3) {}
+            state.currentModel = fb;
+            try { applyModelToSelects(fb); } catch (e4) {}
+            return fb;
+        }
         return state.currentModel || 'deepseek-flash';
     };
 
@@ -3862,6 +3875,19 @@
 
     async function sendMessage() {
         if (state.isSending) { requestStop(); return; }
+        // ★★★ 停用整改：发送前最后一道硬拦截，任何 st 维度请求都不允许发出 ★★★
+        try {
+            var __blockDim = (window.dscDimKey ? window.dscDimKey() : '');
+            var __blockModel = (typeof dscSendModelOf === 'function') ? dscSendModelOf()
+                : (state.currentModel || '');
+            if (__blockDim === 'st' ||
+                (window.dscDimForModel && window.dscDimForModel(__blockModel) === 'st') ||
+                (window.dscIsBlockedRelayModel && window.dscIsBlockedRelayModel(__blockModel))) {
+                try { localStorage.setItem('dsc_st_dim', '0'); } catch (e) {}
+                window.dscRelayBlockedAlert && window.dscRelayBlockedAlert();
+                return;
+            }
+        } catch (eBlk) {}
         var inputEl = $('dscInput');
         var sendBtn = $('dscSendBtn');
         if (!inputEl) return;
@@ -5231,19 +5257,22 @@
                 st.textContent = data.hasKey ? dscT('✅ API Key 設定済み · 現在のモデル:') + ' ' + (data.model || 'deepseek-flash') : dscT('⚠️ API Key 未設定');
                 st.className = 'dsc-status ' + (data.hasKey ? 'ok' : '');
             }
-            // ★ 中转站配置加载（Key 只存数据目录，前端仅回显占位提示）
+            // ★ 停用整改：relay 配置接口已停用，不再请求；中转站相关控件一律禁用并提示。
             try {
-                var rres = await fetch('/api/relay/config', { cache: 'no-cache' });
-                var rdata = await rres.json();
-                var rak = $('dscRelayApiKeyInput');
-                if (rak) {
-                    rak.value = '';
-                    rak.placeholder = rdata.hasKey ? dscT('保存済み。空欄なら変更しません') : 'sk-...';
+                var __relayIds = ['dscRelayApiKeyInput', 'dscRelayBaseUrlInput',
+                    'dscRelayStreamInput', 'dscRelayModelSelect', 'dscModelAddBtn',
+                    'dscModelNewInput', 'dscModelNewOk', 'dscModelNewCancel'];
+                for (var __ri = 0; __ri < __relayIds.length; __ri++) {
+                    var __rel = $(__relayIds[__ri]);
+                    if (__rel) {
+                        try { __rel.disabled = true; } catch (eD) {}
+                        try { __rel.setAttribute('aria-disabled', 'true'); } catch (eA) {}
+                    }
                 }
-                var rbu = $('dscRelayBaseUrlInput');
-                if (rbu) { rbu.value = rdata.baseUrl || 'https://sta1n.ai/v1'; }
-                var rst = $('dscRelayStreamInput');
-                if (rst) { rst.checked = rdata.stream !== false; }
+                var __rbu0 = $('dscRelayBaseUrlInput');
+                if (__rbu0) { __rbu0.value = ''; __rbu0.placeholder = window.DSC_RELAY_DISABLED_MSG || '已停用'; }
+                var __rak0 = $('dscRelayApiKeyInput');
+                if (__rak0) { __rak0.value = ''; __rak0.placeholder = '该渠道已停用'; }
             } catch (e2) {}
         } catch (e) {
             var st2 = $('dscApiStatus');
@@ -5302,16 +5331,12 @@
             });
             var data = await res.json();
             if (!res.ok) throw new Error(data.error || '保存に失敗しました');
-            // ★ 中转站配置独立保存（Key 只落盘到数据目录 data/relay/relay_config.sts）
+            // ★ 停用整改：中转站配置接口已全面停用，前端不再发起任何 relay 配置写入。
             try {
                 if ($('dscRelayApiKeyInput') || $('dscRelayBaseUrlInput') || $('dscRelayStreamInput')) {
-                    await fetch('/api/relay/config', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ apiKey: relayApiKey, baseUrl: relayBaseUrl, stream: relayStream })
-                    });
+                    window.dscRelayBlockedAlert && window.dscRelayBlockedAlert();
                 }
-            } catch (e2) { toast(dscErrText('中转站設定の保存に失敗: ', e2.message), 'error'); }
+            } catch (e2) { /* 停用拦截，不影响 DeepSeek/豆包配置保存 */ }
             // ★【修复 v3】model 已在函数开头被限定为「与当前维度一致」，这里只做同维度静默同步：
             //   silent=true + crossDim=false ⇒ 不写维度标志、不重载消息、绝不播放全屏维度切换动画。
             //   这是「点保存设置后触发维度切换动画 / 被切到 st 维度」的最终封堵点。
@@ -5584,6 +5609,10 @@
     //   后端唯一真相 = /api/relay/config 的 customModels（存 data/relay/relay_config.sts）。
     //   与 DeepSeek 自定义模型（data/displaymodels/*.sts）严格分离，互不混存。
     function loadRelayModelsFromServer() {
+        // ★ 停用整改：relay 接口已停用，直接返回空清单，绝不发起请求。
+        try { window.__dscSetRelayCustomModels && window.__dscSetRelayCustomModels([]); } catch (e) {}
+        return Promise.resolve([]);
+        // eslint-disable-next-line no-unreachable
         return fetch('/api/relay/config', { method: 'GET', cache: 'no-cache' })
             .then(function (r) { return r.json(); })
             .then(function (d) {
@@ -5645,6 +5674,11 @@
     // ★ 中转站字段的「＋」：只写中转站维度（data/relay/relay_config.sts）
     //   绝不会掉进 DeepSeek 的 displaymodels 里。
     function confirmModelAdd() {
+        // ★ 停用整改：中转站(st)自定义模型新增入口直接拦截（纵深防御，底层 dscAddRelayModel 也已封）。
+        try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+        try { closeModelAdd(); } catch (e2) {}
+        return;
+        // eslint-disable-next-line no-unreachable
         var inp = $('dscModelNewInput');
         if (!inp) return;
         var name = inp.value.trim();
@@ -5843,6 +5877,10 @@
     // ★ 进入 ST 维度时：若当前模型不是中转站模型，切到最近使用的中转站模型（无则用第一个预置中转站模型）。
     //   否则 UI / 发送仍沿用 DeepSeek 模型，出现「ST 维度下却是 DeepSeek 模型」的串维度 bug。
     window.dscEnsureStModel = function () {
+        // ★ 停用整改：st 维度已下线，确保当前模型为 DeepSeek，绝不切换到中转站模型。
+        try { return window.dscEnsureDsModel ? window.dscEnsureDsModel() : 'deepseek-flash'; } catch (e) {}
+        return 'deepseek-flash';
+        // eslint-disable-next-line no-unreachable
         var cur = String(state.currentModel || '').trim();
         if (cur && window.dscDimForModel(cur) === 'st') return cur;
         var next = '';
@@ -5868,6 +5906,17 @@
     window.dscSetChatModel = function (model, persist) {
         var m = String(model == null ? '' : model).trim();
         if (!m) return '';
+        // ★ 停用整改：任何中转站(st)模型都不允许被设为当前模型。
+        if (window.dscDimForModel && window.dscDimForModel(m) === 'st') {
+            try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+            try { localStorage.setItem('dsc_st_dim', '0'); } catch (e2) {}
+            var dsFallback = 'deepseek-flash';
+            try {
+                var lastDs = String(localStorage.getItem('dsc_last_ds_model') || '').trim();
+                if (lastDs && window.dscDimForModel(lastDs) === 'ds') dsFallback = lastDs;
+            } catch (e3) {}
+            m = dsFallback;
+        }
         state.currentModel = m;
         applyModelToSelects(m);
         try { if (window.dscDimForModel(m) === 'ds') localStorage.setItem('dsc_last_ds_model', m); } catch (e) {}
@@ -5912,6 +5961,10 @@
 
     // ★ 中转站自定义模型：增 / 删（唯一真相在后端 data/relay/relay_config.sts）
     window.dscAddRelayModel = function (name) {
+        // ★ 停用整改：中转站模型新增入口彻底封堵。
+        try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+        return Promise.resolve(false);
+        // eslint-disable-next-line no-unreachable
         var v = String(name == null ? '' : name).trim();
         if (!v) return Promise.resolve(false);
         if (/\s/.test(v)) { toast('モデル名に空白は使用できません', 'error'); return Promise.resolve(false); }
@@ -5945,6 +5998,10 @@
           .catch(function () { return false; });
     };
     window.dscRemoveRelayModel = function (name) {
+        // ★ 停用整改：relay 配置接口已停用，删除操作直接拒绝。
+        try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+        return Promise.resolve(false);
+        // eslint-disable-next-line no-unreachable
         var v = String(name == null ? '' : name).trim();
         if (!v) return Promise.resolve(false);
         var arr = window.__dscRelayCustomList().filter(function (x) { return x !== v; });
@@ -6115,6 +6172,12 @@
             var v = String(model == null ? '' : model).trim();
             if (!v) return '';
             var d = dim || window.dscDimForModel(v);
+            // ★ 停用整改：st 维度模型应用一律拦截。
+            if (d === 'st' || (window.dscDimForModel && window.dscDimForModel(v) === 'st')) {
+                try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+                try { localStorage.setItem('dsc_st_dim', '0'); } catch (e2) {}
+                return '';
+            }
             if (d === 'db') {
                 if (window.dscApplyDoubaoModel) return window.dscApplyDoubaoModel(v);
                 return v;
@@ -7971,6 +8034,11 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
             (dim === 'st' ? T('中转站 · st 维度') : (dim === 'db' ? T('豆包 · db 维度') : T('DeepSeek · ds 维度')))
             + (m.custom ? ' · ' + T('自定义') : '');
         it.addEventListener('click', function () {
+            // ★ 停用整改：任何 st 维度模型项点击一律拦截。
+            if (dim === 'st') {
+                try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+                return;
+            }
             if (it.getAttribute('data-busy') === '1') return;
             it.setAttribute('data-busy', '1');
             it.classList.add('picked');
@@ -8012,6 +8080,11 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
 
     function switchTab(tab) {
         if (tab !== TAB_DS && tab !== TAB_ST && tab !== TAB_DB) return;
+        // ★ 停用整改：中转站(relay/st) tab 禁止进入，点击即弹窗并强制回到 DeepSeek。
+        if (tab === TAB_ST) {
+            try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+            tab = TAB_DS;
+        }
         activeTab = tab;
         var row = $('dscPickerAddRow');
         if (row) row.classList.remove('open');
@@ -8049,6 +8122,11 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
         var h = hub();
         inp.value = '';
         closeAdd();
+        // ★ 停用整改：禁止新增任何中转站(st)自定义模型。
+        if (dim === 'st') {
+            try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e) {}
+            return;
+        }
         var p;
         if (dim === 'st') {
             p = h.addRelay ? h.addRelay(v) : Promise.resolve(false);
@@ -8080,7 +8158,8 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
         var list = $('dscModelPickerList');
         if (!overlay || !list) return;
         var d = currentDim();
-        activeTab = d === 'st' ? TAB_ST : (d === 'db' ? TAB_DB : TAB_DS);
+        // ★ 停用整改：st 已下线，打开选择器时绝不允许落在 relay tab。
+        activeTab = (d === 'db') ? TAB_DB : TAB_DS;
         var row = $('dscPickerAddRow');
         if (row) row.classList.remove('open');
         render();
@@ -8126,9 +8205,20 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
 
         var tabs = overlay.querySelectorAll('.dsc-model-tab');
         for (var i = 0; i < tabs.length; i++) {
+            // ★ 停用整改：物理隐藏“中转站”tab，用户无法点击。
+            if (tabs[i].getAttribute('data-tab') === 'relay') {
+                tabs[i].style.display = 'none';
+                tabs[i].setAttribute('aria-disabled', 'true');
+            }
             tabs[i].addEventListener('click', function (e) {
                 e.stopPropagation();
-                switchTab(this.getAttribute('data-tab'));
+                var t = this.getAttribute('data-tab');
+                if (t === 'relay') {
+                    try { window.dscRelayBlockedAlert && window.dscRelayBlockedAlert(); } catch (e2) {}
+                    switchTab(TAB_DS);
+                    return;
+                }
+                switchTab(t);
             });
         }
         // ★ 对外：聊天框模型选择器需要复用同一个弹窗时可直接调用
