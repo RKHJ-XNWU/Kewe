@@ -1952,15 +1952,6 @@ bool dbIsAudioFile(String fileID) {
 // 播客：剧本生成 + 多音色合成 + MP3 拼接
 // ------------------------------------------------------------
 String dbPodcastSystemPrompt(String lang, int minutes) {
-  final langName = const {
-        'zh': '简体中文',
-        'en': 'English',
-        'ja': '日本語',
-        'ko': '한국어',
-        'ru': 'русский',
-        'fr': 'français',
-      }[lang] ??
-      '简体中文';
   return '''你是语音节目（播客）的编剧。请按以下条件写台本。
 1. 语言自由。用用户使用的语言书写，有指定则遵循。
 2. 写成两位主播（A 与 B）的自然对话。加入附和、吐槽、具体例子。
@@ -2190,7 +2181,7 @@ Map<String, dynamic> _modelListJson() {
         if (m.cat == 'chat') ...{
           'audioInput': dbSupportsAudioInput(m.value),
           'videoInput': dbSupportsVideoInput(m.value),
-          // ★ 统一强制上限（db_limits.dart）：所有模型一律 上下文 1024K / 最大输出 384K，
+          // ★ 统一强制上限（db_limits.dart）：所有模型一律 上下文 1024K / 最大输出使用全局 64K–384K 档位，
           //   预设模型与自定义模型同一套口径；前端据此在推理等级弹窗里声明。
           'maxOutput': dbForcedMaxOutput(m.value),
           'contextWindow': dbForcedContextWindow(m.value),
@@ -2226,7 +2217,9 @@ Map<String, dynamic> _modelListJson() {
     'reasoningLevelMin': DB_REASONING_LEVEL_MIN,
     'reasoningLevelMax': DB_REASONING_LEVEL_MAX,
     'reasoningLevelForced': DB_REASONING_LEVEL_FORCED,
-    'forcedMaxOutputTokens': DB_FORCED_OUTPUT_TOKENS,
+    // 最大输出实时读取全局档位，预设与自定义模型共用。
+    'forcedMaxOutputTokens': dbCurrentOutputLimit(),
+    'forcedMaxOutputOptions': DB_ALLOWED_OUTPUT_TOKENS,
     // 统一强制上下文窗口（全模型同一值，预设与自定义模型共用）
     'forcedContextTokens': DB_FORCED_CTX_TOKENS,
     // 兼容旧字段名（前端历史版本可能读取，值同 forcedContextTokens）

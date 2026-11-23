@@ -50,6 +50,10 @@ Future<void> handleDsChatConfig(HttpRequest req) async {
         'model': cfg.model,
         'hasImgKey': cfg.imgKey.isNotEmpty,
         'maskedImgKey': imgMasked,
+        'maxOutput': dbCurrentOutputLimit(),
+        'maxOutputLabel': dbTokensLabel(dbCurrentOutputLimit()),
+        'contextWindow': DB_FORCED_CTX_TOKENS,
+        'outputOptions': DB_ALLOWED_OUTPUT_TOKENS,
       });
       return;
 
@@ -75,6 +79,120 @@ Future<void> handleDsChatConfig(HttpRequest req) async {
     default:
       await dsJSONErr(res, 405, 'Method not allowed');
   }
+}
+
+// ------------------------------------------------------------
+// /api/ds-chat/output-limit —— 全模型共享的最大输出档位
+// ------------------------------------------------------------
+Future<void> handleDsChatOutputLimit(HttpRequest req) async {
+  final res = req.response;
+  if (req.method == 'GET') {
+    await dsJSONOk(res, 200, dbOutputLimitInfo());
+    return;
+  }
+  if (req.method != 'POST') {
+    await dsJSONErr(res, 405, 'Method not allowed');
+    return;
+  }
+  Map<String, dynamic> body;
+  try {
+    body = await readJsonBody(req, limit: 4096);
+  } catch (_) {
+    await dsJSONErr(res, 400, '無効なリクエスト本文です');
+    return;
+  }
+  final raw = body.containsKey('tokens') ? body['tokens'] : body['maxOutput'];
+  final tokens = dbParseOutputLimit(raw);
+  if (tokens == null) {
+    await dsJSONErr(
+        res, 400, '最大出力は 64K / 128K / 256K / 384K から選択してください');
+    return;
+  }
+  if (!saveDbOutputLimit(tokens)) {
+    await dsJSONErr(res, 500, '最大出力レベルの保存に失敗しました');
+    return;
+  }
+  await dsJSONOk(res, 200, <String, dynamic>{
+    'success': true,
+    ...dbOutputLimitInfo(),
+  });
+}
+
+// ------------------------------------------------------------
+// /api/ds-chat/context —— 当前会话的实时上下文统计
+// ------------------------------------------------------------
+int _dsEstimateTextTokens(String text) {
+  if (text.isEmpty) return 0;
+  var cjk = 0;
+  var other = 0;
+  for (final r in text.runes) {
+    final isCjk = (r >= 0x3000 && r <= 0x30ff) ||
+        (r >= 0x3400 && r <= 0x4dbf) ||
+        (r >= 0x4e00 && r <= 0x9fff) ||
+        (r >= 0xac00 && r <= 0xd7af) ||
+        (r >= 0xf900 && r <= 0xfaff);
+    if (isCjk) {
+      cjk++;
+    } else {
+      other++;
+    }
+  }
+  return cjk + ((other + 3) ~/ 4);
+}
+
+Future<void> handleDsChatContext(HttpRequest req) async {
+  final res = req.response;
+  if (req.method != 'GET') {
+    await dsJSONErr(res, 405, 'Method not allowed');
+    return;
+  }
+  final sessionID = qp(req, 'sessionId');
+  if (sessionID.trim().isEmpty) {
+    await dsJSONOk(res, 200, <String, dynamic>{
+      'sessionId': '',
+      'messages': 0,
+      'characters': 0,
+      'estimatedTokens': 0,
+      'reportedTokens': 0,
+      'billedTokens': 0,
+      ...dbOutputLimitInfo(),
+    });
+    return;
+  }
+  final dim = dsDimFromReq(req);
+  final messages = getDsMessages(sessionID, dim: dim);
+  var characters = 0;
+  var estimated = 0;
+  var billed = 0;
+  var latestPrompt = 0;
+  var latestCompletion = 0;
+  for (final m in messages) {
+    characters += m.content.runes.length;
+    // 每条消息预留少量角色与分隔开销；该值明确作为估算，而非计费数据。
+    estimated += 4 + _dsEstimateTextTokens(m.content);
+    final usage = m.usage;
+    if (usage != null) {
+      billed += usage.totalTokens;
+      if (usage.promptTokens > 0) {
+        latestPrompt = usage.promptTokens;
+        latestCompletion = usage.completionTokens;
+      }
+    }
+  }
+  if (estimated > DB_FORCED_CTX_TOKENS) estimated = DB_FORCED_CTX_TOKENS;
+  await dsJSONOk(res, 200, <String, dynamic>{
+    'sessionId': sessionID,
+    'dimension': dim,
+    'messages': messages.length,
+    'characters': characters,
+    'estimatedTokens': estimated,
+    'reportedTokens': latestPrompt + latestCompletion,
+    'promptTokens': latestPrompt,
+    'completionTokens': latestCompletion,
+    'billedTokens': billed,
+    'updatedAt': rfc3339(DateTime.now()),
+    ...dbOutputLimitInfo(),
+  });
 }
 
 // ------------------------------------------------------------
@@ -854,7 +972,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     await dsJSONErr(res, 400, '没有可继续生成的内容');
     return;
   }
-  // ★ 推理等级上限 999（db_limits.dart）；所有模型的最大输出统一强制 384K。
+  // ★ 推理等级上限 999；所有模型的最大输出统一读取全局档位（默认 384K）。
   level = dbClampReasoningLevel(level);
   final params = levelToParams(level);
   var maxTokens = params.maxTokens;

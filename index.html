@@ -41,6 +41,7 @@
         .dsc-model-tab.active { background: #ffffff; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
         .dsc-model-empty { padding: 18px 8px; text-align: center; font-size: 0.8rem; color: #9ca3af; }
     </style>
+    <link rel="stylesheet" href="kewe-ui.css?v=20261123-3">
 </head>
 <body>
     <div id="dscTopProbe"></div>
@@ -48,6 +49,17 @@
         <!-- 上部バー -->
         <div class="dsc-topbar">
             <button class="dsc-icon-btn" id="dscSidebarToggle" title="セッション一覧">☰</button>
+            <div class="dsc-command-cluster" id="dscCommandCluster">
+                <button type="button" class="dsc-output-limit-btn" id="dscOutputLimitBtn" title="全モデルの最大出力を選択" aria-haspopup="dialog">
+                    <span class="dsc-output-btn-orbit" aria-hidden="true"></span>
+                    <span class="dsc-output-btn-copy"><small>MAX</small><strong id="dscOutputButtonValue">384K</strong></span>
+                </button>
+                <button type="button" class="dsc-context-btn" id="dscContextBtn" title="リアルタイムコンテキストを表示" aria-haspopup="dialog">
+                    <span class="dsc-context-live-dot" aria-hidden="true"></span>
+                    <span class="dsc-context-btn-copy"><strong id="dscContextCompactValue">0</strong><small id="dscContextCompactPct">0%</small></span>
+                    <span class="dsc-context-btn-meter" aria-hidden="true"><i></i></span>
+                </button>
+            </div>
             <div class="dsc-kewe-logo" aria-hidden="true">
                 <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
                     <defs><radialGradient id="keweG" cx="50%" cy="45%" r="60%"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="55%" stop-color="#4c1d95"/><stop offset="100%" stop-color="#1e1b4b"/></radialGradient></defs>
@@ -731,7 +743,8 @@
     <script src="i18n/ai-prompts.js?v=14"></script>
     <script src="ds-files.js?v=5"></script>
     <script src="ds-devtools.js?v=5"></script>
-    <script src="deepseek-chat.js?v=20261123force-384k-1024k"></script>
+    <script src="deepseek-chat.js?v=20261123-output-center"></script>
+    <script src="dsc-control-center.js?v=20261123-3"></script>
     <script src="peakvalley.js?v=20261104i18n14"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->

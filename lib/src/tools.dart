@@ -2658,11 +2658,6 @@ Future<String> executeDsTool(String name, Map<String, dynamic> args) async {
   if (!DsToolGate.checkInner(name)) {
     return DsToolGate.denyText(name);
   }
-  // 豆包专属工具模式：UI 操作与感知一律重定向到虚拟屏幕，主屏不受影响。
-  if (false) {
-    final intercepted = await dsVdIntercept(name, args);
-    if (intercepted != null) return intercepted;
-  }
   switch (name) {
     // Shizuku 全部禁用（与 Go 版 shizukuDisabled=true 行为一致）
     case 'shizuku_status':

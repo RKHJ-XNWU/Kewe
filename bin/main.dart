@@ -102,6 +102,8 @@ void _register(String path, Handler h) {
 void registerRoutes() {
   // ---------- DeepSeek 聊天 ----------
   _register('/api/ds-chat/config', handleDsChatConfig);
+  _register('/api/ds-chat/output-limit', handleDsChatOutputLimit);
+  _register('/api/ds-chat/context', handleDsChatContext);
   _register('/api/ds-chat/sessions', handleDsChatSessions);
   _register('/api/ds-chat/sessions/batch-delete', handleDsChatSessionsBatchDelete);
   _register('/api/ds-chat/messages', handleDsChatMessages);

@@ -109,7 +109,6 @@
     function tExact(s) {
         if (s == null) return '';
         var str = String(s);
-        if (current === 'ja') return str;
         var d = dicts[current];
         if (!d) return str;
         if (Object.prototype.hasOwnProperty.call(d, str)) return d[str];
@@ -128,7 +127,7 @@
     }
 
     function tCore(s) {
-        if (current === 'ja') return s;
+        // 六语统一查完整字典；ja 的恒等映射同样经过同一条校验路径。
         var d = dicts[current];
         if (!d) return s;
 

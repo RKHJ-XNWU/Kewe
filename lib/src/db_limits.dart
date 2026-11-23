@@ -1,64 +1,109 @@
 // ============================================================
-// db_limits.dart —— 强制能力上限表（用户级硬约束，优先级最高）
+// db_limits.dart —— 全模型统一能力限制与全局输出档位
 //
-// 所有者指定的硬性上限（不可被推理等级 / 长文模式 / 快速模式覆盖）：
-//   · 所有模型一律 上下文窗口 1024K ・ 最大输出 384K
-//     —— 预设模型、自定义模型（用户手动添加的 value）、中转站模型、DeepSeek 维度
-//        全部统一，不再有例外，也不再按模型族/版本号区分。
-//   · 推理等级固定 Lv.999，且等级不再参与 max_tokens 计算
-//
-// 历史沿革：
-//   2026-11 之前本表只约束 Doubao-Seed-Evolving / 2.1 Pro 260915 / 2.1 lite 三族；
-//   2026-11-23 按所有者要求改为「全模型统一」，族识别函数仅保留作兼容与说明用途，
-//   不再作为是否施加限制的闸门。
-//
-// 设计原则：
-//   1) 本文件是唯一可信来源。聊天入口、续写入口、前端模型目录接口
-//      全部从这里取上限，任何调用方都不得把上限调低。
-//   2) 只有模型标识为空（尚未选择模型）时才返回 0，表示「无从判断」。
-//   3) 384K 是「允许模型输出到的最大上限」（cap），不是默认输出长度；
-//      模型实际生成多少由内容决定，本值只负责把请求的 max_tokens 顶到该上限。
-//      若上游服务商因自身上限更小而拒绝该值，由所有者自行承担，本表不做收敛。
+// · 上下文窗口：1024K（1K = 1024 tokens）。
+// · 最大输出：64K / 128K / 256K / 384K，默认 384K。
+// · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
+//   聊天、续写及模型能力目录都读取同一个值。
+// · 推理等级不再参与最终 max_tokens 的计算。
 // ============================================================
 
-/// 1K = 1024 tokens（本文件所有 K 均按 1024 计）
+import 'dart:io';
+
+import 'globals.dart';
+
 const int DB_NUM_1K = 1024;
-
-/// 强制最大输出：384K tokens（全模型统一的输出上限，393216）
-const int DB_FORCED_OUTPUT_TOKENS = 384 * DB_NUM_1K;
-
-/// 强制上下文窗口：1024K tokens（全模型统一，固定，不再动态扩展）
+const int DB_DEFAULT_OUTPUT_TOKENS = 384 * DB_NUM_1K;
+const List<int> DB_ALLOWED_OUTPUT_TOKENS = <int>[
+  64 * DB_NUM_1K,
+  128 * DB_NUM_1K,
+  256 * DB_NUM_1K,
+  384 * DB_NUM_1K,
+];
 const int DB_FORCED_CTX_TOKENS = 1024 * DB_NUM_1K;
 
-/// 推理等级下限 / 上限 / 强制值
 const int DB_REASONING_LEVEL_MIN = 1;
 const int DB_REASONING_LEVEL_MAX = 999;
 const int DB_REASONING_LEVEL_FORCED = 999;
 
-/// 2.1 Pro 模型族根（不含版本号）
 const String DB_PRO_MODEL_ROOT = 'doubao-seed-2-1-pro';
-
-/// 2.1 Pro 的当前版本号（历史族识别用；现在所有模型统一 1024K / 384K）
 const String DB_PRO_FORCED_VERSION = '260915';
-
-/// 模型族前缀：Evolving 整族（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
 const List<String> dbCodingModelPrefixes = <String>[
   'doubao-seed-evolving',
 ];
-
-/// 模型族前缀：lite 档（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
 const List<String> dbLiteForcedModelPrefixes = <String>[
   'doubao-seed-2-1-lite',
 ];
-
-/// 旧版本号 → 当前版本号（保证历史配置、历史会话继续可用）
 const Map<String, String> dbModelValueAliases = <String, String>{
   'doubao-seed-2-1-pro-260628': 'doubao-seed-2-1-pro-260915',
   'doubao-seed-2-1-pro': 'doubao-seed-2-1-pro-260915',
   'doubao-seed-2-1-lite': 'doubao-seed-2-1-lite-260915',
 };
 
-/// 把历史模型值统一到当前版本号；未命中的值原样返回。
+String get _dbOutputLimitPath => '$DATA_DIR/output_limit.txt';
+
+/// 仅接受四个明确档位；其它输入返回 null，绝不静默放大或缩小。
+int? dbParseOutputLimit(dynamic value) {
+  int? tokens;
+  if (value is int) {
+    tokens = value;
+  } else if (value is num) {
+    tokens = value.toInt();
+  } else if (value is String) {
+    final raw = value.trim().toUpperCase();
+    if (raw.endsWith('K')) {
+      final k = int.tryParse(raw.substring(0, raw.length - 1));
+      if (k != null) tokens = k * DB_NUM_1K;
+    } else {
+      tokens = int.tryParse(raw);
+    }
+  }
+  if (tokens == null || !DB_ALLOWED_OUTPUT_TOKENS.contains(tokens)) {
+    return null;
+  }
+  return tokens;
+}
+
+/// 当前全局输出上限。文件不存在、损坏或含非法值时安全回退到 384K。
+int dbCurrentOutputLimit() {
+  try {
+    final parsed = dbParseOutputLimit(
+        File(_dbOutputLimitPath).readAsStringSync().trim());
+    return parsed ?? DB_DEFAULT_OUTPUT_TOKENS;
+  } catch (_) {
+    return DB_DEFAULT_OUTPUT_TOKENS;
+  }
+}
+
+/// 原子保存全局档位，避免应用中断时留下半个文件。
+bool saveDbOutputLimit(dynamic value) {
+  final tokens = dbParseOutputLimit(value);
+  if (tokens == null) return false;
+  try {
+    ensureDir(DATA_DIR);
+    final tmp = File('$_dbOutputLimitPath.tmp');
+    tmp.writeAsStringSync('$tokens\n', flush: true);
+    tmp.renameSync(_dbOutputLimitPath);
+    return true;
+  } catch (e) {
+    logp('❌ 最大出力档位の保存に失敗: $e');
+    return false;
+  }
+}
+
+Map<String, dynamic> dbOutputLimitInfo() => <String, dynamic>{
+      'maxOutput': dbCurrentOutputLimit(),
+      'maxOutputLabel': dbTokensLabel(dbCurrentOutputLimit()),
+      'defaultOutput': DB_DEFAULT_OUTPUT_TOKENS,
+      'contextWindow': DB_FORCED_CTX_TOKENS,
+      'options': DB_ALLOWED_OUTPUT_TOKENS
+          .map((n) => <String, dynamic>{
+                'tokens': n,
+                'label': dbTokensLabel(n),
+              })
+          .toList(),
+    };
+
 String dbCanonicalModelValue(String model) {
   final m = model.trim().toLowerCase();
   if (m.isEmpty) return model;
@@ -67,31 +112,18 @@ String dbCanonicalModelValue(String model) {
   return model.trim();
 }
 
-/// 该模型是否属于「2.1 Pro 260915」——按版本段精确判断，其它版本号一律不算。
-///
-///   doubao-seed-2-1-pro                 → 无版本号 = 当前版本（别名统一为 260915）→ true
-///   doubao-seed-2-1-pro-260915          → true
-///   doubao-seed-2-1-pro-260915-vision   → true（同版本的派生标识）
-///   doubao-seed-2-1-pro-260628          → false（旧版本号本身不算；但会被别名改成 260915）
-///   doubao-seed-2-1-pro-261001          → false（将来的新版本默认不受约束）
 bool dbIsPro260915(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
   if (!m.startsWith(DB_PRO_MODEL_ROOT)) return false;
   var rest = m.substring(DB_PRO_MODEL_ROOT.length);
   if (rest.isEmpty) return true;
-  if (!rest.startsWith('-')) return false; // 如 doubao-seed-2-1-proxxx
+  if (!rest.startsWith('-')) return false;
   rest = rest.substring(1);
   if (rest.isEmpty) return false;
-  final seg = rest.split('-').first;
-  return seg == DB_PRO_FORCED_VERSION;
+  return rest.split('-').first == DB_PRO_FORCED_VERSION;
 }
 
-/// 该模型是否属于「编程模型」族（Evolving / 2.1 Pro 260915）
-///   ① Evolving：整族命中；
-///   ② 2.1 Pro：只有 260915 版本命中；
-///   ③ 其它模型不命中。
-/// 注意：族识别结果已不再影响上限——所有模型统一强制，本函数仅作说明/兼容用途。
 bool dbIsForcedCodingModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -101,8 +133,6 @@ bool dbIsForcedCodingModel(String model) {
   return dbIsPro260915(m);
 }
 
-/// 该模型是否属于「lite」族（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
-/// 注意：族识别结果已不再影响上限——所有模型统一强制，本函数仅作说明/兼容用途。
 bool dbIsForcedLiteModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -112,21 +142,14 @@ bool dbIsForcedLiteModel(String model) {
   return false;
 }
 
-/// 该模型是否受统一强制上限约束。
-/// ★ 2026-11-23 起：只要模型标识非空就生效——预设、自定义、中转站、DeepSeek 维度一视同仁，
-///   不再按模型族 / 版本号区分；只有「尚未选择模型」（空标识）返回 false。
 bool dbHasForcedLimits(String model) => model.trim().isNotEmpty;
 
-/// 强制最大输出（tokens）。返回 0 表示「模型标识为空，无从判断」。
 int dbForcedMaxOutput(String model) =>
-    dbHasForcedLimits(model) ? DB_FORCED_OUTPUT_TOKENS : 0;
+    dbHasForcedLimits(model) ? dbCurrentOutputLimit() : 0;
 
-/// 强制上下文窗口（tokens）。返回 0 表示「模型标识为空，无从判断」。
 int dbForcedContextWindow(String model) =>
     dbHasForcedLimits(model) ? DB_FORCED_CTX_TOKENS : 0;
 
-/// 推理等级收敛到 [DB_REASONING_LEVEL_MIN, DB_REASONING_LEVEL_MAX]。
-/// 注意：等级不再参与 max_tokens 计算（强制输出由本表决定）。
 int dbClampReasoningLevel(int level) {
   var l = level;
   if (l < DB_REASONING_LEVEL_MIN) l = DB_REASONING_LEVEL_MIN;
@@ -134,7 +157,6 @@ int dbClampReasoningLevel(int level) {
   return l;
 }
 
-/// 千位计数格式化，例如 393216 → "384K"
 String dbTokensLabel(int tokens) {
   if (tokens >= DB_NUM_1K && tokens % DB_NUM_1K == 0) {
     return '${tokens ~/ DB_NUM_1K}K';

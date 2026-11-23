@@ -799,7 +799,6 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
   final toolLogs = <String>[];
   final msgs = <Map<String, dynamic>>[...messages];
   final dbSkipSigs = <String>{};
-  final isDb = dsIsDbModel(model);
 
   for (var iter = 0; iter < maxIter; iter++) {
     final r = await _streamOnce(
@@ -899,7 +898,6 @@ Future<ToolStreamOutcome> callDsWithTools(
   final reasoningParts = <String>[];
   final toolLogs = <String>[];
   final dbSkipSigs = <String>{};
-  final isDb = dsIsDbModel(model);
 
   for (var round = 0; round < maxIter; round++) {
     final resp = await callDsChatAPIRaw(
