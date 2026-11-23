@@ -4,7 +4,7 @@
 // 所有者指定的硬性上限（不可被推理等级 / 长文模式 / 快速模式覆盖）：
 //   · Doubao-Seed-Evolving         上下文窗口 1024K ・ 最大输出 256K
 //   · 豆包 2.1 Pro（仅 260915 版本） 上下文窗口 1024K ・ 最大输出 256K
-//   · 豆包 2.1 lite（260915）       上下文窗口 1024K（运行时动态扩展）・ 最大输出 256K
+//   · 豆包 2.1 lite（260915）       上下文窗口 1024K（固定，不再动态扩展）・ 最大输出 256K
 //   · 推理等级固定 Lv.999，且等级不再参与 max_tokens 计算
 //   · 其余模型（2.1 turbo / 2.0 mini / 2.0 lite / GLM / DeepSeek / 中转站 …）
 //     一律不受本表约束，行为与以前完全一致（maxOutput / contextWindow 返回 0）
@@ -29,14 +29,8 @@ const int DB_FORCED_OUTPUT_TOKENS = 256 * DB_NUM_1K;
 /// 编程模型强制上下文窗口：1024K tokens
 const int DB_FORCED_CTX_TOKENS_CODING = 1024 * DB_NUM_1K;
 
-/// lite 档上下文窗口上限：1024K tokens（运行时按用量动态扩展，永不超过此值）
+/// lite 档强制上下文窗口：1024K tokens（固定，不再动态扩展）
 const int DB_FORCED_CTX_TOKENS_LITE = 1024 * DB_NUM_1K;
-
-/// lite 档动态上下文窗口的下限（最小可用窗口）
-const int DB_LITE_CTX_MIN_TOKENS = 64 * DB_NUM_1K;
-
-/// lite 档动态上下文窗口的扩展步长（每次按 32K 阶梯向上扩展）
-const int DB_LITE_CTX_STEP_TOKENS = 32 * DB_NUM_1K;
 
 /// 推理等级下限 / 上限 / 强制值
 const int DB_REASONING_LEVEL_MIN = 1;
@@ -54,7 +48,7 @@ const List<String> dbCodingModelPrefixes = <String>[
   'doubao-seed-evolving',
 ];
 
-/// 模型族前缀：lite 档（上下文 1024K 动态 ・ 输出 256K）
+/// 模型族前缀：lite 档（上下文 1024K 固定 ・ 输出 256K）
 const List<String> dbLiteForcedModelPrefixes = <String>[
   'doubao-seed-2-1-lite',
 ];
@@ -108,7 +102,7 @@ bool dbIsForcedCodingModel(String model) {
   return dbIsPro260915(m);
 }
 
-/// 该模型是否属于「lite」强制档（上下文 1024K 动态 ・ 输出 256K）
+/// 该模型是否属于「lite」强制档（上下文 1024K 固定 ・ 输出 256K）
 bool dbIsForcedLiteModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -131,26 +125,6 @@ int dbForcedContextWindow(String model) {
   if (dbIsForcedCodingModel(model)) return DB_FORCED_CTX_TOKENS_CODING;
   if (dbIsForcedLiteModel(model)) return DB_FORCED_CTX_TOKENS_LITE;
   return 0;
-}
-
-/// 上下文窗口是否「动态」——lite 档按实际用量阶梯式扩展，上限 1024K。
-bool dbContextIsDynamic(String model) => dbIsForcedLiteModel(model);
-
-/// lite 档的当前动态上下文窗口：
-///   已经开始使用的量（[usedTokens]）向上取整到 32K 阶梯，
-///   下限 64K、上限 1024K。未列入 lite 档时直接返回强制窗口值。
-int dbDynamicContextWindow(String model, int usedTokens) {
-  final cap = dbForcedContextWindow(model);
-  if (cap <= 0) return cap;
-  if (!dbContextIsDynamic(model)) return cap;
-  var used = usedTokens;
-  if (used < 0) used = 0;
-  // 向上取整到步长
-  var win = (used + DB_LITE_CTX_STEP_TOKENS - 1) ~/ DB_LITE_CTX_STEP_TOKENS *
-      DB_LITE_CTX_STEP_TOKENS;
-  if (win < DB_LITE_CTX_MIN_TOKENS) win = DB_LITE_CTX_MIN_TOKENS;
-  if (win > cap) win = cap;
-  return win;
 }
 
 /// 推理等级收敛到 [DB_REASONING_LEVEL_MIN, DB_REASONING_LEVEL_MAX]。

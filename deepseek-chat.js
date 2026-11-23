@@ -38,7 +38,7 @@
     // 强制能力上限表（与后端 lib/src/db_limits.dart 保持一致，后端为准）
     //   · Doubao-Seed-Evolving      → 上下文 1024K ・ 输出 256K
     //   · 豆包 2.1 Pro（仅 260915）  → 上下文 1024K ・ 输出 256K
-    //   · 豆包 2.1 lite             → 上下文 1024K（动态）・ 输出 256K
+    //   · 豆包 2.1 lite             → 上下文 1024K（固定）・ 输出 256K
     //   · 其余模型（近日 turbo / mini / 2.0 lite / GLM / DeepSeek / 中转站）
     //     一律不受约束，走原有逻辑不变
     var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
@@ -47,7 +47,7 @@
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
     var DSC_LIMIT_OUTPUT_TOKENS = 262144;      // 256K
     var DSC_LIMIT_CTX_CODING_TOKENS = 1048576; // 1024K
-    var DSC_LIMIT_CTX_LITE_TOKENS = 1048576;   // 1024K（动态扩展，上限 1024K）
+    var DSC_LIMIT_CTX_LITE_TOKENS = 1048576;   // 1024K（固定，不再动态扩展）
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
         'doubao-seed-2-1-pro': 'doubao-seed-2-1-pro-260915',
@@ -105,11 +105,11 @@
             return { kind: 'coding', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
                      context: DSC_LIMIT_CTX_CODING_TOKENS, dynamic: false };
         }
-        // ③ 2.1 lite：1024K 动态 ・ 输出 256K
+        // ③ 2.1 lite：1024K 固定 ・ 输出 256K
         for (i = 0; i < DSC_LIMIT_LITE_PREFIX.length; i++) {
             if (m.indexOf(DSC_LIMIT_LITE_PREFIX[i]) === 0) {
                 return { kind: 'lite', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
-                         context: DSC_LIMIT_CTX_LITE_TOKENS, dynamic: true };
+                         context: DSC_LIMIT_CTX_LITE_TOKENS, dynamic: false };
             }
         }
         // ④ 其它模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 不受约束
@@ -132,14 +132,14 @@
             };
             return free[lang] || free.zh;
         }
-        var ctx = dscTokenLabel(lim.context), dyn = !!lim.dynamic;
+        var ctx = dscTokenLabel(lim.context);
         var map = {
-            zh: '由于你使用的是强制上限模型（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite），所以强制上下文窗口为 ' + ctx + (dyn ? '（动态变化）' : '') + '，强制输出最大为 256K。',
-            ja: '強制上限モデル（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite）のため、コンテキストウィンドウは ' + ctx + (dyn ? '（動的変化）' : '') + '、最大出力は 256K に強制固定されます。',
-            en: 'Because you are using a forced-limit model (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite), the context window is forced to ' + ctx + (dyn ? ' (dynamic)' : '') + ' and max output is forced to 256K.',
-            ko: '강제 상한 모델(Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite)이므로 컨텍스트 윈도우는 ' + ctx + (dyn ? ' (동적 변화)' : '') + ', 최대 출력은 256K로 강제 고정됩니다.',
-            ru: 'Вы используете модель с жёстким лимитом (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite): контекстное окно принудительно ' + ctx + (dyn ? ' (динамическое)' : '') + ', максимальный вывод — 256K.',
-            fr: "Vous utilisez un modèle à plafond forcé (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite) : la fenêtre de contexte est forcée à " + ctx + (dyn ? ' (dynamique)' : '') + ' et la sortie maximale à 256K.'
+            zh: '由于你使用的是强制上限模型（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite），所以强制上下文窗口为 ' + ctx + '（固定，不再动态扩展），强制输出最大为 256K。',
+            ja: '強制上限モデル（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite）のため、コンテキストウィンドウは ' + ctx + '（固定、動的拡張なし）、最大出力は 256K に強制固定されます。',
+            en: 'Because you are using a forced-limit model (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite), the context window is forced to ' + ctx + ' (fixed, no dynamic expansion) and max output is forced to 256K.',
+            ko: '강제 상한 모델(Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite)이므로 컨텍스트 윈도우는 ' + ctx + '(고정, 동적 확장 없음), 최대 출력은 256K로 강제 고정됩니다.',
+            ru: 'Вы используете модель с жёстким лимитом (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite): контекстное окно принудительно ' + ctx + ' (фиксированное, без динамического расширения), максимальный вывод — 256K.',
+            fr: "Vous utilisez un modèle à plafond forcé (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite) : la fenêtre de contexte est forcée à " + ctx + " (fixe, sans extension dynamique) et la sortie maximale à 256K."
         };
         return map[lang] || map.zh;
     }
@@ -5388,7 +5388,7 @@
             if (lim) {
                 var ctxHtml = '<span class="hl">' + dscTokenLabel(lim.context) + '</span>';
                 ctxLine = '<div style="margin-bottom:4px;">' +
-                    dscLevelFmt(lim.dynamic ? c.ctxDynamic : c.ctxStatic, ctxHtml) + '</div>';
+                    dscLevelFmt(c.ctxStatic, ctxHtml) + '</div>';
             }
             info.innerHTML = head + ctxLine +
                 '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ' + c.stream + '</div>';

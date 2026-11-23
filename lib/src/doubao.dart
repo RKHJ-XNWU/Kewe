@@ -2195,13 +2195,9 @@ Map<String, dynamic> _modelListJson() {
           //   maxOutput == 0 表示该模型不受强制表约束（走原有逻辑）。
           'maxOutput': dbForcedMaxOutput(m.value),
           'contextWindow': dbForcedContextWindow(m.value),
-          'contextDynamic': dbContextIsDynamic(m.value),
-          'contextWindowMin': dbContextIsDynamic(m.value)
-              ? DB_LITE_CTX_MIN_TOKENS
-              : dbForcedContextWindow(m.value),
-          'contextWindowStep': dbContextIsDynamic(m.value)
-              ? DB_LITE_CTX_STEP_TOKENS
-              : 0,
+          'contextDynamic': false,
+          'contextWindowMin': dbForcedContextWindow(m.value),
+          'contextWindowStep': 0,
         },
       }
   ];

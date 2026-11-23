@@ -960,7 +960,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
   // ★★★ 强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
   //   编程模型（Doubao-Seed-Evolving / 2.1 Pro 260915）：上下文 1024K ・ 输出 256K；
-  //   2.1 lite：上下文 1024K（动态扩展）・ 输出 256K；
+  //   2.1 lite：上下文 1024K（固定，不再动态扩展）・ 输出 256K；
   //   其余模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）不受约束，逻辑不变。
   //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
   final forcedOut = dbForcedMaxOutput(model);
