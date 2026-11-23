@@ -178,14 +178,22 @@ Future<void> handleBackup(HttpRequest req) async {
     final gz = gzip.encoder.startChunkedConversion(_FileSink(file));
     final tar = TarWriter(gz);
 
+    // ★ 账号隔离：登录用户只能备份自己的 DATA_DIR，绝不能把
+    //   data/auth 与 data/users 下其他账号的内容打进压缩包。
+    final scoped = currentUserId.isNotEmpty &&
+        DATA_DIR != '$BASE_DIR/data';
+    final dataRoot = scoped ? DATA_DIR : '$BASE_DIR/data';
     for (final dirName in dirs) {
-      final dirPath = '$BASE_DIR/$dirName';
+      final isData = dirName == 'data';
+      final dirPath = isData ? dataRoot : '$BASE_DIR/$dirName';
       if (!Directory(dirPath).existsSync()) continue;
       final entries = Directory(dirPath).listSync(recursive: true);
       // 先父后子，保证解压顺序合理
       entries.sort((a, b) => a.path.compareTo(b.path));
       for (final e in entries) {
-        final rel = e.path.substring(BASE_DIR.length + 1);
+        final rel = isData
+            ? 'data/${e.path.substring(dataRoot.length + 1)}'
+            : e.path.substring(BASE_DIR.length + 1);
         final stat = FileStat.statSync(e.path);
         if (e is Directory) {
           await tar.addDir(rel, stat.modified);
@@ -321,8 +329,12 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
-  // 清空 data/ 与 imgs/
-  for (final d in ['$BASE_DIR/data', '$BASE_DIR/imgs']) {
+  // 清空当前账号的数据目录与共享 imgs/（绝不触碰其他账号）
+  final restoreDataRoot = currentUserId.isNotEmpty &&
+          DATA_DIR != '$BASE_DIR/data'
+      ? DATA_DIR
+      : '$BASE_DIR/data';
+  for (final d in [restoreDataRoot, '$BASE_DIR/imgs']) {
     final dir = Directory(d);
     if (!dir.existsSync()) continue;
     for (final e in dir.listSync()) {
@@ -364,7 +376,9 @@ Future<void> handleRestore(HttpRequest req) async {
       continue;
     }
     name = parts.join('/');
-    final target = '$BASE_DIR/$name';
+    final target = (name == 'data' || name.startsWith('data/'))
+        ? '$restoreDataRoot/${name.length > 5 ? name.substring(5) : ''}'
+        : '$BASE_DIR/$name';
     try {
       if (e.typeflag == '5') {
         Directory(target).createSync(recursive: true);

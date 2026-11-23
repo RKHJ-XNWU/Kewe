@@ -15,6 +15,7 @@ import 'ds_crypto.dart';
 import 'ds_usage.dart';
 import 'files.dart';
 import 'globals.dart';
+import 'kewe_secrets.dart';
 
 const int DS_MAX_OUTPUT_TOKENS = 120000;
 
@@ -28,6 +29,28 @@ const String DS_DIM_DB = 'db';
 const String DS_DIM_ST = 'st';
 const int DS_NORMAL_OUTPUT_TOKENS = 8192;
 const int DS_TARGET_CHARS_5M = 5000000;
+
+// ------------------------------------------------------------
+// 用户数据加密（AES-256-GCM）
+//   磁盘上的 .sts 只保存密文；读取时在服务端按当前登录账号的密钥解密。
+//   未登录的启动期数据迁移保持明文，首次账号注册/登录后统一就地加密。
+// ------------------------------------------------------------
+String _protectField(String plain) {
+  if (currentUserId.isEmpty) return plain;
+  if (plain.isEmpty) return plain;
+  return keweEncryptTextForUser(currentUserId, plain);
+}
+
+String _unprotectField(String escaped, {String fallback = ''}) {
+  final raw = unescDs(escaped);
+  if (currentUserId.isEmpty || !keweIsEncryptedText(raw)) return raw;
+  try {
+    return keweDecryptTextForUser(currentUserId, raw);
+  } catch (e) {
+    logp('❌ 聊天密文解密失败（会话可能属于其他账号或密钥已损坏）: $e');
+    return fallback;
+  }
+}
 const int DS_TTS_MAX_RUNES = 1000000;
 const int DS_TTS_CHUNK_RUNES = 2500;
 const int DS_TTS_CHUNK_HARD_MAX = 2900;
@@ -147,7 +170,7 @@ SessionFile readDsSessionFile(String path, {String? dim}) {
       if (parts.length < 4) continue;
       sess = DsSession(
         id: parts[0],
-        title: unescDs(parts[1]),
+        title: _unprotectField(parts[1]),
         createdAt: parts[2],
         updatedAt: parts[3],
       );
@@ -155,12 +178,12 @@ SessionFile readDsSessionFile(String path, {String? dim}) {
       final parts = line.substring(3).split('|');
       if (parts.length < 4) continue;
       final att = parts.length >= 5 ? parts[4] : '';
-      final rea = parts.length >= 6 ? unescDs(parts[5]) : '';
+      final rea = parts.length >= 6 ? _unprotectField(parts[5]) : '';
       final dm = parts.length >= 8 ? parts[7].trim() : DS_DIM_DS;
       final md = DsMessage(
         id: parts[0],
         role: parts[1],
-        content: unescDs(parts[2]),
+        content: _unprotectField(parts[2]),
         createdAt: parts[3],
         attachments: att,
         reasoning: rea,
@@ -199,28 +222,23 @@ DsMessage? parseDsMessageLine(String line, {int maxReasoningUnits = 0}) {
       f.add(line.substring(pos).trimRight());
       break;
     }
-    if (f.length == 5 &&
-        maxReasoningUnits > 0 &&
-        e - pos > maxReasoningUnits) {
-      f.add(line.substring(pos, pos + maxReasoningUnits));
-    } else {
-      f.add(line.substring(pos, e));
-    }
+    // 密文字段必须完整读取后解密，不能先截断（否则 AES-GCM 校验失败）。
+    f.add(line.substring(pos, e));
     pos = e + 1;
   }
   if (f.length < 4) return null;
 
   final d = f.length >= 8 ? f[7].trim() : DS_DIM_DS;
-  final reaCut = f.length >= 6 &&
-      maxReasoningUnits > 0 &&
-      f[5].length >= maxReasoningUnits;
+  var reasoning = f.length >= 6 ? _unprotectField(f[5]) : '';
+  final reaCut = maxReasoningUnits > 0 && reasoning.length >= maxReasoningUnits;
+  if (reaCut) reasoning = reasoning.substring(0, maxReasoningUnits);
   return DsMessage(
     id: f[0],
     role: f[1],
-    content: unescDs(f[2]),
+    content: _unprotectField(f[2]),
     createdAt: f[3],
     attachments: f.length >= 5 ? f[4] : '',
-    reasoning: f.length >= 6 ? unescDs(f[5]) : '',
+    reasoning: reasoning,
     reasoningTruncated: reaCut,
     usage: dsParseUsageField(f),
     dim: d.isEmpty ? DS_DIM_DS : d,
@@ -380,7 +398,7 @@ bool saveDsSession(DsSession sess) {
     return false;
   }
   final line =
-      '#S|${sess.id}|${escDs(sess.title)}|${sess.createdAt}|${sess.updatedAt}\n';
+      '#S|${sess.id}|${escDs(_protectField(sess.title))}|${sess.createdAt}|${sess.updatedAt}\n';
   ensureDir(dsSessionsDir);
   return writeTextFile(path, line);
 }
@@ -401,7 +419,7 @@ bool updateDsSession(String id, String newTitle, String updatedAt) {
     final parts = trimmed.substring(3).split('|');
     if (parts.length < 4) continue;
     if (parts[0] == id) {
-      lines[i] = '#S|${parts[0]}|${escDs(newTitle)}|${parts[2]}|$updatedAt';
+      lines[i] = '#S|${parts[0]}|${escDs(_protectField(newTitle))}|${parts[2]}|$updatedAt';
       changed = true;
       break;
     }
@@ -417,8 +435,8 @@ bool appendDsMessage(DsMessage m) {
     return false;
   }
   final d = m.dim.isEmpty ? DS_DIM_DS : m.dim;
-  final line = '#M|${m.id}|${m.role}|${escDs(m.content)}|${m.createdAt}|'
-      '${m.attachments}|${escDs(m.reasoning)}|${dsEncodeUsageField(m.usage)}'
+  final line = '#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
+      '${m.attachments}|${escDs(_protectField(m.reasoning))}|${dsEncodeUsageField(m.usage)}'
       '|$d\n';
   try {
     File(path).writeAsStringSync(line, mode: FileMode.append);
@@ -458,8 +476,8 @@ DsMessage? updateDsMessageContent(String sessionID, String msgID,
     final created = parts[3];
     final mergedUsage = dsMergeUsage(dsParseUsageField(parts), addUsage);
     final keepDim = parts.length >= 8 ? parts[7].trim() : DS_DIM_DS;
-    lines[i] = '#M|${parts[0]}|${parts[1]}|${escDs(newContent)}|$created|$att|'
-        '${escDs(newReasoning)}|${dsEncodeUsageField(mergedUsage)}|'
+    lines[i] = '#M|${parts[0]}|${parts[1]}|${escDs(_protectField(newContent))}|$created|$att|'
+        '${escDs(_protectField(newReasoning))}|${dsEncodeUsageField(mergedUsage)}|'
         '${keepDim.isEmpty ? DS_DIM_DS : keepDim}';
     out = DsMessage(
       id: parts[0],
@@ -574,7 +592,7 @@ DsSession? _parseDsSessLine(String line) {
   if (parts.length < 4) return null;
   return DsSession(
     id: parts[0],
-    title: unescDs(parts[1]),
+    title: _unprotectField(parts[1]),
     createdAt: parts[2],
     updatedAt: parts[3],
   );
@@ -624,6 +642,68 @@ void invalidateDsSessionCaches(String path) {
   _dsTailCache.remove(path);
   final old = _dsMsgsCache.remove(path);
   if (old != null) _dsMsgsCacheChars -= old.chars;
+}
+
+/// 首次登录/注册后就地加密历史明文会话（标题、正文、思考链）。
+/// 已经是 KWENC1 的字段跳过，可重复调用。
+int encryptLegacyUserDataForCurrentUser() {
+  if (currentUserId.isEmpty) return 0;
+  List<FileSystemEntity> files;
+  try {
+    files = Directory(dsSessionsDir).listSync();
+  } catch (_) {
+    return 0;
+  }
+  var changedFiles = 0;
+  for (final entity in files) {
+    if (entity is! File || !entity.path.endsWith('.sts')) continue;
+    String data;
+    try {
+      data = entity.readAsStringSync();
+    } catch (_) {
+      continue;
+    }
+    var changed = false;
+    final outLines = <String>[];
+    for (final raw in data.split('\n')) {
+      final line = raw.trimRight();
+      if (!line.startsWith('#S|') && !line.startsWith('#M|')) {
+        if (line.isNotEmpty) outLines.add(line);
+        continue;
+      }
+      final parts = line.substring(3).split('|');
+      if (line.startsWith('#S|') && parts.length >= 4) {
+        final title = unescDs(parts[1]);
+        if (title.isNotEmpty && !keweIsEncryptedText(title)) {
+          parts[1] = escDs(_protectField(title));
+          changed = true;
+        }
+      } else if (line.startsWith('#M|') && parts.length >= 4) {
+        final content = unescDs(parts[2]);
+        if (content.isNotEmpty && !keweIsEncryptedText(content)) {
+          parts[2] = escDs(_protectField(content));
+          changed = true;
+        }
+        if (parts.length >= 6) {
+          final reasoning = unescDs(parts[5]);
+          if (reasoning.isNotEmpty && !keweIsEncryptedText(reasoning)) {
+            parts[5] = escDs(_protectField(reasoning));
+            changed = true;
+          }
+        }
+      }
+      outLines.add('#${line.startsWith('#S|') ? 'S' : 'M'}|${parts.join('|')}');
+    }
+    if (!changed) continue;
+    var content = outLines.join('\n');
+    if (content.isNotEmpty) content += '\n';
+    if (writeTextFile(entity.path, content)) changedFiles++;
+  }
+  invalidateAllDsSessionCaches();
+  if (changedFiles > 0) {
+    logp('🔐 已就地加密历史会话: $changedFiles 个文件');
+  }
+  return changedFiles;
 }
 
 void invalidateAllDsSessionCaches() {
@@ -821,7 +901,7 @@ void migrateDsChatToPerSession() {
       if (!parts[0].startsWith('dsc_')) continue;
       oldSessions.add(DsSession(
         id: parts[0],
-        title: unescDs(parts[1]),
+        title: _unprotectField(parts[1]),
         createdAt: parts[2],
         updatedAt: parts[3],
       ));
@@ -848,10 +928,10 @@ void migrateDsChatToPerSession() {
         id: parts[0],
         sessionId: parts[1],
         role: parts[2],
-        content: unescDs(parts[3]),
+        content: _unprotectField(parts[3]),
         createdAt: parts[4],
         attachments: parts.length >= 6 ? parts[5] : '',
-        reasoning: parts.length >= 7 ? unescDs(parts[6]) : '',
+        reasoning: parts.length >= 7 ? _unprotectField(parts[6]) : '',
       ));
     }
   }
@@ -868,11 +948,11 @@ void migrateDsChatToPerSession() {
   for (final sess in oldSessions) {
     final path = dsSessionPath(sess.id);
     final lines = <String>[
-      '#S|${sess.id}|${escDs(sess.title)}|${sess.createdAt}|${sess.updatedAt}'
+      '#S|${sess.id}|${escDs(_protectField(sess.title))}|${sess.createdAt}|${sess.updatedAt}'
     ];
     for (final m in bySess[sess.id] ?? const <DsMessage>[]) {
-      lines.add('#M|${m.id}|${m.role}|${escDs(m.content)}|${m.createdAt}|'
-          '${m.attachments}|${escDs(m.reasoning)}');
+      lines.add('#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
+          '${m.attachments}|${escDs(_protectField(m.reasoning))}|');
     }
     var content = lines.join('\n');
     if (content.isNotEmpty) content += '\n';

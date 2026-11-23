@@ -1321,20 +1321,16 @@ bool isTextFile(String mimeType, String filename) {
   if (!isTextFile(meta.mimeType, meta.name)) {
     return (text: null, error: '非文本文件，无法直接读取');
   }
-  final stat = f.statSync();
-  final raf = f.openSync();
   try {
-    final len = stat.size > DS_MAX_TEXT_EXTRACT ? DS_MAX_TEXT_EXTRACT : stat.size;
-    final data = raf.readSync(len);
+    final total = meta.size;
+    final data = dsReadPlainFileBytes(absPath, maxBytes: DS_MAX_TEXT_EXTRACT);
     final text = utf8.decode(data, allowMalformed: true);
-    if (stat.size > DS_MAX_TEXT_EXTRACT) {
+    if (total > DS_MAX_TEXT_EXTRACT) {
       return (text: '$text\n\n...[文件内容过长，仅显示前 200KB]', error: null);
     }
     return (text: text, error: null);
   } catch (e) {
     return (text: null, error: '$e');
-  } finally {
-    raf.closeSync();
   }
 }
 

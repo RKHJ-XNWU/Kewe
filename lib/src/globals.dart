@@ -3,6 +3,7 @@
 // 对应 Go 版：main.go(常量部分) + deepseek-chat.go(escDs/unescDs/randomHex)
 // ============================================================
 
+import 'dart:async';
 import 'dart:convert' show Utf8Decoder, jsonDecode, jsonEncode;
 import 'dart:io';
 import 'dart:math' as math;
@@ -27,7 +28,37 @@ String get BASE_DIR {
   return '/data/data/com.termux/files/home/kewe';
 }
 
-String get DATA_DIR => '$BASE_DIR/data';
+final Object _dataDirZoneKey = Object();
+final Object _userIdZoneKey = Object();
+
+/// 当前请求的数据目录。
+///
+/// 登录后由 auth 层通过 [runWithUserScope] 注入到 Zone，因此所有既有模块
+/// 仍然只读 `DATA_DIR`，却会自动落到该账号自己的数据目录，互不串号。
+/// 未登录的启动期任务（首次数据迁移/定时任务）继续使用全局 data 目录。
+String get DATA_DIR {
+  final scoped = Zone.current[_dataDirZoneKey];
+  if (scoped is String && scoped.isNotEmpty) return scoped;
+  return '$BASE_DIR/data';
+}
+
+String get currentUserId {
+  final scoped = Zone.current[_userIdZoneKey];
+  if (scoped is String) return scoped;
+  return '';
+}
+
+Future<T> runWithUserScope<T>(
+  String userId,
+  String dataDir,
+  Future<T> Function() body,
+) {
+  return runZoned(body, zoneValues: {
+    _dataDirZoneKey: dataDir,
+    _userIdZoneKey: userId,
+  });
+}
+
 String get BACKUP_TMP_DIR => '$BASE_DIR/.backup_tmp';
 
 String get PORT => getEnv('DSH_PORT') ?? '9999';

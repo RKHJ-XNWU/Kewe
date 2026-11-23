@@ -25,7 +25,7 @@ const String DB_TRANSLATE_URL =
     'https://openspeech.bytedance.com/api/v3/machine_translation/matx_translate';
 const String DB_TRANSLATE_RESOURCE_ID = 'volc.speech.mt';
 
-String get DB_GLOSSARY_DIR => '$BASE_DIR/data/body_text';
+String get DB_GLOSSARY_DIR => '$DATA_DIR/body_text';
 
 // ------------------------------------------------------------
 // 术语表数据模型

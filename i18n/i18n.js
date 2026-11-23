@@ -505,6 +505,12 @@
     }
 
     function buildLangMenu() {
+        // 首页右上角已经有独立语言选择器（游戏选择器样式）。
+        // 用户明确要求：语言不再藏进“⋯”菜单，因此这里只更新状态，不再注入旧入口。
+        if (document.getElementById('dscLangQuickBtn')) {
+            updateLangUI();
+            return;
+        }
         var menu = document.getElementById('dscMoreMenu');
         if (!menu || document.getElementById('dscLangBtn')) return;
 
@@ -662,7 +668,7 @@
         // 後発で生成されるメニューにも追随
         var tries = 0;
         var timer = setInterval(function () {
-            if (document.getElementById('dscLangBtn') || ++tries > 40) { clearInterval(timer); return; }
+            if (document.getElementById('dscLangBtn') || document.getElementById('dscLangQuickBtn') || ++tries > 40) { clearInterval(timer); return; }
             buildLangMenu();
         }, 250);
     }

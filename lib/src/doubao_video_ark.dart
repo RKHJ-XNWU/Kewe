@@ -673,13 +673,24 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       logp('⚠️ 未找到视频元数据（不发送）: $id');
       continue;
     }
-    final absPath = '$DSFilesBlobDir/${meta.relPath}';
-    final f = File(absPath);
+    var absPath = '$DSFilesBlobDir/${meta.relPath}';
+    var f = File(absPath);
     if (!f.existsSync()) {
       logp('⚠️ 视频文件不存在（不发送）: ${meta.name}');
       continue;
     }
-    final size = f.lengthSync();
+    final size = meta.size > 0 ? meta.size : f.lengthSync();
+    Directory? decryptedTempDir;
+    try {
+      if (dsIsEncryptedFile(absPath)) {
+        f = await dsDecryptFileToTemp(absPath, hintName: meta.name);
+        decryptedTempDir = f.parent;
+        absPath = f.path;
+      }
+    } catch (e) {
+      logp('⚠️ 视频解密失败（不发送）: ${meta.name} ($e)');
+      continue;
+    }
     if (size > cfg.maxBytes) {
       throw DbVideoArkException(
           '视频超过上限 ${dbFmtSize(cfg.maxBytes)}（当前 ${dbFmtSize(size)}）：${meta.name}',
@@ -708,6 +719,9 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       parts.add(part);
       logp('🎬 经由 TOS 发送: ${meta.name}');
       index++;
+      if (decryptedTempDir != null) {
+        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+      }
       continue;
     }
     logp('🎬 分割理解大容量视频: ${meta.name} (${dbFmtSize(size)})');
@@ -723,6 +737,9 @@ Future<({List<Map<String, dynamic>> parts, String text})>
     );
     blocks.add(desc);
     index++;
+    if (decryptedTempDir != null) {
+      try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+    }
   }
   return (parts: parts, text: blocks.join('\n\n'));
 }

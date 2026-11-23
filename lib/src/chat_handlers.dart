@@ -563,6 +563,10 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
   ensureDir('$DSFilesBlobDir/generated');
   try {
     File(absPath).writeAsBytesSync(imgData);
+    if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
+      await dsJSONErr(res, 500, '图片加密保存失败');
+      return;
+    }
   } catch (_) {
     await dsJSONErr(res, 500, '保存失败');
     return;

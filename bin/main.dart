@@ -29,6 +29,7 @@ import 'package:kewe/src/forum.dart';
 import 'package:kewe/src/globals.dart';
 import 'package:kewe/src/vocab.dart';
 import 'package:kewe/src/httpsrv.dart';
+import 'package:kewe/src/kewe_auth.dart';
 import 'package:kewe/src/model_router.dart';
 import 'package:kewe/src/peakvalley.dart';
 import 'package:kewe/src/relay.dart';
@@ -212,7 +213,18 @@ void registerPrefixHandler(String prefix, Handler h) {
 
 final Map<String, Handler> _prefixRoutes = {};
 
-Future<void> dispatch(HttpRequest req) async {
+bool _isPrivateStaticPath(String path) {
+  return path == '/data' ||
+      path.startsWith('/data/') ||
+      path == '/.env' ||
+      path.startsWith('/.env') ||
+      path == '/.git' ||
+      path.startsWith('/.git/') ||
+      path == '/.backup_tmp' ||
+      path.startsWith('/.backup_tmp/');
+}
+
+Future<void> _dispatchAuthed(HttpRequest req) async {
   final path = req.uri.path;
   final exact = _routes[path];
   if (exact != null) {
@@ -225,7 +237,46 @@ Future<void> dispatch(HttpRequest req) async {
       return;
     }
   }
-  // 静态资源（含 index.html 回退）
+  await serveStatic(req, path);
+}
+
+Future<void> dispatch(HttpRequest req) async {
+  final path = req.uri.path;
+
+  // 登录 / 注册 / 状态本身就是公开入口，但仍走统一的日志 + CORS 中间件。
+  if (path == '/api/auth' || path.startsWith('/api/auth/')) {
+    await loggerMiddleware(corsMiddleware(handleKeweAuthApi))(req);
+    return;
+  }
+
+  if (path.startsWith('/api/')) {
+    // 预检请求不携带 Cookie，交给 CORS 中间件直接应答。
+    if (req.method == 'OPTIONS') {
+      await loggerMiddleware(corsMiddleware((r) async {}))(req);
+      return;
+    }
+    final user = keweUserFromRequest(req);
+    if (user == null) {
+      await loggerMiddleware(corsMiddleware(keweReplyUnauthorized))(req);
+      return;
+    }
+    // 关键：把整个请求链路放进用户 Zone。所有旧模块继续读 DATA_DIR，
+    // 但实际落到 data/users/<userId>/，账号之间互不可见。
+    await runWithUserScope(
+      user.id,
+      user.dataDir,
+      () => _dispatchAuthed(req),
+    );
+    return;
+  }
+
+  // 私人目录（账号库、data、备份临时目录）永远不通过静态文件暴露。
+  if (_isPrivateStaticPath(path)) {
+    await loggerMiddleware(corsMiddleware(keweReplyUnauthorized))(req);
+    return;
+  }
+
+  // 静态资源（含 index.html 回退）；index 本身公开，用作登录页外壳。
   await serveStatic(req, path);
 }
 

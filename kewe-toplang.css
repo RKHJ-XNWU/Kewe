@@ -1,0 +1,229 @@
+/* ============================================================
+ * kewe-toplang.css —— 首页右上角语言选择器（游戏选择器样式）
+ * ============================================================ */
+#deepseekChatApp .dsc-toplang {
+  position: relative;
+  flex: 0 0 auto;
+  z-index: 30;
+}
+
+#deepseekChatApp .dsc-toplang-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  color: #eefaff;
+  background: linear-gradient(145deg, #172554, #0e7490 60%, #4c1d95);
+  box-shadow:
+    0 8px 20px rgba(14, 116, 144, .24),
+    inset 0 1px 0 rgba(255,255,255,.24),
+    0 0 0 1px rgba(103, 232, 249, .22);
+  transition: transform .17s, box-shadow .17s;
+  -webkit-tap-highlight-color: transparent;
+  overflow: hidden;
+}
+
+#deepseekChatApp .dsc-toplang-btn::before {
+  content: "";
+  position: absolute;
+  inset: -38%;
+  background: conic-gradient(from 0deg, transparent, rgba(103,232,249,.32), transparent 42%, rgba(167,139,250,.34), transparent 74%);
+  animation: keweTopLangOrbit 7.4s linear infinite;
+  pointer-events: none;
+}
+
+#deepseekChatApp .dsc-toplang-btn::after {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  border: 1px solid rgba(186, 230, 253, .18);
+  pointer-events: none;
+}
+
+@keyframes keweTopLangOrbit {
+  to { transform: rotate(360deg); }
+}
+
+#deepseekChatApp .dsc-toplang-btn:active {
+  transform: scale(.94);
+}
+
+#deepseekChatApp .dsc-toplang-btn[aria-expanded="true"] {
+  box-shadow:
+    0 9px 26px rgba(34, 211, 238, .32),
+    inset 0 1px 0 rgba(255,255,255,.26),
+    0 0 0 2px rgba(34, 211, 238, .32);
+}
+
+#deepseekChatApp .dsc-toplang-code {
+  position: relative;
+  z-index: 2;
+  font: 800 9px/1 "SFMono-Regular", Consolas, "Noto Sans Mono", monospace;
+  letter-spacing: .08em;
+  text-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+
+#deepseekChatApp .dsc-toplang-globe {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  opacity: .28;
+  z-index: 1;
+  pointer-events: none;
+}
+
+#deepseekChatApp .dsc-toplang-panel {
+  position: fixed;
+  width: min(286px, calc(100vw - 20px));
+  padding: 10px;
+  border-radius: 20px;
+  border: 1px solid rgba(103, 232, 249, .22);
+  background:
+    radial-gradient(500px 240px at 10% -10%, rgba(124, 58, 237, .34), transparent 70%),
+    linear-gradient(160deg, rgba(8, 15, 35, .97), rgba(4, 22, 31, .96));
+  box-shadow:
+    0 26px 70px rgba(2, 8, 23, .48),
+    inset 0 1px 0 rgba(255,255,255,.13);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  z-index: 2147482000;
+  display: none;
+  transform-origin: top right;
+  color: #e9faff;
+}
+
+#deepseekChatApp .dsc-toplang-panel.open {
+  display: block;
+  animation: keweTopLangPop .22s cubic-bezier(.2,.9,.3,1.12) both;
+}
+
+@keyframes keweTopLangPop {
+  from { opacity: 0; transform: translateY(-6px) scale(.94); }
+  to { opacity: 1; transform: none; }
+}
+
+#deepseekChatApp .dsc-toplang-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 3px 9px;
+}
+
+#deepseekChatApp .dsc-toplang-head strong {
+  font: 800 .72rem/1 inherit;
+  letter-spacing: .13em;
+  color: #bae6fd;
+  text-transform: uppercase;
+}
+
+#deepseekChatApp .dsc-toplang-head span {
+  font: 600 .61rem/1 inherit;
+  color: rgba(186, 230, 253, .48);
+}
+
+#deepseekChatApp .dsc-toplang-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+#deepseekChatApp .dsc-toplang-item {
+  position: relative;
+  min-height: 68px;
+  padding: 9px 9px 8px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 197, 255, .16);
+  background: linear-gradient(150deg, rgba(30, 41, 59, .58), rgba(8, 20, 39, .48));
+  color: #e9f7ff;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform .15s, border-color .15s, background .15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#deepseekChatApp .dsc-toplang-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(103, 232, 249, .38);
+  background: linear-gradient(150deg, rgba(37, 62, 100, .72), rgba(8, 35, 53, .56));
+}
+
+#deepseekChatApp .dsc-toplang-item.active {
+  border-color: rgba(103, 232, 249, .58);
+  background:
+    radial-gradient(120px 70px at 20% 10%, rgba(34, 211, 238, .2), transparent 70%),
+    linear-gradient(150deg, rgba(79, 70, 229, .42), rgba(8, 74, 92, .5));
+  box-shadow:
+    0 10px 26px rgba(8, 47, 73, .24),
+    inset 0 1px 0 rgba(255,255,255,.13);
+}
+
+#deepseekChatApp .dsc-toplang-item.active::after {
+  content: "✓";
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #22d3ee;
+  color: #06202a;
+  font: 900 9px/1 inherit;
+  box-shadow: 0 0 12px rgba(34,211,238,.38);
+}
+
+#deepseekChatApp .dsc-toplang-item .flag {
+  font-size: 1.25rem;
+  line-height: 1;
+  filter: drop-shadow(0 3px 7px rgba(0,0,0,.3));
+}
+
+#deepseekChatApp .dsc-toplang-item .name {
+  font: 700 .68rem/1.1 inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  text-align: left;
+}
+
+#deepseekChatApp .dsc-toplang-item .code {
+  font: 700 .56rem/1 "SFMono-Regular", Consolas, monospace;
+  color: rgba(165, 243, 252, .58);
+  letter-spacing: .08em;
+}
+
+#deepseekChatApp .dsc-toplang-hint {
+  margin-top: 8px;
+  padding: 7px 6px 3px;
+  border-top: 1px solid rgba(125, 211, 252, .1);
+  color: rgba(186, 230, 253, .44);
+  font-size: .59rem;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#deepseekChatApp .dsc-toplang-hint .bolt {
+  color: #67e8f9;
+}
+
+@media (max-width: 600px) {
+  #deepseekChatApp .dsc-toplang-btn { width: 42px; height: 42px; }
+  #deepseekChatApp .dsc-toplang-panel { width: min(272px, calc(100vw - 16px)); }
+  #deepseekChatApp .dsc-toplang-item { min-height: 64px; }
+}

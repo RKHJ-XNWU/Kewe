@@ -842,3 +842,194 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
     box-shadow: none !important;
     background: transparent !important;
 }
+
+/* ============================================================
+ * 维度切换按钮：固定显示豆包形象（CSS + SVG）
+ * 不再用 DS / DB 文字；激活态由紫色渐变 + 绿色状态点表达。
+ * ============================================================ */
+#deepseekChatApp .dsc-db-mode-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    flex-basis: 40px;
+    border-radius: 13px;
+    padding: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(20px 15px at 50% 22%, rgba(196, 181, 253, .28), transparent 72%),
+        linear-gradient(145deg, #ffffff, #f4efff 72%, #e9e2ff);
+    border-color: #d8ceff;
+    box-shadow:
+        0 7px 18px rgba(91, 33, 182, .1),
+        inset 0 1px 0 rgba(255,255,255,.9);
+    transition: transform .16s, box-shadow .16s, background .2s;
+}
+#deepseekChatApp .dsc-db-mode-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 9px 22px rgba(91, 33, 182, .14), inset 0 1px 0 rgba(255,255,255,.9);
+}
+#deepseekChatApp .dsc-db-mode-btn:active { transform: scale(.94); }
+#deepseekChatApp .dsc-db-mode-btn .dsc-db-mode-lbl {
+    width: 30px !important;
+    height: 32px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+}
+#deepseekChatApp .dsc-db-mascot {
+    width: 29px;
+    height: 29px;
+    display: block;
+    transform-origin: 50% 78%;
+    filter: drop-shadow(0 2px 4px rgba(76, 29, 149, .14));
+}
+#deepseekChatApp .dsc-db-mode-btn.active {
+    background:
+        radial-gradient(22px 17px at 50% 20%, rgba(255,255,255,.22), transparent 70%),
+        linear-gradient(145deg, #7c3aed 0%, #4f46e5 58%, #0e7490 100%);
+    border-color: #5646e8;
+    box-shadow:
+        0 9px 24px rgba(79, 70, 229, .34),
+        inset 0 1px 0 rgba(255,255,255,.22);
+}
+#deepseekChatApp .dsc-db-mode-btn.active .dsc-db-mascot {
+    animation: dscDbBunBounce 3.2s cubic-bezier(.34,1.56,.64,1) infinite;
+}
+#deepseekChatApp .dsc-db-mode-btn.active .dsc-db-mode-lbl { color: inherit; }
+@keyframes dscDbBunBounce {
+    0%, 62%, 100% { transform: translateY(0) scale(1); }
+    70% { transform: translateY(-2px) scale(1.04); }
+    78% { transform: translateY(0) scale(.985); }
+    86% { transform: translateY(-1px) scale(1.015); }
+}
+@media (max-width: 600px) {
+    #deepseekChatApp .dsc-db-mode-btn { width: 42px; height: 42px; min-width: 42px; flex-basis: 42px; }
+    #deepseekChatApp .dsc-db-mascot { width: 30px; height: 30px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    #deepseekChatApp .dsc-db-mode-btn.active .dsc-db-mascot { animation: none; }
+}
+
+/* ============================================================
+ * 单词本 / 帖子广场：真正的全屏（覆盖顶栏与底部输入区）
+ * ============================================================ */
+#deepseekChatApp #dscVocabOverlay,
+#deepseekChatApp #dscVocabEditorOverlay,
+#deepseekChatApp #dscVocabReviewOverlay,
+#deepseekChatApp #dscForumOverlay,
+#deepseekChatApp #dscForumDetailOverlay,
+#deepseekChatApp #dscForumComposeOverlay {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 0 !important;
+    z-index: 100080 !important;
+    align-items: stretch !important;
+    justify-content: stretch !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+#deepseekChatApp #dscVocabOverlay.open,
+#deepseekChatApp #dscVocabEditorOverlay.open,
+#deepseekChatApp #dscVocabReviewOverlay.open,
+#deepseekChatApp #dscForumOverlay.open,
+#deepseekChatApp #dscForumDetailOverlay.open,
+#deepseekChatApp #dscForumComposeOverlay.open {
+    display: flex !important;
+}
+#deepseekChatApp #dscVocabOverlay .dsc-vocab,
+#deepseekChatApp #dscVocabEditorOverlay .dsc-vocab,
+#deepseekChatApp #dscVocabReviewOverlay .dsc-vocab,
+#deepseekChatApp #dscForumOverlay .dsc-forum,
+#deepseekChatApp #dscForumDetailOverlay .dsc-forum,
+#deepseekChatApp #dscForumComposeOverlay .dsc-forum {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    margin: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+#deepseekChatApp #dscVocabOverlay .dsc-vocab-head,
+#deepseekChatApp #dscForumOverlay .dsc-forum-head,
+#deepseekChatApp #dscForumDetailOverlay .dsc-forum-head,
+#deepseekChatApp #dscForumComposeOverlay .dsc-forum-head {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px)) !important;
+}
+#deepseekChatApp #dscVocabOverlay .dsc-vocab-body,
+#deepseekChatApp #dscForumOverlay .dsc-forum-body,
+#deepseekChatApp #dscForumDetailOverlay .dsc-forum-body {
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px)) !important;
+}
+
+/* ============================================================
+ * 2026-11-23 · 底部输入操作栏圆形化（最终覆盖）
+ * 用 1 个 id + 2 个 class 的优先级压过上面所有 12px 圆角快捷按钮规则。
+ * 所有工具球统一 40px；390px 窄屏收紧为 38px，确保一行放得下。
+ * ============================================================ */
+#deepseekChatApp .dsc-action-bar .dsc-switch-btn,
+#deepseekChatApp .dsc-action-bar .dsc-advanced-btn,
+#deepseekChatApp .dsc-action-bar .dsc-longtext-btn,
+#deepseekChatApp .dsc-action-bar .dsc-level-btn,
+#deepseekChatApp .dsc-action-bar .dsc-novel-btn,
+#deepseekChatApp .dsc-action-bar .dsc-quick-model-btn,
+#deepseekChatApp .dsc-action-bar .dsc-newline-btn,
+#deepseekChatApp .dsc-action-bar .dsc-plus-btn,
+#deepseekChatApp .dsc-action-bar .dsc-send-btn {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    flex: 0 0 40px !important;
+    padding: 0 !important;
+    border-radius: 50% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+}
+#deepseekChatApp .dsc-action-bar .dsc-quick-model-btn {
+    background:
+        radial-gradient(15px 13px at 32% 24%, rgba(255,255,255,.22), transparent 72%),
+        linear-gradient(145deg, #172554 0%, #4338ca 56%, #0e7490 100%) !important;
+    border: 1px solid rgba(99, 102, 241, .34) !important;
+    box-shadow: 0 7px 18px rgba(49, 46, 129, .24), inset 0 1px 0 rgba(255,255,255,.2) !important;
+}
+#deepseekChatApp .dsc-action-bar .dsc-quick-model-btn .dsc-qm-name { display: none !important; }
+#deepseekChatApp .dsc-action-bar .dsc-send-btn {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    flex: 0 0 42px !important;
+    border: 0 !important;
+}
+@media (max-width: 430px) {
+    #deepseekChatApp .dsc-action-bar { gap: 4px !important; }
+    #deepseekChatApp .dsc-action-bar .dsc-switch-group,
+    #deepseekChatApp .dsc-action-bar .dsc-right-group { gap: 4px !important; }
+    #deepseekChatApp .dsc-action-bar .dsc-switch-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-advanced-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-longtext-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-level-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-novel-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-quick-model-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-newline-btn,
+    #deepseekChatApp .dsc-action-bar .dsc-plus-btn {
+        width: 38px !important;
+        height: 38px !important;
+        min-width: 38px !important;
+        flex: 0 0 38px !important;
+    }
+    #deepseekChatApp .dsc-action-bar .dsc-send-btn {
+        width: 40px !important;
+        height: 40px !important;
+        min-width: 40px !important;
+        flex: 0 0 40px !important;
+    }
+}

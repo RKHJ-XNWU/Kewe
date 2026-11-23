@@ -1,0 +1,613 @@
+/* ============================================================
+ * kewe-auth.css —— 登录 / 注册 / 注销 / 404 门禁
+ * 设计：深海紫 + 荧光青，玻璃卡片，独立于主应用主题。
+ * ============================================================ */
+html.kewe-auth-locked,
+html.kewe-auth-locked body {
+  overflow: hidden !important;
+}
+
+html.kewe-auth-locked #deepseekChatApp {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.kewe-auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:
+    calc(18px + env(safe-area-inset-top, 0px))
+    16px
+    calc(18px + env(safe-area-inset-bottom, 0px));
+  background:
+    radial-gradient(900px 600px at 8% -12%, rgba(124, 58, 237, .5), transparent 60%),
+    radial-gradient(800px 520px at 106% 108%, rgba(14, 165, 233, .42), transparent 58%),
+    linear-gradient(158deg, #08061a 0%, #0d1024 45%, #06151c 100%);
+  color: #edf7ff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
+    "Hiragino Sans", "Noto Sans JP", "Noto Sans SC", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.kewe-auth-gate::before {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(125, 211, 252, .06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(125, 211, 252, .06) 1px, transparent 1px);
+  background-size: 42px 42px;
+  transform: perspective(540px) rotateX(63deg) translateY(18%);
+  mask-image: linear-gradient(to top, rgba(0,0,0,.72), transparent 82%);
+  -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,.72), transparent 82%);
+  animation: keweAuthGrid 18s linear infinite;
+}
+
+@keyframes keweAuthGrid {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 42px, 42px 0; }
+}
+
+.kewe-auth-aurora {
+  position: absolute;
+  width: min(72vw, 660px);
+  height: min(72vw, 660px);
+  border-radius: 50%;
+  filter: blur(30px);
+  opacity: .55;
+  pointer-events: none;
+  background: conic-gradient(from 210deg, #22d3ee, #8b5cf6, #f472b6, #22d3ee);
+  animation: keweAuthSpin 26s linear infinite;
+  mix-blend-mode: screen;
+  top: -24%;
+  right: -18%;
+}
+
+@keyframes keweAuthSpin {
+  to { transform: rotate(360deg); }
+}
+
+.kewe-auth-card {
+  position: relative;
+  width: min(100%, 404px);
+  border-radius: 26px;
+  padding: 24px 22px 22px;
+  background:
+    linear-gradient(165deg, rgba(255,255,255,.16), rgba(255,255,255,.055) 45%, rgba(255,255,255,.035));
+  border: 1px solid rgba(165, 243, 252, .22);
+  box-shadow:
+    0 34px 100px rgba(0, 0, 0, .48),
+    inset 0 1px 0 rgba(255,255,255,.22),
+    0 0 0 1px rgba(142, 92, 255, .08);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  overflow: hidden;
+}
+
+.kewe-auth-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(125deg, rgba(255,255,255,.16), transparent 28%, transparent 72%, rgba(34,211,238,.12));
+}
+
+.kewe-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  position: relative;
+  z-index: 1;
+}
+
+.kewe-auth-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, rgba(139, 92, 246, .9), rgba(14, 165, 233, .82));
+  box-shadow: 0 10px 26px rgba(79, 70, 229, .42), inset 0 1px 0 rgba(255,255,255,.25);
+}
+
+.kewe-auth-mark svg {
+  width: 25px;
+  height: 25px;
+  display: block;
+}
+
+.kewe-auth-brand-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.kewe-auth-brand-copy strong {
+  display: block;
+  font-size: 1rem;
+  letter-spacing: .08em;
+  color: #fff;
+}
+
+.kewe-auth-brand-copy small {
+  display: block;
+  margin-top: 2px;
+  color: rgba(195, 221, 245, .7);
+  font-size: .66rem;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.kewe-auth-lang {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.kewe-auth-lang-btn {
+  height: 34px;
+  min-width: 54px;
+  padding: 0 10px;
+  border-radius: 11px;
+  border: 1px solid rgba(165, 243, 252, .28);
+  background: rgba(6, 16, 32, .48);
+  color: #e0f2fe;
+  font: 700 .72rem/1 inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.kewe-auth-lang-btn .globe {
+  width: 15px;
+  height: 15px;
+  opacity: .9;
+}
+
+.kewe-auth-lang-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 180px;
+  padding: 6px;
+  border-radius: 15px;
+  border: 1px solid rgba(165, 243, 252, .24);
+  background: rgba(10, 16, 36, .95);
+  box-shadow: 0 22px 54px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  display: none;
+  z-index: 20;
+}
+
+.kewe-auth-lang-menu.open { display: block; }
+
+.kewe-auth-lang-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #e6f6ff;
+  border-radius: 10px;
+  padding: 10px 9px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font: 600 .8rem/1 inherit;
+  cursor: pointer;
+}
+
+.kewe-auth-lang-item:hover,
+.kewe-auth-lang-item.active {
+  background: rgba(34, 211, 238, .12);
+}
+
+.kewe-auth-lang-item .code {
+  margin-left: auto;
+  color: rgba(186, 230, 253, .62);
+  font: 700 .66rem/1 "SFMono-Regular", Consolas, monospace;
+}
+
+.kewe-auth-404 {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(248, 113, 113, .3);
+  background: linear-gradient(135deg, rgba(127, 29, 29, .32), rgba(30, 10, 30, .24));
+  margin-bottom: 16px;
+}
+
+.kewe-auth-404 .num {
+  font: 800 2rem/.82 "SFMono-Regular", Consolas, monospace;
+  color: #fb7185;
+  letter-spacing: -.05em;
+  text-shadow: 0 0 26px rgba(251, 113, 133, .42);
+  flex: 0 0 auto;
+}
+
+.kewe-auth-404 .copy { min-width: 0; }
+.kewe-auth-404 .copy strong {
+  display: block;
+  font-size: .78rem;
+  letter-spacing: .05em;
+  color: #ffe4e6;
+}
+.kewe-auth-404 .copy span {
+  display: block;
+  margin-top: 4px;
+  font-size: .68rem;
+  line-height: 1.5;
+  color: rgba(254, 205, 211, .76);
+}
+
+.kewe-auth-title-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.kewe-auth-title {
+  font-size: 1.45rem;
+  line-height: 1.08;
+  letter-spacing: -.03em;
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+}
+
+.kewe-auth-sub {
+  font-size: .7rem;
+  color: rgba(196, 220, 240, .7);
+  line-height: 1.5;
+  margin: 5px 0 0;
+}
+
+.kewe-auth-secure {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, .12);
+  border: 1px solid rgba(52, 211, 153, .26);
+  color: #a7f3d0;
+  font: 700 .62rem/1 inherit;
+  letter-spacing: .06em;
+}
+
+.kewe-auth-secure svg { width: 12px; height: 12px; }
+
+.kewe-auth-tabs {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding: 4px;
+  margin-bottom: 15px;
+  border-radius: 14px;
+  background: rgba(3, 10, 24, .56);
+  border: 1px solid rgba(125, 211, 252, .12);
+}
+
+.kewe-auth-tab {
+  height: 38px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: rgba(203, 225, 245, .68);
+  font: 700 .78rem/1 inherit;
+  cursor: pointer;
+  transition: all .18s;
+}
+
+.kewe-auth-tab.active {
+  color: #fff;
+  background: linear-gradient(145deg, rgba(124, 58, 237, .7), rgba(14, 116, 144, .58));
+  box-shadow: 0 8px 20px rgba(30, 64, 175, .28), inset 0 1px 0 rgba(255,255,255,.18);
+}
+
+.kewe-auth-form {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 11px;
+  animation: keweAuthIn .22s ease both;
+}
+
+@keyframes keweAuthIn {
+  from { opacity: .35; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.kewe-auth-field {
+  display: grid;
+  gap: 6px;
+}
+
+.kewe-auth-label {
+  font: 700 .68rem/1 inherit;
+  letter-spacing: .08em;
+  color: rgba(207, 228, 246, .76);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.kewe-auth-label .count {
+  font-weight: 500;
+  letter-spacing: 0;
+  color: rgba(186, 230, 253, .46);
+}
+
+.kewe-auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.kewe-auth-input-wrap .pre {
+  position: absolute;
+  left: 12px;
+  width: 17px;
+  height: 17px;
+  color: rgba(165, 243, 252, .62);
+  pointer-events: none;
+}
+
+.kewe-auth-field input {
+  width: 100%;
+  height: 46px;
+  box-sizing: border-box;
+  border-radius: 13px;
+  border: 1px solid rgba(148, 197, 255, .22);
+  background: rgba(2, 9, 25, .62);
+  color: #f3faff;
+  font: 500 16px/1.2 inherit;
+  padding: 0 44px 0 38px;
+  outline: none;
+  transition: border-color .16s, box-shadow .16s, background .16s;
+  -webkit-text-fill-color: #f3faff;
+}
+
+.kewe-auth-field input::placeholder {
+  color: rgba(173, 208, 238, .42);
+}
+
+.kewe-auth-field input:focus {
+  border-color: rgba(34, 211, 238, .58);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, .11), 0 0 26px rgba(34, 211, 238, .1);
+  background: rgba(2, 12, 28, .78);
+}
+
+.kewe-auth-eye {
+  position: absolute;
+  right: 7px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: rgba(186, 230, 253, .62);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.kewe-auth-eye:hover { background: rgba(34, 211, 238, .08); color: #bae6fd; }
+.kewe-auth-eye svg { width: 17px; height: 17px; }
+
+.kewe-auth-rules {
+  display: grid;
+  gap: 5px;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: rgba(8, 20, 38, .52);
+  border: 1px solid rgba(125, 211, 252, .1);
+}
+
+.kewe-auth-rule {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .65rem;
+  line-height: 1.35;
+  color: rgba(186, 218, 242, .6);
+  transition: color .15s;
+}
+
+.kewe-auth-rule .dot {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid rgba(148, 197, 255, .26);
+  display: grid;
+  place-items: center;
+  font-size: .55rem;
+  color: transparent;
+  background: rgba(2, 9, 25, .5);
+}
+
+.kewe-auth-rule.ok { color: #a7f3d0; }
+.kewe-auth-rule.ok .dot {
+  color: #052e16;
+  border-color: rgba(52, 211, 153, .6);
+  background: #6ee7b7;
+}
+
+.kewe-auth-error {
+  display: none;
+  padding: 10px 11px;
+  border-radius: 11px;
+  background: rgba(127, 29, 29, .34);
+  border: 1px solid rgba(248, 113, 113, .36);
+  color: #fecdd3;
+  font-size: .7rem;
+  line-height: 1.45;
+}
+
+.kewe-auth-error.show { display: block; }
+
+.kewe-auth-submit {
+  position: relative;
+  height: 48px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  font: 800 .88rem/1 inherit;
+  letter-spacing: .04em;
+  cursor: pointer;
+  overflow: hidden;
+  background: linear-gradient(118deg, #7c3aed 0%, #4f46e5 48%, #0891b2 100%);
+  box-shadow: 0 14px 32px rgba(79, 70, 229, .34), inset 0 1px 0 rgba(255,255,255,.22);
+  transition: transform .15s, filter .15s;
+}
+
+.kewe-auth-submit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255,255,255,.28) 48%, transparent 76%);
+  transform: translateX(-120%);
+  animation: keweAuthSheen 4.8s ease-in-out infinite;
+}
+
+@keyframes keweAuthSheen {
+  0%, 58% { transform: translateX(-120%); }
+  74%, 100% { transform: translateX(120%); }
+}
+
+.kewe-auth-submit:active { transform: scale(.985); filter: brightness(.96); }
+.kewe-auth-submit[disabled] { opacity: .6; pointer-events: none; }
+
+.kewe-auth-switch {
+  margin-top: 12px;
+  text-align: center;
+  font-size: .7rem;
+  color: rgba(186, 218, 242, .62);
+}
+.kewe-auth-switch button {
+  border: 0;
+  background: transparent;
+  color: #67e8f9;
+  font: 700 .7rem/1 inherit;
+  padding: 4px 3px;
+  cursor: pointer;
+}
+
+.kewe-auth-foot {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+  color: rgba(148, 184, 214, .48);
+  font-size: .62rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.kewe-auth-foot svg { width: 12px; height: 12px; flex: 0 0 auto; }
+
+.kewe-auth-boot {
+  position: relative;
+  z-index: 1;
+  padding: 16px 2px 8px;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  color: rgba(203, 225, 245, .7);
+  font-size: .72rem;
+}
+
+.kewe-auth-boot .ring {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(34, 211, 238, .16);
+  border-top-color: #22d3ee;
+  animation: keweAuthSpin .8s linear infinite;
+}
+
+/* ---------- 注销确认 ---------- */
+.kewe-logout-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147482500;
+  background: rgba(3, 7, 18, .72);
+  backdrop-filter: blur(9px);
+  -webkit-backdrop-filter: blur(9px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+.kewe-logout-card {
+  width: min(100%, 390px);
+  border-radius: 20px;
+  padding: 20px;
+  background: linear-gradient(160deg, #111827, #0b1020);
+  border: 1px solid rgba(248, 113, 113, .26);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .55);
+  color: #f8fafc;
+}
+.kewe-logout-card .ico {
+  width: 42px; height: 42px; border-radius: 14px;
+  display: grid; place-items: center;
+  background: rgba(239, 68, 68, .14);
+  border: 1px solid rgba(248, 113, 113, .28);
+  color: #fca5a5; font-size: 1.2rem;
+  margin-bottom: 12px;
+}
+.kewe-logout-card h3 { margin: 0; font-size: 1.05rem; }
+.kewe-logout-card p {
+  margin: 8px 0 16px;
+  color: #cbd5e1;
+  font-size: .78rem;
+  line-height: 1.65;
+}
+.kewe-logout-card p b { color: #fca5a5; }
+.kewe-logout-actions { display: flex; gap: 8px; }
+.kewe-logout-actions button {
+  flex: 1; height: 44px; border-radius: 12px;
+  font: 700 .8rem/1 inherit; cursor: pointer;
+}
+.kewe-logout-cancel {
+  border: 1px solid #334155; background: #1e293b; color: #cbd5e1;
+}
+.kewe-logout-confirm {
+  border: 1px solid rgba(248, 113, 113, .5);
+  background: linear-gradient(145deg, #dc2626, #9f1239);
+  color: #fff;
+}
+.kewe-logout-cancel[disabled], .kewe-logout-confirm[disabled] { opacity: .55; pointer-events: none; }
+
+@media (max-width: 420px) {
+  .kewe-auth-gate { padding-left: 10px; padding-right: 10px; align-items: flex-start; padding-top: max(12px, env(safe-area-inset-top, 0px)); }
+  .kewe-auth-card { margin: auto 0; padding: 20px 16px 17px; border-radius: 22px; }
+  .kewe-auth-title { font-size: 1.3rem; }
+  .kewe-auth-404 .num { font-size: 1.7rem; }
+  .kewe-auth-404 { padding: 11px 12px; }
+  .kewe-auth-field input { height: 44px; }
+  .kewe-auth-submit { height: 46px; }
+}

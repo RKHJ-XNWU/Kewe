@@ -3416,21 +3416,44 @@ var EDGE_VOICE_POOL = {
 
     // 豆包モードのアイコン：絵文字に依存せず必ず表示されるようインライン SVG を使う
     //   （U+1FAD8 は Emoji 13.0 以降。古い端末フォントでは豆腐になるため使用しない）
+    // ★ 维度按钮固定显示「豆包」形象：纯 SVG + CSS 绘制，不再显示 DS / DB 文字。
+    //   豆包 = 圆润的白豆包 + 小芽 + 腮红 + 笑眼，激活时轻微弹跳。
     var DB_MODE_ICON_SVG =
-        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">' +
-        '<ellipse cx="12" cy="12" rx="8.4" ry="5.5" transform="rotate(-35 12 12)" fill="currentColor"/>' +
-        '<path d="M8.4 8.2c1.3-1.8 3.7-2.5 5.9-1.9" stroke="#ffffff" stroke-width="1.7" ' +
-        'stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>' +
+        '<svg class="dsc-db-mascot" viewBox="0 0 40 40" aria-hidden="true" focusable="false">' +
+        '<defs>' +
+        '<linearGradient id="dscDbBunG" x1="10" y1="8" x2="31" y2="34" gradientUnits="userSpaceOnUse">' +
+        '<stop offset="0" stop-color="#ffffff"/><stop offset="0.58" stop-color="#f5f3ff"/><stop offset="1" stop-color="#d8ccff"/>' +
+        '</linearGradient>' +
+        '</defs>' +
+        '<ellipse cx="20" cy="35.2" rx="11.6" ry="2.1" fill="#4c1d95" opacity="0.16"/>' +
+        '<path d="M20.2 9.2c-2.8-3.9 0.1-7.2 3.5-6.6-0.9 2.3-1.6 4.5-1.3 6.6" ' +
+        'fill="#86efac" stroke="#059669" stroke-width="1.1" stroke-linejoin="round"/>' +
+        '<path d="M19.1 9.7c1.3-3.1 4.1-4 6.7-2.7-1.7 2.1-3.9 3.1-6.2 2.4" ' +
+        'fill="#bbf7d0" stroke="#10b981" stroke-width="1.05" stroke-linejoin="round"/>' +
+        '<path d="M20 8.8c8.1 0 14 5.7 14 12.7 0 7.3-5.9 12.5-14 12.5S6 28.4 6 20.8C6 13.8 11.9 8.8 20 8.8Z" ' +
+        'fill="url(#dscDbBunG)" stroke="#6d28d9" stroke-width="1.45"/>' +
+        '<path d="M9.4 18.1c1.1-3.2 3.4-5.2 6.2-6.1" stroke="#ffffff" stroke-width="1.9" ' +
+        'stroke-linecap="round" fill="none" opacity="0.95"/>' +
+        '<ellipse cx="14.7" cy="19.2" rx="1.45" ry="1.75" fill="#312e81"/>' +
+        '<ellipse cx="25.3" cy="19.2" rx="1.45" ry="1.75" fill="#312e81"/>' +
+        '<circle cx="15.15" cy="18.65" r="0.5" fill="#ffffff"/>' +
+        '<circle cx="25.75" cy="18.65" r="0.5" fill="#ffffff"/>' +
+        '<ellipse cx="10.9" cy="23.3" rx="2.2" ry="1.2" fill="#f9a8d4" opacity="0.72"/>' +
+        '<ellipse cx="29.1" cy="23.3" rx="2.2" ry="1.2" fill="#f9a8d4" opacity="0.72"/>' +
+        '<path d="M17.4 23.6c1.45 1.65 3.75 1.65 5.2 0" stroke="#4c1d95" stroke-width="1.35" ' +
+        'stroke-linecap="round" fill="none"/>' +
+        '<path d="M33.3 9.6l0.72 2.05 2.05 0.72-2.05 0.72-0.72 2.05-0.72-2.05-2.05-0.72 2.05-0.72z" ' +
+        'fill="#fde68a" opacity="0.95"/>' +
         '</svg>';
 
     function ensureDbModeIcon(lbl, on) {
         if (!lbl) return;
-        // 维度文字必须始终可见：激活态旧实现是白底 + 白 SVG，实际会消失。
-        var text = on ? 'DB' : 'DS';
-        if (lbl.textContent === text && !lbl.querySelector('svg')) return;
-        lbl.textContent = '';
-        lbl.textContent = text;
+        if (!lbl.querySelector('.dsc-db-mascot')) {
+            lbl.textContent = '';
+            lbl.innerHTML = DB_MODE_ICON_SVG;
+        }
         lbl.setAttribute('aria-hidden', 'true');
+        lbl.setAttribute('data-dim', on ? 'db' : 'ds');
     }
 
     // ------------------------------------------------------------

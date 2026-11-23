@@ -1208,9 +1208,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     for (final id in fileCtx.audioFileIds) {
       final meta = getDsFileMeta(id);
       if (meta == null) continue;
-      final f = File('$DSFilesBlobDir/${meta.relPath}');
-      if (!f.existsSync()) continue;
-      final raw = f.readAsBytesSync();
+      final absPath = '$DSFilesBlobDir/${meta.relPath}';
+      if (!File(absPath).existsSync()) continue;
+      final raw = dsReadPlainFileBytes(absPath);
       if (raw.length > 40 * 1024 * 1024) {
         await dsJSONErr(
             res, 400, dbLocalized(mediaLang, 'audioTooLarge', [meta.name]));

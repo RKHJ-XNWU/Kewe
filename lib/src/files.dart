@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'globals.dart';
 import 'httpsrv.dart';
+import 'kewe_secrets.dart';
 
 String get DSFilesDir => '$DATA_DIR/ds_files';
 String get DSFilesMetaDir => '$DSFilesDir/meta';
@@ -591,6 +592,13 @@ Future<void> handleDsFileUploadComplete(HttpRequest req) async {
     return;
   }
 
+  // 合并校验通过后立即加密落盘；原始路径从此只存密文。
+  if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
+    cleanup();
+    await errJson(req.response, 500, '文件加密失败');
+    return;
+  }
+
   final category = categorizeFile(mimeType, fileName);
   final meta = DsFileMeta(
     id: fileID,
@@ -639,10 +647,7 @@ Future<void> handleDsFileDownload(HttpRequest req) async {
     await errJson(req.response, 404, '文件不存在');
     return;
   }
-  final absPath = '$DSFilesBlobDir/${meta.relPath}';
-  await serveFile(req, File(absPath),
-      downloadName: meta.name,
-      attachment: req.uri.queryParameters['download'] == '1');
+  await serveDsFile(req, meta);
 }
 
 Future<void> handleDsFileList(HttpRequest req) async {
@@ -716,15 +721,189 @@ Future<void> handleDsFileClearAll(HttpRequest req) async {
 }
 
 // ------------------------------------------------------------
+// 落盘加密（KEWEFILE1 分块容器）
+//   · 每个分块使用当前账号的 AES-256-GCM 密钥独立封装；
+//   · 原始 blob 文件本身只保存密文行，文件管理器直接打开必然是乱码；
+//   · 下载/视觉读取/转写时再按账号密钥还原明文，前端拿到的仍是原始内容。
+// ------------------------------------------------------------
+const String KEWE_FILE_MAGIC = 'KEWEFILE1';
+const int KEWE_FILE_CHUNK = 512 * 1024;
+
+bool dsIsEncryptedFile(String absPath) {
+  final f = File(absPath);
+  if (!f.existsSync()) return false;
+  RandomAccessFile? raf;
+  try {
+    raf = f.openSync();
+    final head = raf.readSync(10);
+    if (head.length < KEWE_FILE_MAGIC.length) return false;
+    final text = utf8.decode(head, allowMalformed: true);
+    return text.startsWith(KEWE_FILE_MAGIC);
+  } catch (_) {
+    return false;
+  } finally {
+    try {
+      raf?.closeSync();
+    } catch (_) {}
+  }
+}
+
+bool encryptDsFileAtRest(String absPath) {
+  if (currentUserId.isEmpty) return false;
+  final src = File(absPath);
+  if (!src.existsSync()) return false;
+  if (dsIsEncryptedFile(absPath)) return true;
+  final tmpPath = '$absPath.kewe-tmp';
+  final out = File(tmpPath).openSync(mode: FileMode.write);
+  RandomAccessFile? input;
+  try {
+    out.writeStringSync('$KEWE_FILE_MAGIC\n');
+    input = src.openSync();
+    while (true) {
+      final chunk = input.readSync(KEWE_FILE_CHUNK);
+      if (chunk.isEmpty) break;
+      final sealed = keweEncryptBytesForUser(currentUserId, chunk);
+      out.writeStringSync('${base64.encode(sealed)}\n');
+    }
+    out.flushSync();
+  } catch (e) {
+    logp('❌ 文件加密失败: $absPath ($e)');
+    return false;
+  } finally {
+    try {
+      input?.closeSync();
+    } catch (_) {}
+    try {
+      out.closeSync();
+    } catch (_) {}
+  }
+  try {
+    File(tmpPath).renameSync(absPath);
+    return true;
+  } catch (e) {
+    try {
+      File(tmpPath).deleteSync();
+    } catch (_) {}
+    logp('❌ 加密文件替换失败: $absPath ($e)');
+    return false;
+  }
+}
+
+/// 读取明文（可选前缀上限，用于大文本抽取）。
+Uint8List dsReadPlainFileBytes(String absPath, {int? maxBytes}) {
+  final f = File(absPath);
+  if (!f.existsSync()) return Uint8List(0);
+  if (!dsIsEncryptedFile(absPath)) {
+    final raw = f.readAsBytesSync();
+    if (maxBytes != null && raw.length > maxBytes) {
+      return Uint8List.sublistView(raw, 0, maxBytes);
+    }
+    return raw;
+  }
+  if (currentUserId.isEmpty) {
+    throw StateError('加密文件需要登录账号密钥');
+  }
+  final builder = BytesBuilder(copy: false);
+  final lines = f.readAsLinesSync();
+  for (var i = 1; i < lines.length; i++) {
+    final line = lines[i].trim();
+    if (line.isEmpty) continue;
+    final plain = keweDecryptBytesForUser(currentUserId, base64.decode(line));
+    if (maxBytes != null && builder.length + plain.length > maxBytes) {
+      final need = maxBytes - builder.length;
+      if (need > 0) builder.add(Uint8List.sublistView(plain, 0, need));
+      break;
+    }
+    builder.add(plain);
+  }
+  return builder.takeBytes();
+}
+
+/// 解密到临时文件，供支持 Range 的 serveFile 使用。
+/// 返回的文件位于系统临时目录，调用方发送完必须删除。
+Future<File> dsDecryptFileToTemp(String absPath, {String? hintName}) async {
+  if (!dsIsEncryptedFile(absPath)) return File(absPath);
+  if (currentUserId.isEmpty) {
+    throw StateError('加密文件需要登录账号密钥');
+  }
+  final dir = Directory.systemTemp.createTempSync('kewe-file-');
+  var safe = (hintName ?? 'file.bin')
+      .replaceAll('/', '_')
+      .replaceAll('\\', '_')
+      .replaceAll('\x00', '_');
+  if (safe.length > 120) safe = safe.substring(0, 120);
+  final out = File('${dir.path}/$safe');
+  final sink = out.openWrite();
+  try {
+    var first = true;
+    await for (final line in File(absPath)
+        .openRead()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      if (first) {
+        first = false;
+        if (line.startsWith(KEWE_FILE_MAGIC)) continue;
+      }
+      final t = line.trim();
+      if (t.isEmpty) continue;
+      sink.add(keweDecryptBytesForUser(currentUserId, base64.decode(t)));
+    }
+    await sink.flush();
+    await sink.close();
+    return out;
+  } catch (e) {
+    try {
+      await sink.close();
+    } catch (_) {}
+    try {
+      dir.deleteSync(recursive: true);
+    } catch (_) {}
+    throw StateError('文件解密失败: $e');
+  }
+}
+
+Future<void> serveDsFile(HttpRequest req, DsFileMeta meta) async {
+  final absPath = '$DSFilesBlobDir/${meta.relPath}';
+  if (!dsIsEncryptedFile(absPath)) {
+    await serveFile(req, File(absPath),
+        downloadName: meta.name,
+        attachment: req.uri.queryParameters['download'] == '1');
+    return;
+  }
+  File? tmp;
+  try {
+    tmp = await dsDecryptFileToTemp(absPath, hintName: meta.name);
+    await serveFile(req, tmp,
+        downloadName: meta.name,
+        attachment: req.uri.queryParameters['download'] == '1');
+  } catch (e) {
+    logp('❌ 文件解密发送失败: ${meta.id} ($e)');
+    try {
+      await errJson(req.response, 500, '文件解密失败');
+    } catch (_) {}
+  } finally {
+    if (tmp != null && tmp.path != absPath) {
+      try {
+        final parent = tmp.parent;
+        if (parent.existsSync()) parent.deleteSync(recursive: true);
+      } catch (_) {}
+    }
+  }
+}
+
+// ------------------------------------------------------------
 // 转 base64（视觉模型用，32MiB 上限）
 // ------------------------------------------------------------
 ({String b64, String mime, String? error}) dsFileToBase64(String fileID) {
   final meta = getDsFileMeta(fileID);
   if (meta == null) return (b64: '', mime: '', error: '文件不存在');
+  if (meta.size > 32 * 1024 * 1024) {
+    return (b64: '', mime: '', error: '图片超过 32MiB 上限（DeepSeek API 的限制）');
+  }
   final absPath = '$DSFilesBlobDir/${meta.relPath}';
   Uint8List data;
   try {
-    data = File(absPath).readAsBytesSync();
+    data = dsReadPlainFileBytes(absPath, maxBytes: 32 * 1024 * 1024);
   } catch (e) {
     return (b64: '', mime: '', error: '$e');
   }

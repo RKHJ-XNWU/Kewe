@@ -888,6 +888,12 @@ DsFileMeta? saveDbBlob(
     final absPath = '$DSFilesBlobDir/$relPath';
     ensureDir('$DSFilesBlobDir/$relDir');
     File(absPath).writeAsBytesSync(bytes);
+    if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
+      try {
+        File(absPath).deleteSync();
+      } catch (_) {}
+      throw StateError('数据文件加密失败');
+    }
     final meta = DsFileMeta(
       id: fileID,
       name: fileName,
@@ -1924,9 +1930,9 @@ Future<String> _whisperTranscribe(List<int> audio, String fileName) async {
 Future<String> dbTranscribeFile(String fileID) async {
   final meta = getDsFileMeta(fileID);
   if (meta == null) throw Exception('找不到音频文件：$fileID');
-  final f = File('$DSFilesBlobDir/${meta.relPath}');
-  if (!f.existsSync()) throw Exception('找不到音频文件本体：${meta.name}');
-  final bytes = f.readAsBytesSync();
+  final absPath = '$DSFilesBlobDir/${meta.relPath}';
+  if (!File(absPath).existsSync()) throw Exception('找不到音频文件本体：${meta.name}');
+  final bytes = dsReadPlainFileBytes(absPath);
   if (bytes.length > 40 * 1024 * 1024) {
     throw Exception('音频文件过大（上限 40MB）');
   }
@@ -2821,9 +2827,9 @@ Future<void> handleDbAudioAnalyze(HttpRequest req) async {
   try {
     final meta = getDsFileMeta(fileID);
     if (meta == null) throw Exception('找不到音频文件：$fileID');
-    final f = File('$DSFilesBlobDir/${meta.relPath}');
-    if (!f.existsSync()) throw Exception('找不到音频文件本体：${meta.name}');
-    final bytes = f.readAsBytesSync();
+    final absPath = '$DSFilesBlobDir/${meta.relPath}';
+    if (!File(absPath).existsSync()) throw Exception('找不到音频文件本体：${meta.name}');
+    final bytes = dsReadPlainFileBytes(absPath);
     if (bytes.length > 40 * 1024 * 1024) {
       throw Exception('音频文件过大（上限 40MB）');
     }
