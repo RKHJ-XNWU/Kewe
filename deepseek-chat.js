@@ -48,8 +48,8 @@
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
     var DSC_LIMIT_PRO_VERSION = '260915';
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
-    var DSC_OUTPUT_OPTIONS = [65536, 131072, 262144, 393216];
-    var DSC_LIMIT_OUTPUT_TOKENS = 262144;
+    var DSC_OUTPUT_OPTIONS = [64000, 128000, 256000, 384000];
+    var DSC_LIMIT_OUTPUT_TOKENS = 256000;
     var DSC_LIMIT_CTX_TOKENS = 1048576;
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
@@ -86,9 +86,18 @@
         return String(n);
     }
 
+    // 输出档位使用自定义十进制 K：64K=64,000，上下文仍使用二进制展示。
+    function dscOutputTokenLabel(n) {
+        n = Number(n) || 0;
+        if (n >= 1000 && n % 1000 === 0) return (n / 1000) + 'K';
+        return String(n);
+    }
+
     function dscNormalizeOutputLimit(value) {
         var n = Number(value);
-        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 262144;
+        var legacy = { 65536: 64000, 131072: 128000, 262144: 256000, 393216: 384000 };
+        n = legacy[n] || n;
+        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 256000;
     }
 
     // 控制中心通过此接口同步档位；模型目录、推理弹窗会立即使用新值。
@@ -142,7 +151,7 @@
     function dscForcedLimitText(lim) {
         var lang = 'zh';
         try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
-        var out = dscTokenLabel(lim && lim.maxOutput ? lim.maxOutput : DSC_LIMIT_OUTPUT_TOKENS);
+        var out = dscOutputTokenLabel(lim && lim.maxOutput ? lim.maxOutput : DSC_LIMIT_OUTPUT_TOKENS);
         if (!lim) {
             var free = {
                 zh: '尚未识别到当前模型；上限仍按全局档位执行：上下文窗口 1024K、最大输出 ' + out + '。',

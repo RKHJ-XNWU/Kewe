@@ -1,8 +1,9 @@
 // ============================================================
 // db_limits.dart —— 全模型统一能力限制与全局输出档位
 //
-// · 上下文窗口：1024K（1K = 1024 tokens）。
-// · 最大输出：64K / 128K / 256K / 384K，默认 256K。
+// · 上下文窗口：1024K（1K = 1024 tokens，固定 1,048,576）。
+// · 最大输出使用自定义十进制 K（1K = 1000 tokens）：64K=64,000、
+//   128K=128,000、256K=256,000、384K=384,000，默认 256K。
 // · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
 //   聊天、续写及模型能力目录都读取同一个值。
 // · 推理等级不再参与最终 max_tokens 的计算。
@@ -12,14 +13,21 @@ import 'dart:io';
 
 import 'globals.dart';
 
-const int DB_NUM_1K = 1024;
-const int DB_DEFAULT_OUTPUT_TOKENS = 256 * DB_NUM_1K;
+const int DB_NUM_1K = 1024; // 上下文窗口仍使用二进制 K
+const int DB_OUTPUT_K = 1000; // 输出档位使用十进制 K
+const int DB_DEFAULT_OUTPUT_TOKENS = 256 * DB_OUTPUT_K;
 const List<int> DB_ALLOWED_OUTPUT_TOKENS = <int>[
-  64 * DB_NUM_1K,
-  128 * DB_NUM_1K,
-  256 * DB_NUM_1K,
-  384 * DB_NUM_1K,
+  64 * DB_OUTPUT_K,
+  128 * DB_OUTPUT_K,
+  256 * DB_OUTPUT_K,
+  384 * DB_OUTPUT_K,
 ];
+const Map<int, int> DB_LEGACY_OUTPUT_TOKENS = <int, int>{
+  65536: 64000,
+  131072: 128000,
+  262144: 256000,
+  393216: 384000,
+};
 const int DB_FORCED_CTX_TOKENS = 1024 * DB_NUM_1K;
 
 const int DB_REASONING_LEVEL_MIN = 1;
@@ -53,15 +61,18 @@ int? dbParseOutputLimit(dynamic value) {
     final raw = value.trim().toUpperCase();
     if (raw.endsWith('K')) {
       final k = int.tryParse(raw.substring(0, raw.length - 1));
-      if (k != null) tokens = k * DB_NUM_1K;
+      if (k != null) tokens = k * DB_OUTPUT_K;
     } else {
       tokens = int.tryParse(raw);
     }
   }
-  if (tokens == null || !DB_ALLOWED_OUTPUT_TOKENS.contains(tokens)) {
+  if (tokens == null) return null;
+  // 兼容旧版二进制档位保存值，首次读取时无缝迁移到十进制档位。
+  final migrated = DB_LEGACY_OUTPUT_TOKENS[tokens] ?? tokens;
+  if (!DB_ALLOWED_OUTPUT_TOKENS.contains(migrated)) {
     return null;
   }
-  return tokens;
+  return migrated;
 }
 
 /// 当前全局输出上限。文件不存在、损坏或含非法值时安全回退到 256K。
@@ -158,8 +169,8 @@ int dbClampReasoningLevel(int level) {
 }
 
 String dbTokensLabel(int tokens) {
-  if (tokens >= DB_NUM_1K && tokens % DB_NUM_1K == 0) {
-    return '${tokens ~/ DB_NUM_1K}K';
+  if (tokens >= DB_OUTPUT_K && tokens % DB_OUTPUT_K == 0) {
+    return '${tokens ~/ DB_OUTPUT_K}K';
   }
   return '$tokens';
 }

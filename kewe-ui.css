@@ -827,3 +827,18 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
     #deepseekChatApp .dsc-msg-usage .dsc-usage-chip { flex-basis: 100%; }
     #deepseekChatApp .dsc-msg-usage .dsc-cost-chip { margin-left: auto; }
 }
+
+/* ---------- 聊天输入框：去掉蓝色焦点框/复选框观感 ---------- */
+#deepseekChatApp .dsc-input-wrap:focus-within {
+    border-color: var(--kewe-line-strong);
+    background: rgba(255,255,255,.94);
+    box-shadow: 0 9px 30px rgba(40, 70, 89, .07), inset 0 1px 0 #fff;
+}
+#deepseekChatApp .dsc-input-wrap textarea:focus,
+#deepseekChatApp .dsc-input-wrap textarea:focus-visible {
+    outline: 0 !important;
+    outline-offset: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
