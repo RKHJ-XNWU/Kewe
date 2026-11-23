@@ -36,9 +36,9 @@
     }
     console.log('[DSC] スクリプト読み込み中 v8');
 
-    // ★★★ 强制推理等级 Lv.999（上限 999）★★★
-    //   推理等级内的输出设置一律忽略；全模型最大输出由用户在左上角选择，
-    //   后端 db_limits.dart 持久化并对聊天、续写和模型目录统一强制执行。
+    // ★ 推理等级默认 Lv.999；高级模式下可在 1-999 之间真实拖动并持久化。
+    //   推理等级只影响反思轮次 / temperature；全模型最大输出仍由左上角档位强制，
+    //   后端 db_limits.dart 持久化并对聊天、续写和模型目录统一执行。
     var FORCED_LEVEL = 999;
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
@@ -2328,7 +2328,7 @@
             item.innerHTML =
                 '<div class="dsc-s-checkbox"></div>' +
                 '<div class="dsc-s-info">' +
-                '<div class="dsc-s-title">' + escapeHtml(s.title || '無題') + '</div>' +
+                '<div class="dsc-s-title">' + escapeHtml(dscDisplaySessionTitle(s.title)) + '</div>' +
                 '<div class="dsc-s-time">' + formatTime(s.updatedAt || s.createdAt) + '</div>' +
                 '</div>' +
                 '<button class="dsc-s-ref" data-ref="1" title="引用をコピー">🔗</button>' +
@@ -2568,6 +2568,30 @@
         } catch (e) { toast(dscErrText('消去に失敗: ', e.message), 'error'); }
     }
 
+    // 默认会话标题可能由旧语言创建并明文存进数据文件；渲染时统一回译为当前语言，
+    // 但用户自定义标题保持原样，绝不改动历史数据。
+    function dscDisplaySessionTitle(title) {
+        var t = String(title == null ? '' : title).trim();
+        if (!t) return dscT('無題');
+        var defaults = [
+            '新しい対話', '新しい会話', '新規セッション', '新会话',
+            'New chat', 'New conversation', 'Nouvelle conversation',
+            '새 대화', 'Новый чат', 'Новый диалог'
+        ];
+        if (defaults.indexOf(t) >= 0) return dscT('新しい対話');
+        return t;
+    }
+
+    // 会話数は言語ごとに単複を補正する（例: 1 session / 2 sessions）。
+    function dscSessionTotalText(count, model) {
+        var n = Number(count) || 0;
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
+        if (lang === 'en') return ' · ' + n + (n === 1 ? ' session' : ' sessions') + ' total · ' + model;
+        if (lang === 'fr') return ' · ' + n + (n > 1 ? ' sessions' : ' session') + ' au total · ' + model;
+        return dscT(' · 全 {0} 件のセッション · {1}', n, model);
+    }
+
     function updateTitle() {
         var sess = state.sessions.find(function (s) { return s.id === state.currentSessionId; });
         var titleEl = $('dscChatTitle');
@@ -2575,7 +2599,7 @@
         // ★ 上部は常に「未踏の境地を探る」を固定表示し、セッション情報はサブタイトル行へ移動
         if (titleEl) titleEl.textContent = dscT('未踏の境地を探る');
         if (sess) {
-            if (subEl) subEl.textContent = (sess.title || dscT('無題')) + dscT(' · 全 {0} 件のセッション · {1}', state.sessions.length, dscDimModel());
+            if (subEl) subEl.textContent = dscDisplaySessionTitle(sess.title) + dscSessionTotalText(state.sessions.length, dscDimModel());
         } else {
             if (subEl) subEl.textContent = dscT('DeepSeek チャット · モデル: ') + dscDimModel();
         }
@@ -5202,11 +5226,11 @@
     function toggleAdvancedMode() {
         if (state.advancedMode) {
             simpleConfirm('上級モードをオフ',
-                'オフにすると推論レベルはデフォルト Lv.' + (state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL) + '。カスタマイズはできません。閉じますか？'
+                dscT('オフにすると推論レベルはデフォルト Lv.') + ' ' + (state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL)
             ).then(function (ok) {
                 if (!ok) return;
                 applyAdvancedMode(false);
-                toast('上級モードをオフ · 推論レベル Lv.' + state.reasoningLevel, 'info');
+                toast('🔒 ' + dscT('上級モードをオフ') + ' · ' + dscT('推論レベル Lv.') + ' ' + state.reasoningLevel, 'info');
             });
         } else {
             simpleConfirm('⚠️ 上級モードをオン',
@@ -5442,6 +5466,14 @@
         var d = levelDetail(level);
         if (num) num.textContent = level;
         if (tag) tag.textContent = String(level);
+        // 滑块两端和中点的说明随 UI 语言同步，不再写死「固定」。
+        var labelMin = $('dscLevelLabelMin');
+        var labelMid = $('dscLevelLabelMid');
+        var labelMax = $('dscLevelLabelMax');
+        var levelCopy = dscLevelCopy();
+        if (labelMin) labelMin.textContent = '1 · ' + levelCopy.name1;
+        if (labelMid) labelMid.textContent = '500 · ' + levelDetail(500).name;
+        if (labelMax) labelMax.textContent = LEVEL_MAX + ' · ' + levelCopy.name4;
         if (info) {
             var tok = levelTokens(level);
             var lim = dscForcedLimitOfCurrentModel();
@@ -5476,15 +5508,14 @@
     function openLevelDialog() {
         var overlay = $('dscLevelOverlay'), range = $('dscLevelRange');
         if (!overlay) return;
-        // ★ 推理等级固定 Lv.999：不再受「上級モード」开关限制，
-        //   点击按钮必定弹出弹窗，并在弹窗顶部显示强制能力声明。
-        state.reasoningLevel = FORCED_LEVEL;
-        state.tempLevel = FORCED_LEVEL;
-        state.advancedLevel = FORCED_LEVEL;
+        // ★ 推理等级默认 Lv.999，但允许在 1-999 之间真实拖动并持久化。
+        //   打开弹窗只回显当前已保存等级，绝不强制重置或锁死滑块。
+        var current = dscClampLevel(state.reasoningLevel || DEFAULT_LEVEL);
+        state.tempLevel = current;
         if (range) {
             try { range.max = String(LEVEL_MAX); } catch (eMax) {}
-            range.value = String(FORCED_LEVEL);
-            try { range.disabled = true; } catch (eDis) {}
+            try { range.disabled = false; } catch (eDis) {}
+            range.value = String(current);
         }
         var notice = $('dscLevelNotice');
         if (notice) {
@@ -5492,23 +5523,30 @@
             notice.textContent = dscForcedLimitText(lim);
             notice.style.display = '';
         }
-        updateLevelUI(FORCED_LEVEL);
+        updateLevelUI(current);
         overlay.classList.add('open');
-        try { toast('🧩 ' + dscForcedLimitText(dscForcedLimitOfCurrentModel()), 'info'); } catch (eT) {}
     }
     function closeLevelDialog() {
         var overlay = $('dscLevelOverlay');
         if (overlay) overlay.classList.remove('open');
     }
     function saveLevelDialog() {
-        // 推理等级被强制固定为 Lv.999（等级内的 max_tokens 已不起作用）
-        state.reasoningLevel = FORCED_LEVEL;
-        state.advancedLevel = FORCED_LEVEL;
-        state.tempLevel = FORCED_LEVEL;
-        try { localStorage.setItem('dsc_reasoningLevel', String(FORCED_LEVEL)); } catch (e) {}
-        updateLevelUI(state.reasoningLevel);
+        // ★ 拖动后的等级真实保存：写入本地持久层，并在高级模式中立即生效。
+        //   等级只影响推理轮次与 temperature；全模型最大输出仍由左上角档位强制。
+        var lv = dscClampLevel(state.tempLevel || state.reasoningLevel || DEFAULT_LEVEL);
+        state.reasoningLevel = lv;
+        state.advancedLevel = lv;
+        state.tempLevel = lv;
+        if (!state.advancedMode) {
+            state.advancedMode = true;
+            try { localStorage.setItem('dsc_advancedMode', '1'); } catch (e) {}
+        }
+        try { localStorage.setItem('dsc_reasoningLevel', String(lv)); } catch (e) {}
+        try { localStorage.setItem('dsc_advancedLevel', String(lv)); } catch (e) {}
+        updateAdvancedUI();
+        updateLevelUI(lv);
         closeLevelDialog();
-        toast('🧩 推理等级 Lv.' + state.reasoningLevel + '（固定）', 'success');
+        toast('✅ ' + dscT('推論レベル Lv.') + ' ' + lv, 'success');
     }
 
     async function openSettings() {
@@ -5658,14 +5696,18 @@
             }
             var savedModel = localStorage.getItem('dsc_currentModel');
             if (savedModel) state.currentModel = savedModel;
-            // 推理等级一律收敛到强制值 Lv.999（历史 localStorage 值不再生效）
-            var lv = FORCED_LEVEL;
-            state.advancedLevel = lv;
+            // 推理等级持久化：高级模式下读取上次保存的 Lv.1-999；
+            // 旧账号若仍是历史 999 值，也照常回显，不再强制重置。
+            var savedLv = parseInt(localStorage.getItem('dsc_reasoningLevel') || '', 10);
+            if (isNaN(savedLv)) savedLv = parseInt(localStorage.getItem('dsc_advancedLevel') || '', 10);
+            if (isNaN(savedLv)) savedLv = ADVANCED_DEFAULT_LEVEL;
+            savedLv = dscClampLevel(savedLv);
+            state.advancedLevel = savedLv;
             var lt = parseInt(localStorage.getItem('dsc_longTextTargetChars') || String(LONG_TEXT_DEFAULT_CHARS), 10);
             if (isNaN(lt) || lt < 1000) lt = LONG_TEXT_DEFAULT_CHARS;
             if (lt > 500000) lt = 500000;
             state.longTextTargetChars = lt;
-            if (state.advancedMode) state.reasoningLevel = lv;
+            if (state.advancedMode) state.reasoningLevel = savedLv;
             else state.reasoningLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
             state.tempLevel = state.reasoningLevel;
         } catch (e) {
@@ -7092,10 +7134,14 @@
         bind('dscLevelSave', 'click', saveLevelDialog);
         var lvRange = $('dscLevelRange');
         if (lvRange) {
-            lvRange.addEventListener('input', function (e) {
-                state.tempLevel = parseInt(e.target.value, 10);
-                updateLevelUI(state.tempLevel);
-            });
+            var syncTempLevel = function (e) {
+                var v = dscClampLevel(e.target.value);
+                state.tempLevel = v;
+                updateLevelUI(v);
+            };
+            lvRange.addEventListener('input', syncTempLevel);
+            // 移动端部分 WebView 只在松手时派发 change；一并同步，避免松手回弹。
+            lvRange.addEventListener('change', syncTempLevel);
         }
         var lvOverlay = $('dscLevelOverlay');
         if (lvOverlay) {
@@ -7599,7 +7645,7 @@ function renderSearchHits(data, q, append) {
 
             var titleEl = document.createElement('div');
             titleEl.className = 'dsc-search-group-title';
-            titleEl.textContent = h.title || h.sessionId || dscT('無題のセッション');
+            titleEl.textContent = h.title ? dscDisplaySessionTitle(h.title) : (h.sessionId || dscT('無題のセッション'));
             gEl.appendChild(titleEl);
 
             var listEl = document.createElement('div');

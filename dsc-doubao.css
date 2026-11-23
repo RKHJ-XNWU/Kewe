@@ -2066,7 +2066,7 @@
     opacity: 1 !important;
 }
 #deepseekChatApp .dsc-quick-model-btn .dsc-qm-name {
-    display: none !important;
+    display: inline-block !important;
 }
 #deepseekChatApp .dsc-quick-model-btn:hover {
     transform: translateY(-1px) scale(1.04);

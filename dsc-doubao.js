@@ -3764,9 +3764,11 @@ var EDGE_VOICE_POOL = {
     }
 
     function qmShortName(name) {
-        var s = String(name || '');
-        s = s.replace(/^doubao-/, 'db-').replace(/^deepseek-/, 'ds-');
-        return s.length > 14 ? s.slice(0, 13) + '…' : s;
+        var s = String(name || '').trim();
+        // 机器人按钮常驻显示当前模型名：保留完整技术名，
+        // 只有超长模型名才做中间省略，完整值仍放在 title / aria-label。
+        if (s.length > 28) s = s.slice(0, 14) + '…' + s.slice(-10);
+        return s;
     }
 
     function qmSyncBtn() {
@@ -3777,7 +3779,7 @@ var EDGE_VOICE_POOL = {
         if (lbl) lbl.textContent = qmShortName(name);
         var on = isDbMode();
         if (on) b.classList.add('db-on'); else b.classList.remove('db-on');
-        b.title = (on ? T('対話モデル（豆包）：') : T('対話モデル（DeepSeek）：')) + name;
+        b.title = (on ? T('対話モデル（豆包）：') : T('対話モデル（DeepSeek）：')) + ' ' + name;
         b.setAttribute('aria-label', b.title);
         // 快捷选择器每次同步都顺带刷新设置面板的状态行，
         // 保证「聊天框下方切模型」与「设置里的对话模型」永远一致。
