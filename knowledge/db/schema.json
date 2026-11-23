@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "KeweAccountKnowledgeDatabase",
+  "type": "object",
+  "required": ["version", "updatedAt", "entries"],
+  "properties": {
+    "version": {"type": "integer", "const": 1},
+    "updatedAt": {"type": "string"},
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "tags", "file", "createdAt", "updatedAt"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{2,64}$"},
+          "title": {"type": "string", "maxLength": 160},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "file": {"type": "string"},
+          "createdAt": {"type": "string"},
+          "updatedAt": {"type": "string"}
+        }
+      }
+    }
+  }
+}

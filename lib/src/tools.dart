@@ -17,6 +17,7 @@ import 'ds_crypto.dart';
 import 'net.dart';
 import 'deepseek_api.dart';
 import 'globals.dart';
+import 'knowledge.dart';
 import 'tool_gate.dart';
 import 'virtual_display.dart';
 
@@ -733,6 +734,36 @@ Map<String, dynamic> objSchema(Map<String, dynamic> props,
 
 List<Map<String, dynamic>> buildDsTools() {
   return [
+    fnTool('knowledge_status', '查看当前账号知识库的条目数、主题和更新时间。', objSchema({})),
+    fnTool(
+        'knowledge_search',
+        '检索当前账号知识库和共享 skill.md 基础资料。任何用户事实、偏好、历史决定都应先检索。',
+        objSchema({
+          'query': str('检索词'),
+          'limit': integer('最多返回条数，默认 12')
+        }, ['query'])),
+    fnTool(
+        'knowledge_read',
+        '读取一条知识正文；id 可以是账号条目 id，也可以是 base:skill.md / base:base/00-empire.md。',
+        objSchema({'id': str('知识 id')}, ['id'])),
+    fnTool(
+        'knowledge_save',
+        '新增或更新账号知识。只保存用户明确说过的长期事实、决定或可复用资料。',
+        objSchema({
+          'id': str('已有条目 id；新建可省略'),
+          'title': str('标题'),
+          'content': str('正文'),
+          'tags': {
+            'type': 'array',
+            'description': '标签数组',
+            'items': {'type': 'string'}
+          }
+        }, ['title', 'content'])),
+    fnTool(
+        'knowledge_delete',
+        '删除账号知识条目。必须用户明确要求删除，并传 confirm=true。',
+        objSchema({'id': str('知识 id'), 'confirm': boolean('是否已得到用户明确确认')},
+            ['id', 'confirm'])),
     fnTool('shizuku_status', '检测 Shizuku 状态。', objSchema({})),
     fnTool('shizuku_start', '打开 Shizuku 应用。', objSchema({})),
     fnTool('shizuku_auto_setup', '★ 一键检测并修复 Shizuku。', objSchema({})),
@@ -2659,6 +2690,35 @@ Future<String> executeDsTool(String name, Map<String, dynamic> args) async {
     return DsToolGate.denyText(name);
   }
   switch (name) {
+    case 'knowledge_status':
+      return jsonEncode(knowledgeStatus());
+    case 'knowledge_search':
+      return knowledgeSearchToolText(args);
+    case 'knowledge_read':
+      final id = mStr(args, 'id');
+      final entry = readKnowledgeEntry(id);
+      if (entry == null) return '知识条目不存在: $id';
+      return '【${entry['title']}】\n${entry['content']}';
+    case 'knowledge_save':
+      try {
+        final tagsRaw = args['tags'];
+        final tags = tagsRaw is List ? tagsRaw.map((t) => t.toString()).toList() : <String>[];
+        final meta = saveKnowledgeEntry(
+          id: mStr(args, 'id').isEmpty ? null : mStr(args, 'id'),
+          title: mStr(args, 'title'),
+          content: mStr(args, 'content'),
+          tags: tags,
+        );
+        return '已保存知识 ${meta['id']} · ${meta['title']}';
+      } catch (e) {
+        return '知识保存失败: $e';
+      }
+    case 'knowledge_delete':
+      if (!(args['confirm'] == true)) {
+        return '删除知识需要用户明确确认，并传 confirm=true';
+      }
+      return deleteKnowledgeEntry(mStr(args, 'id')) ? '已删除知识条目' : '知识条目不存在';
+
     // Shizuku 全部禁用（与 Go 版 shizukuDisabled=true 行为一致）
     case 'shizuku_status':
     case 'shizuku_start':

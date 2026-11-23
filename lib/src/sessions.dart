@@ -31,15 +31,12 @@ const int DS_NORMAL_OUTPUT_TOKENS = 8192;
 const int DS_TARGET_CHARS_5M = 5000000;
 
 // ------------------------------------------------------------
-// 用户数据加密（AES-256-GCM）
-//   磁盘上的 .sts 只保存密文；读取时在服务端按当前登录账号的密钥解密。
-//   未登录的启动期数据迁移保持明文，首次账号注册/登录后统一就地加密。
+// 聊天数据策略（2026-11-23 最终决定）
+//   聊天标题 / 正文 / 思考链一律明文写入当前账号目录，方便在后端直接改文件。
+//   账号之间仍通过 data/users/<userId>/ 隔离；文件附件继续使用 KEWEFILE1 加密。
+//   为兼容旧版本，读取到 KWENC1: 遗留密文时仍会解密，首次登录后自动迁移为明文。
 // ------------------------------------------------------------
-String _protectField(String plain) {
-  if (currentUserId.isEmpty) return plain;
-  if (plain.isEmpty) return plain;
-  return keweEncryptTextForUser(currentUserId, plain);
-}
+String _protectField(String plain) => plain;
 
 String _unprotectField(String escaped, {String fallback = ''}) {
   final raw = unescDs(escaped);
@@ -644,9 +641,11 @@ void invalidateDsSessionCaches(String path) {
   if (old != null) _dsMsgsCacheChars -= old.chars;
 }
 
-/// 首次登录/注册后就地加密历史明文会话（标题、正文、思考链）。
-/// 已经是 KWENC1 的字段跳过，可重复调用。
-int encryptLegacyUserDataForCurrentUser() {
+/// 登录/注册后把旧版本 KWENC1 聊天密文迁移为明文，便于后端直接编辑数据文件。
+/// 已经是明文的字段跳过，可重复调用。
+int encryptLegacyUserDataForCurrentUser() => decryptLegacyChatDataForCurrentUser();
+
+int decryptLegacyChatDataForCurrentUser() {
   if (currentUserId.isEmpty) return 0;
   List<FileSystemEntity> files;
   try {
@@ -674,21 +673,18 @@ int encryptLegacyUserDataForCurrentUser() {
       final parts = line.substring(3).split('|');
       if (line.startsWith('#S|') && parts.length >= 4) {
         final title = unescDs(parts[1]);
-        if (title.isNotEmpty && !keweIsEncryptedText(title)) {
-          parts[1] = escDs(_protectField(title));
-          changed = true;
+        if (keweIsEncryptedText(title)) {
+          try { parts[1] = escDs(keweDecryptTextForUser(currentUserId, title)); changed = true; } catch (_) {}
         }
       } else if (line.startsWith('#M|') && parts.length >= 4) {
         final content = unescDs(parts[2]);
-        if (content.isNotEmpty && !keweIsEncryptedText(content)) {
-          parts[2] = escDs(_protectField(content));
-          changed = true;
+        if (keweIsEncryptedText(content)) {
+          try { parts[2] = escDs(keweDecryptTextForUser(currentUserId, content)); changed = true; } catch (_) {}
         }
         if (parts.length >= 6) {
           final reasoning = unescDs(parts[5]);
-          if (reasoning.isNotEmpty && !keweIsEncryptedText(reasoning)) {
-            parts[5] = escDs(_protectField(reasoning));
-            changed = true;
+          if (keweIsEncryptedText(reasoning)) {
+            try { parts[5] = escDs(keweDecryptTextForUser(currentUserId, reasoning)); changed = true; } catch (_) {}
           }
         }
       }
@@ -700,9 +696,7 @@ int encryptLegacyUserDataForCurrentUser() {
     if (writeTextFile(entity.path, content)) changedFiles++;
   }
   invalidateAllDsSessionCaches();
-  if (changedFiles > 0) {
-    logp('🔐 已就地加密历史会话: $changedFiles 个文件');
-  }
+  if (changedFiles > 0) logp('🔓 已将历史聊天密文迁移为明文: $changedFiles 个文件');
   return changedFiles;
 }
 

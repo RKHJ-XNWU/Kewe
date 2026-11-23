@@ -29,6 +29,7 @@ import 'package:kewe/src/forum.dart';
 import 'package:kewe/src/globals.dart';
 import 'package:kewe/src/vocab.dart';
 import 'package:kewe/src/httpsrv.dart';
+import 'package:kewe/src/knowledge.dart';
 import 'package:kewe/src/kewe_auth.dart';
 import 'package:kewe/src/model_router.dart';
 import 'package:kewe/src/peakvalley.dart';
@@ -203,6 +204,9 @@ void registerRoutes() {
   _register('/api/doubao/glossary/save', handleGlossarySave);
   _register('/api/doubao/glossary/delete', handleGlossaryDelete);
 
+  // ---------- 知识库 / 数据库（账号级） ----------
+  registerPrefixHandler('/api/knowledge/', handleKnowledgeApi);
+
   // ---------- 峰谷提醒（前缀匹配） ----------
   registerPrefixHandler('/api/peakvalley/', pvHandleAPI);
 }
@@ -221,7 +225,10 @@ bool _isPrivateStaticPath(String path) {
       path == '/.git' ||
       path.startsWith('/.git/') ||
       path == '/.backup_tmp' ||
-      path.startsWith('/.backup_tmp/');
+      path.startsWith('/.backup_tmp/') ||
+      path == '/knowledge' ||
+      path.startsWith('/knowledge/') ||
+      path == '/skill.md';
 }
 
 Future<void> _dispatchAuthed(HttpRequest req) async {
@@ -312,6 +319,7 @@ Future<void> _serveMain(List<String> args) async {
   initDsFilesDir();
   initDsWorkspace();
   initDsDevToolsDir();
+  await initKnowledgeDir();
   migrateDsChatToPerSession();
 
   // 工具模式：注入 schema 提供者与执行器

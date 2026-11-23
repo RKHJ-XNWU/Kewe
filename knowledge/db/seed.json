@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "title": "Kewe Sovereign Knowledge DB Seed",
+  "createdAt": "2026-11-23T00:00:00+08:00",
+  "entries": [
+    {
+      "id": "empire-core",
+      "title": "帝国核心：一句话行动协议",
+      "tags": [
+        "empire",
+        "protocol",
+        "core"
+      ],
+      "content": "用户说一句话时，先识别目标 → 查账号知识库 → 拆分步骤 → 执行 → 验收 → 沉淀。\n禁止把计划说成已完成。所有账号数据相互隔离。\n聊天正文按最终决定以明文保存在 data/users/<userId>/deepseek_chat/sessions/，前端不提供编辑入口。"
+    },
+    {
+      "id": "emergency-protocol",
+      "title": "保命协议：危险时的最短路径",
+      "tags": [
+        "sos",
+        "emergency",
+        "safety"
+      ],
+      "content": "网站不是救援机构。危险时先离开危险源到有人的安全处，拨打 110（报警）/120（急救）/119（消防救援），说清位置、事件、人数、伤情。\n网站 SOS 面板只提供号码、联系人、定位复制和本地医疗卡；不保证自动接通或获救。\n模型不得做医学诊断，不提供危险自救动作。"
+    },
+    {
+      "id": "mobile-automation",
+      "title": "手机自动化操作手册",
+      "tags": [
+        "phone",
+        "adb",
+        "automation"
+      ],
+      "content": "先 adb_status 检查通道；再 get_screen_text 或 ocr_screen 读取界面；使用 adb_shell 执行 am/input/settings；用 wait_for_element 等待稳定；重复动作使用 batch_tap / batch_swipe。\n删除、付款、发消息、安装应用、修改权限必须二次确认。禁止绕过锁屏、验证码或平台风控，禁止隐蔽监控和骚扰。"
+    },
+    {
+      "id": "knowledge-rules",
+      "title": "知识库使用规则",
+      "tags": [
+        "knowledge",
+        "memory",
+        "rules"
+      ],
+      "content": "账号知识库位于 data/users/<userId>/knowledge/。db.json 是索引，entries/<id>.md 是正文，可直接用后端编辑器修改。\n模型用 knowledge_status / knowledge_search / knowledge_read / knowledge_save 访问。\n不得写入密码、Cookie、PAT、密钥；不得跨账号读取；不得把猜测写成用户事实。"
+    },
+    {
+      "id": "language-rules",
+      "title": "六语界面规则",
+      "tags": [
+        "i18n",
+        "language"
+      ],
+      "content": "支持 zh / en / ja / ko / ru / fr。用户用哪种语言提问就用哪种语言回答。新增界面文案必须六语齐全，不能只写中文；代码、路径、API 名保持原文。"
+    }
+  ]
+}

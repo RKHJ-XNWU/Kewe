@@ -21,6 +21,7 @@ import 'ds_crypto.dart';
 import 'ds_usage.dart';
 import 'files.dart';
 import 'globals.dart';
+import 'knowledge.dart';
 import 'httpsrv.dart';
 import 'model_router.dart';
 import 'relay.dart';
@@ -1287,6 +1288,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final uiLang = dsRequestLang(req, body);
   final sysParts = <String>[];
   sysParts.add(dsLangSystemPrompt(uiLang));
+  sysParts.add(knowledgeSystemPromptForChat(uiLang));
   if (deepThink) {
     sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
   }
