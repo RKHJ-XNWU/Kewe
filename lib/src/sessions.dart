@@ -904,7 +904,7 @@ class LevelParams {
 
 LevelParams levelToParams(int level) {
   // ★ 推理等级上限已改为 999（见 db_limits.dart）：等级只影响温度与反思轮数，
-  //   不再决定最终 max_tokens —— 豆包编程模型由 dbForcedMaxOutput() 强制覆盖。
+  //   不再决定最终 max_tokens —— 所有模型由 dbForcedMaxOutput() 统一强制覆盖。
   final l = dbClampReasoningLevel(level);
   const span = DB_REASONING_LEVEL_MAX - 1; // 999 → 998 个区间
   final maxTokens = DS_NORMAL_OUTPUT_TOKENS +

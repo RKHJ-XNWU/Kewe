@@ -29,25 +29,22 @@
 
     // ★★★ 强制推理等级 Lv.999（上限 999）★★★
     //   所有者要求：推理等级固定 Lv.999，且「等级里的 max_tokens」一律无视——
-    //   豆包编程模型的最大输出由后端 db_limits.dart 强制为 256K，
+    //   所有模型（预设 / 自定义 / 中转站 / DeepSeek）的最大输出由后端 db_limits.dart 强制为 256K，
     //   前端 levelTokens() 只负责把这个强制值显示出来。
     var FORCED_LEVEL = 999;
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
     var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
-    // 强制能力上限表（与后端 lib/src/db_limits.dart 保持一致，后端为准）
-    //   · Doubao-Seed-Evolving      → 上下文 1024K ・ 输出 256K
-    //   · 豆包 2.1 Pro（仅 260915）  → 上下文 1024K ・ 输出 256K
-    //   · 豆包 2.1 lite             → 上下文 1024K（固定）・ 输出 256K
-    //   · 其余模型（近日 turbo / mini / 2.0 lite / GLM / DeepSeek / 中转站）
-    //     一律不受约束，走原有逻辑不变
-    var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
+    // 强制能力上限（与后端 lib/src/db_limits.dart 完全一致，后端为准）
+    //   ★ 2026-11-23 起：所有模型一律 上下文窗口 1024K ・ 最大输出 256K，
+    //     预设模型、用户自定义模型、中转站模型、DeepSeek 维度全部统一，无例外。
+    //   族识别常量仅保留作说明用途，不再决定是否施加限制。
+    var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];   // 族识别（仅说明用，不再作为闸门）
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
-    var DSC_LIMIT_PRO_VERSION = '260915';      // 只有这个版本的 2.1 Pro 才受约束
-    var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
-    var DSC_LIMIT_OUTPUT_TOKENS = 262144;      // 256K
-    var DSC_LIMIT_CTX_CODING_TOKENS = 1048576; // 1024K
-    var DSC_LIMIT_CTX_LITE_TOKENS = 1048576;   // 1024K（固定，不再动态扩展）
+    var DSC_LIMIT_PRO_VERSION = '260915';      // 2.1 Pro 的当前版本号（仅说明用）
+    var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];       // 族识别（仅说明用，不再作为闸门）
+    var DSC_LIMIT_OUTPUT_TOKENS = 262144;      // 256K（全模型统一）
+    var DSC_LIMIT_CTX_TOKENS = 1048576;        // 1024K（全模型统一，固定）
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
         'doubao-seed-2-1-pro': 'doubao-seed-2-1-pro-260915',
@@ -83,63 +80,51 @@
         return String(n);
     }
 
-    // 当前维度模型的强制上限（DeepSeek 维度返回 null → 保持原逻辑不变）
+    // 当前模型的强制上限（★ 全模型统一：预设 / 自定义 / 中转站 / DeepSeek 维度一视同仁）
     function dscForcedLimitOfCurrentModel() {
-        var isDb = false;
-        try { isDb = !!(window.dscDoubaoModeOn && window.dscDoubaoModeOn()); } catch (e1) { isDb = false; }
-        if (!isDb) return null;
         var m = '';
-        try { m = window.dscDoubaoChatModel ? String(window.dscDoubaoChatModel() || '') : ''; } catch (e2) { m = ''; }
+        try {
+            m = (typeof dscDimModel === 'function') ? String(dscDimModel() || '') : '';
+        } catch (e0) { m = ''; }
+        if (!m) {
+            // 兜底：直接问两个维度各自的取值函数，避免维度判定函数尚未就绪
+            try { if (window.dscDoubaoModeOn && window.dscDoubaoModeOn() && typeof window.dscDoubaoChatModel === 'function') m = String(window.dscDoubaoChatModel() || ''); } catch (e1) { }
+            try { if (!m) m = String((window.dscGetChatModel && window.dscGetChatModel()) || ''); } catch (e2) { }
+        }
         m = dscCanonicalLimitModel(m);
-        if (!m) return null;
-        var i;
-        // ① Evolving：整族受约束
-        for (i = 0; i < DSC_LIMIT_EVOLVING_PREFIX.length; i++) {
-            if (m.indexOf(DSC_LIMIT_EVOLVING_PREFIX[i]) === 0) {
-                return { kind: 'coding', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
-                         context: DSC_LIMIT_CTX_CODING_TOKENS, dynamic: false };
-            }
-        }
-        // ② 2.1 Pro：只认 260915 版本
-        if (dscIsPro260915(m)) {
-            return { kind: 'coding', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
-                     context: DSC_LIMIT_CTX_CODING_TOKENS, dynamic: false };
-        }
-        // ③ 2.1 lite：1024K 固定 ・ 输出 256K
-        for (i = 0; i < DSC_LIMIT_LITE_PREFIX.length; i++) {
-            if (m.indexOf(DSC_LIMIT_LITE_PREFIX[i]) === 0) {
-                return { kind: 'lite', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
-                         context: DSC_LIMIT_CTX_LITE_TOKENS, dynamic: false };
-            }
-        }
-        // ④ 其它模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 不受约束
-        return null;
+        return {
+            kind: 'universal',
+            model: m || '(未命名模型)',
+            maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
+            context: DSC_LIMIT_CTX_TOKENS,
+            dynamic: false
+        };
     }
 
     // 推理等级弹窗里的强制声明（6 语言，跟随 UI 语言）
     function dscForcedLimitText(lim) {
         var lang = 'zh';
         try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
-        // 未命中强制表的模型（2.1 turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 如实说明不受约束
+        // 模型标识为空时的兜底说明（正常情况下 dscForcedLimitOfCurrentModel 恒有值）
         if (!lim) {
             var free = {
-                zh: '当前模型不在强制上限表内（不受 1024K / 256K 约束），按推理等级 Lv.999 的原有逻辑运行。',
-                ja: '現在のモデルは強制上限表の対象外です（1024K / 256K の制約なし）。推論レベル Lv.999 の従来ロジックで動作します。',
-                en: 'This model is not in the forced-limit table (no 1024K / 256K cap); it keeps the original Lv.999 behaviour.',
-                ko: '현재 모델은 강제 상한표 대상이 아닙니다(1024K / 256K 제한 없음). 추론 레벨 Lv.999의 기존 로직으로 동작합니다.',
-                ru: 'Текущая модель не входит в таблицу жёстких лимитов (без ограничений 1024K / 256K) и работает по прежней логике Lv.999.',
-                fr: "Ce modèle n'est pas soumis à la table des limites forcées (pas de plafond 1024K / 256K) : comportement Lv.999 d'origine."
+                zh: '尚未识别到当前模型；上限仍按统一强制值执行：上下文窗口 1024K、最大输出 256K。',
+                ja: '現在のモデルを識別できませんでしたが、上限は統合強制値（コンテキスト 1024K ／ 最大出力 256K）で動作します。',
+                en: 'The current model could not be identified; the unified caps still apply: context 1024K and max output 256K.',
+                ko: '현재 모델을 식별하지 못했지만, 상한은 통합 강제값(컨텍스트 1024K / 최대 출력 256K)으로 적용됩니다.',
+                ru: 'Текущая модель не определена, но единые лимиты всё равно действуют: контекст 1024K, максимум вывода 256K.',
+                fr: "Le modèle courant n'a pas pu être identifié ; les plafonds unifiés s'appliquent quand même : contexte 1024K et sortie maximale 256K."
             };
             return free[lang] || free.zh;
         }
         var ctx = dscTokenLabel(lim.context);
         var map = {
-            zh: '由于你使用的是强制上限模型（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite），所以强制上下文窗口为 ' + ctx + '（固定，不再动态扩展），强制输出最大为 256K。',
-            ja: '強制上限モデル（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite）のため、コンテキストウィンドウは ' + ctx + '（固定、動的拡張なし）、最大出力は 256K に強制固定されます。',
-            en: 'Because you are using a forced-limit model (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite), the context window is forced to ' + ctx + ' (fixed, no dynamic expansion) and max output is forced to 256K.',
-            ko: '강제 상한 모델(Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite)이므로 컨텍스트 윈도우는 ' + ctx + '(고정, 동적 확장 없음), 최대 출력은 256K로 강제 고정됩니다.',
-            ru: 'Вы используете модель с жёстким лимитом (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite): контекстное окно принудительно ' + ctx + ' (фиксированное, без динамического расширения), максимальный вывод — 256K.',
-            fr: "Vous utilisez un modèle à plafond forcé (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite) : la fenêtre de contexte est forcée à " + ctx + " (fixe, sans extension dynamique) et la sortie maximale à 256K."
+            zh: '已对全部模型（预设、自定义、中转站、DeepSeek 维度）统一强制：上下文窗口 ' + ctx + '（固定），最大输出 256K；推理等级内的 max_tokens 已忽略。',
+            ja: '全モデル（プリセット・カスタム・中継・DeepSeek 次元）に統合強制：コンテキストウィンドウ ' + ctx + '（固定）、最大出力 256K。推論レベル内の max_tokens は無視されます。',
+            en: 'Unified caps apply to all models (preset, custom, relay, DeepSeek dimension): context window ' + ctx + ' (fixed), max output 256K; max_tokens inside the reasoning level is ignored.',
+            ko: '모든 모델(프리셋·커스텀·중계·DeepSeek 차원)에 통합 강제 적용: 컨텍스트 윈도우 ' + ctx + '(고정), 최대 출력 256K. 추론 레벨 내 max_tokens는 무시됩니다.',
+            ru: 'Единые лимиты для всех моделей (предустановленные, пользовательские, релейные, DeepSeek): контекстное окно ' + ctx + ' (фиксированное), максимальный вывод 256K; max_tokens уровня рассуждений игнорируется.',
+            fr: "Plafonds unifiés pour tous les modèles (prédéfinis, personnalisés, relais, dimension DeepSeek) : fenêtre de contexte " + ctx + " (fixe), sortie maximale 256K ; le max_tokens du niveau de raisonnement est ignoré."
         };
         return map[lang] || map.zh;
     }

@@ -854,7 +854,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     await dsJSONErr(res, 400, '没有可继续生成的内容');
     return;
   }
-  // ★ 推理等级上限 999（db_limits.dart）；豆包编程模型的最大输出强制 256K。
+  // ★ 推理等级上限 999（db_limits.dart）；所有模型的最大输出统一强制 256K。
   level = dbClampReasoningLevel(level);
   final params = levelToParams(level);
   var maxTokens = params.maxTokens;

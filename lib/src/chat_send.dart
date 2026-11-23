@@ -958,10 +958,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     temperature = 1.0;
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
-  // ★★★ 强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
-  //   编程模型（Doubao-Seed-Evolving / 2.1 Pro 260915）：上下文 1024K ・ 输出 256K；
-  //   2.1 lite：上下文 1024K（固定，不再动态扩展）・ 输出 256K；
-  //   其余模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）不受约束，逻辑不变。
+  // ★★★ 统一强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
+  //   ★ 2026-11-23 起所有模型一律：上下文 1024K ・ 输出 256K
+  //     —— 预设模型、自定义模型、中转站、DeepSeek 维度全部统一，无例外。
   //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
   final forcedOut = dbForcedMaxOutput(model);
   if (forcedOut > 0) {

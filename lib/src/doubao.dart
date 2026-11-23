@@ -2190,9 +2190,8 @@ Map<String, dynamic> _modelListJson() {
         if (m.cat == 'chat') ...{
           'audioInput': dbSupportsAudioInput(m.value),
           'videoInput': dbSupportsVideoInput(m.value),
-          // ★ 强制能力上限（db_limits.dart）：前端据此显示
-          //   「上下文窗口 1024K / 最大输出 256K」并在推理等级弹窗里声明。
-          //   maxOutput == 0 表示该模型不受强制表约束（走原有逻辑）。
+          // ★ 统一强制上限（db_limits.dart）：所有模型一律 上下文 1024K / 输出 256K，
+          //   预设模型与自定义模型同一套口径；前端据此在推理等级弹窗里声明。
           'maxOutput': dbForcedMaxOutput(m.value),
           'contextWindow': dbForcedContextWindow(m.value),
           'contextDynamic': false,
@@ -2205,7 +2204,18 @@ Map<String, dynamic> _modelListJson() {
     final v = dbCanonicalModelValue(c);
     if (v.isEmpty) continue;
     if (list.any((e) => e['value'] == v)) continue;
-    list.add({'value': v, 'label': v, 'category': 'chat', 'custom': true});
+    // ★ 自定义模型与预设模型同一口径：同样声明 1024K / 256K 强制上限
+    list.add({
+      'value': v,
+      'label': v,
+      'category': 'chat',
+      'custom': true,
+      'maxOutput': dbForcedMaxOutput(v),
+      'contextWindow': dbForcedContextWindow(v),
+      'contextDynamic': false,
+      'contextWindowMin': dbForcedContextWindow(v),
+      'contextWindowStep': 0,
+    });
   }
   return {
     'models': list,
@@ -2217,8 +2227,11 @@ Map<String, dynamic> _modelListJson() {
     'reasoningLevelMax': DB_REASONING_LEVEL_MAX,
     'reasoningLevelForced': DB_REASONING_LEVEL_FORCED,
     'forcedMaxOutputTokens': DB_FORCED_OUTPUT_TOKENS,
-    'forcedContextCodingTokens': DB_FORCED_CTX_TOKENS_CODING,
-    'forcedContextLiteTokens': DB_FORCED_CTX_TOKENS_LITE,
+    // 统一强制上下文窗口（全模型同一值，预设与自定义模型共用）
+    'forcedContextTokens': DB_FORCED_CTX_TOKENS,
+    // 兼容旧字段名（前端历史版本可能读取，值同 forcedContextTokens）
+    'forcedContextCodingTokens': DB_FORCED_CTX_TOKENS,
+    'forcedContextLiteTokens': DB_FORCED_CTX_TOKENS,
   };
 }
 

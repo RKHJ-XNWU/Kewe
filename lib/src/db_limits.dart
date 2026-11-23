@@ -2,35 +2,33 @@
 // db_limits.dart —— 强制能力上限表（用户级硬约束，优先级最高）
 //
 // 所有者指定的硬性上限（不可被推理等级 / 长文模式 / 快速模式覆盖）：
-//   · Doubao-Seed-Evolving         上下文窗口 1024K ・ 最大输出 256K
-//   · 豆包 2.1 Pro（仅 260915 版本） 上下文窗口 1024K ・ 最大输出 256K
-//   · 豆包 2.1 lite（260915）       上下文窗口 1024K（固定，不再动态扩展）・ 最大输出 256K
+//   · 所有模型一律 上下文窗口 1024K ・ 最大输出 256K
+//     —— 预设模型、自定义模型（用户手动添加的 value）、中转站模型、DeepSeek 维度
+//        全部统一，不再有例外，也不再按模型族/版本号区分。
 //   · 推理等级固定 Lv.999，且等级不再参与 max_tokens 计算
-//   · 其余模型（2.1 turbo / 2.0 mini / 2.0 lite / GLM / DeepSeek / 中转站 …）
-//     一律不受本表约束，行为与以前完全一致（maxOutput / contextWindow 返回 0）
+//
+// 历史沿革：
+//   2026-11 之前本表只约束 Doubao-Seed-Evolving / 2.1 Pro 260915 / 2.1 lite 三族；
+//   2026-11-23 按所有者要求改为「全模型统一」，族识别函数仅保留作兼容与说明用途，
+//   不再作为是否施加限制的闸门。
 //
 // 设计原则：
 //   1) 本文件是唯一可信来源。聊天入口、续写入口、前端模型目录接口
 //      全部从这里取上限，任何调用方都不得把上限调低。
-//   2) 2.1 Pro 按「版本号」精确匹配：只有 260915 这一个版本享受 1024K / 256K。
-//      历史值（260628、无版本号）会先被别名统一到 260915，再按 260915 判定——
-//      因为实际送给方舟的模型标识就是 260915，声明的上限必须与真实模型一致。
-//      将来若新增其它 pro 版本号（如 -261001），默认不受约束，除非显式加进本表。
-//   3) Evolving / lite 按模型族前缀匹配，版本号变化（260628 → 260915）不受影响。
-//   4) 表外模型行为完全不变。
+//   2) 只有模型标识为空（尚未选择模型）时才返回 0，表示「无从判断」。
+//   3) 表外 / 自定义模型的 max_tokens 也会被抬到 256K；若上游服务商不接受
+//      这个值（部分轻量模型上限更小），以上游返回为准，可在 DB_FORCED_OUTPUT_TOKENS
+//      按模型下调，这是唯一允许的例外。
 // ============================================================
 
 /// 1K = 1024 tokens（本文件所有 K 均按 1024 计）
 const int DB_NUM_1K = 1024;
 
-/// 强制最大输出：256K tokens
+/// 强制最大输出：256K tokens（全模型统一）
 const int DB_FORCED_OUTPUT_TOKENS = 256 * DB_NUM_1K;
 
-/// 编程模型强制上下文窗口：1024K tokens
-const int DB_FORCED_CTX_TOKENS_CODING = 1024 * DB_NUM_1K;
-
-/// lite 档强制上下文窗口：1024K tokens（固定，不再动态扩展）
-const int DB_FORCED_CTX_TOKENS_LITE = 1024 * DB_NUM_1K;
+/// 强制上下文窗口：1024K tokens（全模型统一，固定，不再动态扩展）
+const int DB_FORCED_CTX_TOKENS = 1024 * DB_NUM_1K;
 
 /// 推理等级下限 / 上限 / 强制值
 const int DB_REASONING_LEVEL_MIN = 1;
@@ -89,10 +87,11 @@ bool dbIsPro260915(String model) {
   return seg == DB_PRO_FORCED_VERSION;
 }
 
-/// 该模型是否属于「编程模型」强制档（上下文 1024K ・ 输出 256K）
+/// 该模型是否属于「编程模型」族（Evolving / 2.1 Pro 260915）
 ///   ① Evolving：整族命中；
-///   ② 2.1 Pro：只有 260915 版本命中，别的版本号一律不受约束；
-///   ③ 其它模型（turbo / mini / lite(2.0) / GLM / DeepSeek …）：一律不命中。
+///   ② 2.1 Pro：只有 260915 版本命中；
+///   ③ 其它模型不命中。
+/// 注意：族识别结果已不再影响上限——所有模型统一强制，本函数仅作说明/兼容用途。
 bool dbIsForcedCodingModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -102,7 +101,8 @@ bool dbIsForcedCodingModel(String model) {
   return dbIsPro260915(m);
 }
 
-/// 该模型是否属于「lite」强制档（上下文 1024K 固定 ・ 输出 256K）
+/// 该模型是否属于「lite」族（上下文 1024K 固定 ・ 输出 256K）
+/// 注意：族识别结果已不再影响上限——所有模型统一强制，本函数仅作说明/兼容用途。
 bool dbIsForcedLiteModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -112,20 +112,18 @@ bool dbIsForcedLiteModel(String model) {
   return false;
 }
 
-/// 强制最大输出（tokens）。返回 0 表示「该模型不受本表约束」。
-int dbForcedMaxOutput(String model) {
-  if (dbIsForcedCodingModel(model) || dbIsForcedLiteModel(model)) {
-    return DB_FORCED_OUTPUT_TOKENS;
-  }
-  return 0;
-}
+/// 该模型是否受统一强制上限约束。
+/// ★ 2026-11-23 起：只要模型标识非空就生效——预设、自定义、中转站、DeepSeek 维度一视同仁，
+///   不再按模型族 / 版本号区分；只有「尚未选择模型」（空标识）返回 false。
+bool dbHasForcedLimits(String model) => model.trim().isNotEmpty;
 
-/// 强制上下文窗口（tokens）。返回 0 表示「该模型不受本表约束」。
-int dbForcedContextWindow(String model) {
-  if (dbIsForcedCodingModel(model)) return DB_FORCED_CTX_TOKENS_CODING;
-  if (dbIsForcedLiteModel(model)) return DB_FORCED_CTX_TOKENS_LITE;
-  return 0;
-}
+/// 强制最大输出（tokens）。返回 0 表示「模型标识为空，无从判断」。
+int dbForcedMaxOutput(String model) =>
+    dbHasForcedLimits(model) ? DB_FORCED_OUTPUT_TOKENS : 0;
+
+/// 强制上下文窗口（tokens）。返回 0 表示「模型标识为空，无从判断」。
+int dbForcedContextWindow(String model) =>
+    dbHasForcedLimits(model) ? DB_FORCED_CTX_TOKENS : 0;
 
 /// 推理等级收敛到 [DB_REASONING_LEVEL_MIN, DB_REASONING_LEVEL_MAX]。
 /// 注意：等级不再参与 max_tokens 计算（强制输出由本表决定）。
