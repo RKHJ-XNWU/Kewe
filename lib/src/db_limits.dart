@@ -2,7 +2,7 @@
 // db_limits.dart —— 强制能力上限表（用户级硬约束，优先级最高）
 //
 // 所有者指定的硬性上限（不可被推理等级 / 长文模式 / 快速模式覆盖）：
-//   · 所有模型一律 上下文窗口 1024K ・ 最大输出 256K
+//   · 所有模型一律 上下文窗口 1024K ・ 最大输出 384K
 //     —— 预设模型、自定义模型（用户手动添加的 value）、中转站模型、DeepSeek 维度
 //        全部统一，不再有例外，也不再按模型族/版本号区分。
 //   · 推理等级固定 Lv.999，且等级不再参与 max_tokens 计算
@@ -16,16 +16,16 @@
 //   1) 本文件是唯一可信来源。聊天入口、续写入口、前端模型目录接口
 //      全部从这里取上限，任何调用方都不得把上限调低。
 //   2) 只有模型标识为空（尚未选择模型）时才返回 0，表示「无从判断」。
-//   3) 表外 / 自定义模型的 max_tokens 也会被抬到 256K；若上游服务商不接受
-//      这个值（部分轻量模型上限更小），以上游返回为准，可在 DB_FORCED_OUTPUT_TOKENS
-//      按模型下调，这是唯一允许的例外。
+//   3) 384K 是「允许模型输出到的最大上限」（cap），不是默认输出长度；
+//      模型实际生成多少由内容决定，本值只负责把请求的 max_tokens 顶到该上限。
+//      若上游服务商因自身上限更小而拒绝该值，由所有者自行承担，本表不做收敛。
 // ============================================================
 
 /// 1K = 1024 tokens（本文件所有 K 均按 1024 计）
 const int DB_NUM_1K = 1024;
 
-/// 强制最大输出：256K tokens（全模型统一）
-const int DB_FORCED_OUTPUT_TOKENS = 256 * DB_NUM_1K;
+/// 强制最大输出：384K tokens（全模型统一的输出上限，393216）
+const int DB_FORCED_OUTPUT_TOKENS = 384 * DB_NUM_1K;
 
 /// 强制上下文窗口：1024K tokens（全模型统一，固定，不再动态扩展）
 const int DB_FORCED_CTX_TOKENS = 1024 * DB_NUM_1K;
@@ -38,15 +38,15 @@ const int DB_REASONING_LEVEL_FORCED = 999;
 /// 2.1 Pro 模型族根（不含版本号）
 const String DB_PRO_MODEL_ROOT = 'doubao-seed-2-1-pro';
 
-/// 2.1 Pro 唯一受约束的版本号（只有这个版本才是 1024K / 256K）
+/// 2.1 Pro 的当前版本号（历史族识别用；现在所有模型统一 1024K / 384K）
 const String DB_PRO_FORCED_VERSION = '260915';
 
-/// 模型族前缀：Evolving 整族（上下文 1024K ・ 输出 256K，版本号随官方变化自动跟随）
+/// 模型族前缀：Evolving 整族（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
 const List<String> dbCodingModelPrefixes = <String>[
   'doubao-seed-evolving',
 ];
 
-/// 模型族前缀：lite 档（上下文 1024K 固定 ・ 输出 256K）
+/// 模型族前缀：lite 档（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
 const List<String> dbLiteForcedModelPrefixes = <String>[
   'doubao-seed-2-1-lite',
 ];
@@ -101,7 +101,7 @@ bool dbIsForcedCodingModel(String model) {
   return dbIsPro260915(m);
 }
 
-/// 该模型是否属于「lite」族（上下文 1024K 固定 ・ 输出 256K）
+/// 该模型是否属于「lite」族（历史族识别用；现统一 上下文 1024K ・ 输出 384K）
 /// 注意：族识别结果已不再影响上限——所有模型统一强制，本函数仅作说明/兼容用途。
 bool dbIsForcedLiteModel(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
@@ -134,7 +134,7 @@ int dbClampReasoningLevel(int level) {
   return l;
 }
 
-/// 千位计数格式化，例如 262144 → "256K"
+/// 千位计数格式化，例如 393216 → "384K"
 String dbTokensLabel(int tokens) {
   if (tokens >= DB_NUM_1K && tokens % DB_NUM_1K == 0) {
     return '${tokens ~/ DB_NUM_1K}K';

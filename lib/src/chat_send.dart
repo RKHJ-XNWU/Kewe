@@ -959,7 +959,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
   // ★★★ 统一强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
-  //   ★ 2026-11-23 起所有模型一律：上下文 1024K ・ 输出 256K
+  //   ★ 2026-11-23 起所有模型一律：上下文 1024K ・ 最大输出 384K（输出上限）
   //     —— 预设模型、自定义模型、中转站、DeepSeek 维度全部统一，无例外。
   //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
   final forcedOut = dbForcedMaxOutput(model);

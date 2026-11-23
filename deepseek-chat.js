@@ -28,22 +28,22 @@
     console.log('[DSC] スクリプト読み込み中 v8');
 
     // ★★★ 强制推理等级 Lv.999（上限 999）★★★
-    //   所有者要求：推理等级固定 Lv.999，且「等级里的 max_tokens」一律无视——
-    //   所有模型（预设 / 自定义 / 中转站 / DeepSeek）的最大输出由后端 db_limits.dart 强制为 256K，
-    //   前端 levelTokens() 只负责把这个强制值显示出来。
+    //   所有者要求：推理等级固定 Lv.999，且「等级里的输出设置」一律无视——
+    //   所有模型（预设 / 自定义 / 中转站 / DeepSeek）的最大输出由后端 db_limits.dart 强制为 384K，
+    //   前端 levelTokens() 只负责把这个强制上限显示出来。
     var FORCED_LEVEL = 999;
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
     var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
     // 强制能力上限（与后端 lib/src/db_limits.dart 完全一致，后端为准）
-    //   ★ 2026-11-23 起：所有模型一律 上下文窗口 1024K ・ 最大输出 256K，
+    //   ★ 2026-11-23 起：所有模型一律 上下文窗口 1024K ・ 最大输出 384K，
     //     预设模型、用户自定义模型、中转站模型、DeepSeek 维度全部统一，无例外。
-    //   族识别常量仅保留作说明用途，不再决定是否施加限制。
+    //   384K 是「允许输出到的最大上限」而非默认输出；族识别常量仅作说明，不再决定限制。
     var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];   // 族识别（仅说明用，不再作为闸门）
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
     var DSC_LIMIT_PRO_VERSION = '260915';      // 2.1 Pro 的当前版本号（仅说明用）
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];       // 族识别（仅说明用，不再作为闸门）
-    var DSC_LIMIT_OUTPUT_TOKENS = 262144;      // 256K（全模型统一）
+    var DSC_LIMIT_OUTPUT_TOKENS = 393216;      // 384K（全模型统一的输出上限）
     var DSC_LIMIT_CTX_TOKENS = 1048576;        // 1024K（全模型统一，固定）
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
@@ -94,11 +94,26 @@
         m = dscCanonicalLimitModel(m);
         return {
             kind: 'universal',
-            model: m || '(未命名模型)',
+            model: m || dscUnnamedModel(),
             maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
             context: DSC_LIMIT_CTX_TOKENS,
             dynamic: false
         };
+    }
+
+    // 「未命名模型」的 6 语言写法（跟随 UI 语言，缺省中文），避免其他语言界面漏出中文
+    function dscUnnamedModel() {
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
+        var names = {
+            zh: '未命名模型',
+            ja: '無名モデル',
+            en: 'unnamed model',
+            ko: '이름 없는 모델',
+            ru: 'безымянная модель',
+            fr: 'modèle sans nom'
+        };
+        return names[lang] || names.zh;
     }
 
     // 推理等级弹窗里的强制声明（6 语言，跟随 UI 语言）
@@ -108,23 +123,23 @@
         // 模型标识为空时的兜底说明（正常情况下 dscForcedLimitOfCurrentModel 恒有值）
         if (!lim) {
             var free = {
-                zh: '尚未识别到当前模型；上限仍按统一强制值执行：上下文窗口 1024K、最大输出 256K。',
-                ja: '現在のモデルを識別できませんでしたが、上限は統合強制値（コンテキスト 1024K ／ 最大出力 256K）で動作します。',
-                en: 'The current model could not be identified; the unified caps still apply: context 1024K and max output 256K.',
-                ko: '현재 모델을 식별하지 못했지만, 상한은 통합 강제값(컨텍스트 1024K / 최대 출력 256K)으로 적용됩니다.',
-                ru: 'Текущая модель не определена, но единые лимиты всё равно действуют: контекст 1024K, максимум вывода 256K.',
-                fr: "Le modèle courant n'a pas pu être identifié ; les plafonds unifiés s'appliquent quand même : contexte 1024K et sortie maximale 256K."
+                zh: '尚未识别到当前模型；上限仍按统一强制值执行：上下文窗口 1024K、最大输出 384K。',
+                ja: '現在のモデルを識別できませんでしたが、上限は統一強制値（コンテキスト 1024K ／ 最大トークン 384K）で動作します。',
+                en: 'The current model could not be identified; the unified caps still apply: context 1024K and maximum output 384K.',
+                ko: '현재 모델을 식별하지 못했지만, 상한은 통일 강제값(컨텍스트 1024K / 최대 출력 384K)으로 적용됩니다.',
+                ru: 'Текущая модель не определена, но единые лимиты действуют: контекстное окно 1024K, максимальный вывод 384K.',
+                fr: "Le modèle courant n'a pas pu être identifié ; les plafonds unifiés s'appliquent quand même : contexte 1024K et sortie maximale 384K."
             };
             return free[lang] || free.zh;
         }
         var ctx = dscTokenLabel(lim.context);
         var map = {
-            zh: '已对全部模型（预设、自定义、中转站、DeepSeek 维度）统一强制：上下文窗口 ' + ctx + '（固定），最大输出 256K；推理等级内的 max_tokens 已忽略。',
-            ja: '全モデル（プリセット・カスタム・中継・DeepSeek 次元）に統合強制：コンテキストウィンドウ ' + ctx + '（固定）、最大出力 256K。推論レベル内の max_tokens は無視されます。',
-            en: 'Unified caps apply to all models (preset, custom, relay, DeepSeek dimension): context window ' + ctx + ' (fixed), max output 256K; max_tokens inside the reasoning level is ignored.',
-            ko: '모든 모델(프리셋·커스텀·중계·DeepSeek 차원)에 통합 강제 적용: 컨텍스트 윈도우 ' + ctx + '(고정), 최대 출력 256K. 추론 레벨 내 max_tokens는 무시됩니다.',
-            ru: 'Единые лимиты для всех моделей (предустановленные, пользовательские, релейные, DeepSeek): контекстное окно ' + ctx + ' (фиксированное), максимальный вывод 256K; max_tokens уровня рассуждений игнорируется.',
-            fr: "Plafonds unifiés pour tous les modèles (prédéfinis, personnalisés, relais, dimension DeepSeek) : fenêtre de contexte " + ctx + " (fixe), sortie maximale 256K ; le max_tokens du niveau de raisonnement est ignoré."
+            zh: '已对全部模型（预设、自定义、中转站、各维度）统一强制：上下文窗口 ' + ctx + '（固定），最大输出上限 384K；推理等级内的输出设置已忽略。',
+            ja: 'すべてのモデル（プリセット・カスタム・中継・各次元）に統一して強制：コンテキストウィンドウ ' + ctx + '（固定）、最大トークン数の上限 384K。推論レベル内のトークン設定は無視されます。',
+            en: 'Unified caps are enforced for all models (preset, custom, relay, every dimension): context window ' + ctx + ' (fixed), maximum output 384K; the max_tokens setting inside the reasoning level is ignored.',
+            ko: '모든 모델(프리셋·커스텀·중계·각 차원)에 통일하여 강제 적용: 컨텍스트 윈도우 ' + ctx + '(고정), 최대 토큰 출력 상한 384K. 추론 레벨 내 토큰 설정은 무시됩니다.',
+            ru: 'Для всех моделей (предустановленные, пользовательские, релейные, все измерения) действуют единые обязательные лимиты: контекстное окно ' + ctx + ' (фиксированное), максимальный вывод 384K; настройка вывода на уровне рассуждений игнорируется.',
+            fr: "Des plafonds unifiés sont imposés à tous les modèles (prédéfinis, personnalisés, relais, chaque dimension) : fenêtre de contexte " + ctx + " (fixe), sortie maximale 384K ; le réglage de sortie du niveau de raisonnement est ignoré."
         };
         return map[lang] || map.zh;
     }
@@ -5267,13 +5282,13 @@
         else if (refNode && refNode.parentNode) refNode.parentNode.insertBefore(btn, refNode.nextSibling);
     }
 
-    // ★ 推理等级弹窗内「轮次 / max_tokens / 上下文窗口」明细的语言表
-    //   旧实现把这几句硬编码成日文，中文 UI 下会漏出「コンテキストウィンドウ」等日文；
-    //   现在统一走本表，跟随 UI 语言，缺省中文。
+    // ★ 推理等级弹窗内「轮次 / 最大输出 / 上下文窗口」明细的语言表
+    //   每种语言只含本语言的措辞：技术参数名（max_tokens 等）按语言转写，
+    //   数字单位 K 与 emoji 为通用符号；跟随 UI 语言，缺省中文。
     var DSC_LEVEL_COPY = {
         zh: {
-            headForced: '🧠 {0} 轮 · max_tokens = {1}（强制 256K · 推理等级内的 max_tokens 已忽略）',
-            headFree: '🧠 {0} 轮 · max_tokens ≈ {1}',
+            headForced: '🧠 {0} 轮 · 最大输出 = {1}（强制 384K · 推理等级内的输出设置已忽略）',
+            headFree: '🧠 {0} 轮 · 最大输出 ≈ {1}',
             ctxDynamic: '📚 上下文窗口 = {0}（动态：随用量按 32K 步进扩展，上限 {0}）',
             ctxStatic: '📚 上下文窗口 = {0}（强制固定）',
             stream: '流式输出',
@@ -5281,26 +5296,26 @@
             desc1: '直接回答', desc2: '回答 + 1 次反思', desc3: '回答 + 2 次反思', desc4: '回答 + 3 次反思'
         },
         ja: {
-            headForced: '🧠 {0} ラウンド · max_tokens = {1}（強制 256K / 推論レベル内の max_tokens は無視）',
-            headFree: '🧠 {0} ラウンド · max_tokens ≈ {1}',
+            headForced: '🧠 {0} ラウンド · 最大トークン数 = {1}（強制 384K · 推論レベル内のトークン設定は無視）',
+            headFree: '🧠 {0} ラウンド · 最大トークン数 ≈ {1}',
             ctxDynamic: '📚 コンテキストウィンドウ = {0}（動的：使用量に応じて 32K 刻みで拡張、上限 {0}）',
-            ctxStatic: '📚 コンテキストウィンドウ = {0}（強制）',
+            ctxStatic: '📚 コンテキストウィンドウ = {0}（強制固定）',
             stream: 'ストリーミング出力',
             name1: '単一ラウンド', name2: '二重ラウンド', name3: '三重ラウンド', name4: '四重ラウンド',
             desc1: '直接回答', desc2: '回答 + 1 回の反省', desc3: '回答 + 2 回の反省', desc4: '回答 + 3 回の反省'
         },
         en: {
-            headForced: '🧠 {0} rounds · max_tokens = {1} (forced 256K · max_tokens inside the reasoning level is ignored)',
-            headFree: '🧠 {0} rounds · max_tokens ≈ {1}',
+            headForced: '🧠 {0} rounds · max output = {1} (forced 384K · the max_tokens setting inside the reasoning level is ignored)',
+            headFree: '🧠 {0} rounds · max output ≈ {1}',
             ctxDynamic: '📚 Context window = {0} (dynamic: grows in 32K steps with usage, cap {0})',
-            ctxStatic: '📚 Context window = {0} (forced)',
+            ctxStatic: '📚 Context window = {0} (forced and fixed)',
             stream: 'streaming output',
             name1: 'Single round', name2: 'Double round', name3: 'Triple round', name4: 'Quad round',
             desc1: 'Direct answer', desc2: 'Answer + 1 reflection', desc3: 'Answer + 2 reflections', desc4: 'Answer + 3 reflections'
         },
         ko: {
-            headForced: '🧠 {0} 라운드 · max_tokens = {1} (강제 256K · 추론 레벨 내 max_tokens 무시)',
-            headFree: '🧠 {0} 라운드 · max_tokens ≈ {1}',
+            headForced: '🧠 {0} 라운드 · 최대 토큰 수 = {1} (강제 384K · 추론 레벨 내 토큰 설정 무시)',
+            headFree: '🧠 {0} 라운드 · 최대 토큰 수 ≈ {1}',
             ctxDynamic: '📚 컨텍스트 윈도우 = {0} (동적: 사용량에 따라 32K 단위로 확장, 상한 {0})',
             ctxStatic: '📚 컨텍스트 윈도우 = {0} (강제 고정)',
             stream: '스트리밍 출력',
@@ -5308,19 +5323,19 @@
             desc1: '직접 답변', desc2: '답변 + 1회 성찰', desc3: '답변 + 2회 성찰', desc4: '답변 + 3회 성찰'
         },
         ru: {
-            headForced: '🧠 {0} раунда · max_tokens = {1} (принудительно 256K · max_tokens уровня рассуждений игнорируется)',
-            headFree: '🧠 {0} раунда · max_tokens ≈ {1}',
+            headForced: '🧠 {0} раунда · максимум токенов = {1} (принудительно 384K · настройка вывода на уровне рассуждений игнорируется)',
+            headFree: '🧠 {0} раунда · максимум токенов ≈ {1}',
             ctxDynamic: '📚 Контекстное окно = {0} (динамическое: растёт шагами по 32K, предел {0})',
-            ctxStatic: '📚 Контекстное окно = {0} (принудительно)',
+            ctxStatic: '📚 Контекстное окно = {0} (принудительно зафиксировано)',
             stream: 'потоковый вывод',
             name1: 'Один раунд', name2: 'Два раунда', name3: 'Три раунда', name4: 'Четыре раунда',
             desc1: 'Прямой ответ', desc2: 'Ответ + 1 размышление', desc3: 'Ответ + 2 размышления', desc4: 'Ответ + 3 размышления'
         },
         fr: {
-            headForced: '🧠 {0} tours · max_tokens = {1} (256K forcé · max_tokens du niveau de raisonnement ignoré)',
-            headFree: '🧠 {0} tours · max_tokens ≈ {1}',
+            headForced: '🧠 {0} tours · sortie maximale = {1} (384K forcé · le réglage de sortie du niveau de raisonnement est ignoré)',
+            headFree: '🧠 {0} tours · sortie maximale ≈ {1}',
             ctxDynamic: '📚 Fenêtre de contexte = {0} (dynamique : +32K par paliers selon l’usage, plafond {0})',
-            ctxStatic: '📚 Fenêtre de contexte = {0} (forcé)',
+            ctxStatic: '📚 Fenêtre de contexte = {0} (forcée et fixe)',
             stream: 'sortie en flux',
             name1: 'Tour unique', name2: 'Double tour', name3: 'Triple tour', name4: 'Quadruple tour',
             desc1: 'Réponse directe', desc2: 'Réponse + 1 réflexion', desc3: 'Réponse + 2 réflexions', desc4: 'Réponse + 3 réflexions'

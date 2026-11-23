@@ -354,7 +354,7 @@
             <div class="dsc-modal" style="max-width:400px;">
                 <div class="dsc-modal-title">🧩 推論レベル</div>
                 <div class="dsc-modal-sub" style="margin-bottom:10px;">レベルが高いほど自己反省の回数が増え、回答がより正確で完全になります</div>
-                <div id="dscLevelNotice" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:0.76rem;line-height:1.5;text-align:left;">由于你使用的是编程模型（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite），所以强制上下文窗口为 1024K，强制输出最大为 256K。</div>
+                <div id="dscLevelNotice" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:0.76rem;line-height:1.5;text-align:left;"></div>
                 <div class="dsc-level-display">
                     <div class="dsc-level-num" id="dscLevelNum">999</div>
                     <div class="dsc-level-tag" id="dscLevelTag">999</div>
@@ -366,9 +366,7 @@
                     <span>999 · 四重ラウンド（固定）</span>
                 </div>
                 <div class="dsc-level-info" id="dscLevelInfo">
-                    <div style="margin-bottom:4px;">🧠 4 ラウンド · max_tokens = <span class="hl">262,144</span>（強制 256K）</div>
-                    <div style="margin-bottom:4px;">📚 コンテキストウィンドウ = <span class="hl">1024K</span>（強制）</div>
-                    <div style="font-size:0.7rem;opacity:0.75;">回答 + 3 回の深い反省 · 推論レベル内の max_tokens は無視されます</div>
+                    <!-- 静态占位留空：打开弹窗时由 updateLevelUI() 按当前语言填充，避免漏出源语言 -->
                 </div>
                 <div class="dsc-modal-footer">
                     <button class="dsc-btn ghost" id="dscLevelCancel">キャンセル</button>
@@ -733,7 +731,7 @@
     <script src="i18n/ai-prompts.js?v=14"></script>
     <script src="ds-files.js?v=5"></script>
     <script src="ds-devtools.js?v=5"></script>
-    <script src="deepseek-chat.js?v=20261123force-all-1024k-256k"></script>
+    <script src="deepseek-chat.js?v=20261123force-384k-1024k"></script>
     <script src="peakvalley.js?v=20261104i18n14"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->
