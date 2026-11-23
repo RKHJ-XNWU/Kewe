@@ -507,4 +507,69 @@ I18N.add('fr',`
     既に追加されています：|Déjà ajouté :
     最大出力は 64K / 128K / 256K / 384K から選択してください|Choisissez une sortie maximale de 64K, 128K, 256K ou 384K
     最大出力レベルの保存に失敗しました|Impossible d’enregistrer le niveau de sortie maximale
+    🗑️ クリア|🗑️ Effacer
+    すべてのファイルを消去しますか？この操作は元に戻せません。|Effacer tous les fichiers ? Cette action est irréversible.
+    消去中…|Effacement…
+    消去に失敗しました|Échec de l’effacement
+    {0} 件のファイルを消去しました|{0} fichiers effacés
+    すべてのファイルを消去しました|Tous les fichiers ont été effacés
+    消去に失敗しました：{0}|Échec de l’effacement : {0}
+    DeepSeek モデル（ds ディメンション · 公式 + カスタム）|Modèles DeepSeek (dimension ds · officiels + personnalisés)
+    リレーモデル（st ディメンション · プリセット + カスタム）|Modèles relais (dimension st · prédéfinis + personnalisés)
+    （未選択）|(Non sélectionné)
+    [次][抗截断]gemini-3.8-flash（1リクエスト 0.025 元）|[Par requête][Anti-troncature]gemini-3.8-flash (0,025 ¥ par requête)
+    リレー API Key|Clé API du relais
+    リレー Base URL（/v1 を含む）|URL de base du relais (avec /v1)
+    リレー設定（停止中 · プライバシー上の懸念により全面停止。DeepSeek / Doubao は影響を受けません）|Réglages du relais (désactivés · retirés en raison d’un risque de confidentialité ; DeepSeek / Doubao ne sont pas affectés)
+    ストリーミング出力（既定でオン）|Sortie en streaming (activée par défaut)
+    🤖 対話モデルを切り替え|🤖 Changer de modèle de conversation
+    DeepSeek（ds）/ リレー（st）/ Doubao（db）の3リスト + 個別カスタムモデル|Trois listes : DeepSeek (ds), relais (st) et Doubao (db), chacune avec ses modèles personnalisés
+    リレー（停止中）|Relais (désactivé)
+    開くとモデルが歌声を生成できます（enable_music。エンドツーエンド音声モデル内蔵機能、追加料金なし）|Une fois activé, le modèle peut chanter (enable_music ; intégré au modèle vocal de bout en bout, sans frais supplémentaires)
+    開くと音声通話でウェブ検索を利用できます（enable_volc_websearch。Volcengine コンソールで統合情報検索の有効化が必要）|Une fois activé, les appels vocaux peuvent utiliser la recherche web (enable_volc_websearch ; activez la recherche d’informations fusionnée dans la console Volcengine)
+    Doubao 音声読み上げ速度を制御（session.audio.output.speed、-50〜100、値が大きいほど速い）|Contrôle la vitesse de parole de Doubao (session.audio.output.speed, de -50 à 100 ; plus élevé = plus rapide)
+    リクエストごとの課金|Facturation par requête
+    固定価格（リクエストごとの課金）：|Prix fixe (facturation par requête) :
+    元/リクエスト|CNY/requête
+    今回の呼び出し|Cet appel
+    コピーに失敗：テキストを長押しして手動でコピーしてください|Échec de la copie : appuyez longuement sur le texte pour le copier manuellement
+    合成に失敗：バックエンドから音声 URL が返されませんでした|Échec de la synthèse : le backend n’a pas renvoyé d’URL audio
+    音声の読み込みに失敗しました。しばらくしてから再試行してください|Échec du chargement de l’audio. Réessayez plus tard.
+    ブラウザが再生をブロックしました。ページを一度タップしてから再試行してください|Le navigateur a bloqué la lecture. Touchez la page, puis réessayez.
+    🟦 DeepSeek · ds ディメンション|🟦 DeepSeek · dimension ds
+    DeepSeek カスタムモデル名（例：my-deepseek-model）|Nom de modèle DeepSeek personnalisé (ex. my-deepseek-model)
+    🔀 リレー · st ディメンション|🔀 Relais · dimension st
+    リレーカスタムモデル名（例：gpt-4o）|Nom de modèle relais personnalisé (ex. gpt-4o)
+    🧩 豆包 · db ディメンション|🧩 Doubao · dimension db
+    音声のダウンロードに失敗しました（HTTP {0}）|Échec du téléchargement audio (HTTP {0})
+    ダウンロードした音声が空です（{0} バイト）|L’audio téléchargé est vide ({0} octets)
+    音声のデコードに失敗しました（{0} バイトをダウンロード済み。有効な音声でない可能性があります）|Échec du décodage audio ({0} octets téléchargés ; le fichier n’est peut-être pas un audio valide)
+    自動再生がブロックされました。通話パネルを一度タップしてから再試行してください|La lecture automatique a été bloquée. Touchez le panneau d’appel, puis réessayez.
+    再生に失敗しました：{0}|Échec de la lecture : {0}
+    音声の読み込みに失敗しました：{0}|Échec du chargement audio : {0}
+    リレー（st ディメンション）API は停止しました：このチャネルはユーザーのチャットプライバシーを漏えいするリスクがあるため、フロントエンドとバックエンドの両方で全面停止され、リレーモデルは一切呼び出せません。DeepSeek と豆包のディメンションは通常どおり利用できます。|L’API relais (dimension st) est arrêtée : ce canal présente un risque de fuite des données privées de discussion et a donc été entièrement désactivé côté frontend et backend. Aucun modèle relais ne peut être appelé. Les dimensions DeepSeek et Doubao restent disponibles.
+    ⛔ このチャネルは停止しました|⛔ Ce canal est désactivé
+    分かりました|Compris
+    そのモデル名は既に別のディメンションに存在します：|Ce nom de modèle existe déjà dans une autre dimension :
+    そのモデル名は既にリレー（st ディメンション）に存在します：|Ce nom de modèle existe déjà dans le relais (dimension st) :
+    豆包 · db ディメンション|Doubao · dimension db
+    リレー · st ディメンション|Relais · dimension st
+    DeepSeek · ds ディメンション|DeepSeek · dimension ds
+    変更時のみInput。空欄なら変更しません|À saisir uniquement en cas de modification. Laissez vide pour ne rien changer
+    語速 -50〜100、0 は既定値|Vitesse de -50 à 100 ; 0 correspond à la valeur par défaut
+    生成方法|Méthode de génération
+    音色（ペア）|Paire de voix
+    A: 皆さん、こんにちは。
+B: 今日はAIについて話しましょう。|A : Bonjour à tous.
+B : Parlons aujourd’hui de l’IA.
+    1分|1 min
+    2分|2 min
+    3分|3 min
+    4分|4 min
+    6分|6 min
+    7分|7 min
+    8分|8 min
+    9分|9 min
+    10分|10 min
+    5分（既定）|5 min (par défaut)
 `);

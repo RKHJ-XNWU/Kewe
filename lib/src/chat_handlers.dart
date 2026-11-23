@@ -972,7 +972,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     await dsJSONErr(res, 400, '没有可继续生成的内容');
     return;
   }
-  // ★ 推理等级上限 999；所有模型的最大输出统一读取全局档位（默认 384K）。
+  // ★ 推理等级上限 999；所有模型的最大输出统一读取全局档位（默认 256K）。
   level = dbClampReasoningLevel(level);
   final params = levelToParams(level);
   var maxTokens = params.maxTokens;

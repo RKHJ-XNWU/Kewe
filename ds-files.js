@@ -18,6 +18,10 @@
     var uploadQueue = Promise.resolve();
 
     function $(id) { return document.getElementById(id); }
+    function dsT(k) {
+        try { return (window.I18N && window.I18N.t) ? window.I18N.t.apply(null, arguments) : k; }
+        catch (e) { return k; }
+    }
 
     function dsEsc(s) {
         return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
@@ -72,7 +76,7 @@
             dsFiles = data.files || [];
             renderDsFiles();
         } catch (e) {
-            dsToast('ファイル一覧の読み込みに失敗', 'error');
+            dsToast(dsT('ファイル一覧の読み込みに失敗'), 'error');
         }
     }
 
@@ -340,27 +344,27 @@
         var clearBtn = $('dscFilesClearAllBtn');
         if (clearBtn) {
             clearBtn.addEventListener('click', async function () {
-                if (!confirm('确定要清空所有文件吗？此操作不可恢复！')) return;
+                if (!confirm(dsT('すべてのファイルを消去しますか？この操作は元に戻せません。'))) return;
                 clearBtn.disabled = true;
-                clearBtn.textContent = '清空中...';
+                clearBtn.textContent = dsT('消去中…');
                 try {
                     var res = await fetch('/api/ds-files/clear-all', { method: 'DELETE' });
-                    if (!res.ok) throw new Error('清空失败');
+                    if (!res.ok) throw new Error(dsT('消去に失敗しました'));
                     var j = {};
                     try { j = await res.json(); } catch (e) {}
                     // 后端现在会回传实际删除的数量，前端同步显示，避免「点了没反应」的错觉
                     dsToast(typeof j.removed === 'number'
-                        ? ('已清空 ' + j.removed + ' 个文件')
-                        : '已清空所有文件', 'success');
+                        ? dsT('{0} 件のファイルを消去しました', j.removed)
+                        : dsT('すべてのファイルを消去しました'), 'success');
                     dsFiles = [];
                     attachedFileIds = [];
                     renderDsFiles();
                     renderAttachBar();
                 } catch (e) {
-                    dsToast('清空失败: ' + e.message, 'error');
+                    dsToast(dsT('消去に失敗しました：{0}', e.message), 'error');
                 } finally {
                     clearBtn.disabled = false;
-                    clearBtn.textContent = '🗑️ 清空';
+                    clearBtn.textContent = dsT('🗑️ クリア');
                 }
             });
         }

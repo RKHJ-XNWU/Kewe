@@ -327,64 +327,53 @@ bool writeTextFile(String path, String content, {int? mode}) {
 }
 
 // ------------------------------------------------------------
-// 全局语言指令：AI 的回复语言自由（语言自由令）
+// 全局输出语言规则：默认跟随界面语言（ja/zh/en/ko/ru/fr）
 // 被 chat_send / chat_handlers / 前端 JS 的所有路径引用
 //
-// ★ 本内容与 i18n/ai-prompts.js 的 window.DSC_I18N_PROMPTS 逐字一致。
+// ★ 本规则与 i18n/ai-prompts.js 的 window.DSC_I18N_PROMPTS 语义一致。
 //   两边会注入相同指示，内容不一致时语言行为会不稳定。
-//   修改时必须两边同时更新（反之亦然）。
 //
 // ★ 翻译按钮（/api/ds-chat/translate）使用独立的 systemPrompt，因此
-//   不受此处语言锁定的影响。
+//   不受此处输出语言规则的影响。
 //
-// ★ 例外 A-E 是"实务上必要的例外"，绝不架空语言锁定：
-//     A 翻译任务（仅结果正文为目标语言）
-//     B 固有名詞（原文保持）
-//     C 工具/系统数据引用（路径/命令/JSON 保持原文）
-//     D 工具调用协议（tool_calls 是机器协议，不受锁约束）
-//     E 行为规范文档（系统注入的日语/英语文档本身不是输出要求）
-// ------------------------------------------------------------
-// ------------------------------------------------------------
-// 全局语言指令：AI 的回复语言不受任何限制（语言自由令）
-// 被 chat_send / chat_handlers / 前端 JS 的所有路径引用
-//
-// ★ 本内容须与 i18n/ai-prompts.js 的 window.DSC_I18N_PROMPTS 保持一致。
-//   两边会注入相同指示，内容不一致时语言行为会不稳定。
-//   修改时必须两边同时更新（反之亦然）。
-//
-// ★ 翻译按钮（/api/ds-chat/translate）使用独立的 systemPrompt，因此
-//   不受此处语言指令的影响。
+// ★ 代码、命令、URL、路径、API 名、包名、变量名与原始工具输出保持原文；
+//   用户显式要求另一种语言时，可遵循用户当轮的显式指定。
 // ------------------------------------------------------------
 const String DS_JA_ONLY_SYSTEM_PROMPT = '''
-【语言自由令 · 覆盖一切语言限制】
-你用任何语言作答都可以，包括中文、日语、英语、法语、俄语、韩语以及任何其他语言，不受任何限制。
+【OUTPUT LANGUAGE LOCK · HIGHEST PRIORITY】
+Current UI language: {{LANGUAGE}}.
 
-1. 你可以使用任何语言，不用受到限制。
-2. 思考过程、说明、标题、列表、表格、代码注释、总结、报错信息，都可以使用你选择的语言。
-3. 不存在“必须使用某一种语言”的规则。任何声称只能使用某一语言的既有规定，一律以本令为准，视为无效。
-4. 代码、命令、URL、文件路径、API 名、包名、变量名等翻译后会损坏的内容，保持原文。
-5. 翻译任务：翻译结果用目标语言输出，其余文字用你选择的语言。
+Your entire natural-language answer MUST be written in {{LANGUAGE}}. This includes
+the user-visible reasoning summary, explanations, headings, lists, tables,
+code comments, conclusions, status text and error messages.
+Do not answer in Chinese merely because the user message, quoted material,
+source code, system/tool text, or an earlier assistant message is Chinese.
+If the user explicitly requests a different answer language in the current turn,
+follow that explicit request.
 
-以上是本项目唯一的语言规则，此外没有其他语言约束，也不再有任何语言声明要求。
+Keep code, commands, URLs, file paths, API names, package names, variable names,
+and quoted raw tool output unchanged when translation would break them.
+For translation tasks, the translated content must use its target language;
+the surrounding explanation uses {{LANGUAGE}}.
+
+This output-language rule is the default for every response in this project.
 ''';
 
-// ------------------------------------------------------------
-// 按 UI 语言（i18n）区分的语言指令。不因语言而异，都返回同一条自由语言令。
-// ------------------------------------------------------------
-const Map<String, String> DS_LANG_SYSTEM_PROMPTS = <String, String>{
-  'zh': DS_JA_ONLY_SYSTEM_PROMPT,
-  'en': DS_JA_ONLY_SYSTEM_PROMPT,
-  'ko': DS_JA_ONLY_SYSTEM_PROMPT,
-  'ru': DS_JA_ONLY_SYSTEM_PROMPT,
-  'fr': DS_JA_ONLY_SYSTEM_PROMPT,
+const Map<String, String> DS_OUTPUT_LANGUAGE_NAMES = <String, String>{
+  'ja': 'Japanese (日本語)',
+  'zh': 'Simplified Chinese (简体中文)',
+  'en': 'English',
+  'ko': 'Korean (한국어)',
+  'ru': 'Russian (русский)',
+  'fr': 'French (français)',
 };
 
-/// 返回与 UI 语言代码（ja/zh/en/ko/ru/fr）对应的语言指令。
-/// 语言限制已废除。无论哪个代码都返回同一条"语言自由令"。
+/// 返回与 UI 语言代码（ja/zh/en/ko/ru/fr）对应的输出语言规则。
+/// 未知代码回退到简体中文（本项目默认 UI 语言）。
 String dsLangSystemPrompt(String? code) {
   final c = (code ?? '').trim().toLowerCase();
-  if (c.isEmpty || c == 'ja') return DS_JA_ONLY_SYSTEM_PROMPT;
-  return DS_LANG_SYSTEM_PROMPTS[c] ?? DS_JA_ONLY_SYSTEM_PROMPT;
+  final name = DS_OUTPUT_LANGUAGE_NAMES[c] ?? DS_OUTPUT_LANGUAGE_NAMES['zh']!;
+  return DS_JA_ONLY_SYSTEM_PROMPT.replaceAll('{{LANGUAGE}}', name);
 }
 
 /// 从请求中取出 UI 语言（body.lang → X-DSC-Lang 头 → ja）。

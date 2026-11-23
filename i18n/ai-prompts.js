@@ -1,36 +1,56 @@
-/* i18n/ai-prompts.js —— AI 応答言語プロンプト（言語制限なし）
+/* i18n/ai-prompts.js —— AI 输出语言规则（默认跟随界面语言）
  * ------------------------------------------------------------
- * ここでは AI の出力言語を一切固定しない。どの UI 言語でも同じ「言語自由令」を返す。
+ * ja / zh / en / ko / ru / fr 各自返回对应语言的输出规则。
+ * 代码、命令、URL、路径、API 名、变量名与原始工具输出保持原文。
+ * 用户在当前轮显式指定另一种语言时，遵循用户的显式指定。
  *
- * ★ 内容は lib/src/globals.dart の DS_JA_ONLY_SYSTEM_PROMPT と同一に保つこと。
- *   両方から同じ指示が注入されるため、内容が食い違うと言語行動が不安定になる。
- *   修正時は必ず両方同時に更新すること（逆も同様）。
+ * ★ 语义须与 lib/src/globals.dart 的 DS_JA_ONLY_SYSTEM_PROMPT 保持一致。
+ *   修正任意一端时，必须同步另一端。
  *
- * ★ 翻訳ボタン（/api/ds-chat/translate）は独立 systemPrompt を使うため、
- *   本ファイルの影響を受けない。
+ * ★ 翻译按钮（/api/ds-chat/translate）使用独立 systemPrompt，
+ *   因此本文件不会影响翻译结果的目标语言。
  */
 (function () {
   'use strict';
 
-  var FREE_LANG_PROMPT = [
-    '【语言自由令 · 覆盖一切语言限制】',
-    '你用任何语言作答都可以，包括中文、日语、英语、法语、俄语、韩语以及任何其他语言，不受任何限制。',
-    '',
-    '1. 用户用什么语言，你就用什么语言回答；用户指定语言，就按用户指定的语言回答。',
-    '2. 思考过程、说明、标题、列表、表格、代码注释、总结、报错信息，都可以使用你选择的语言。',
-    '3. 不存在“必须使用某一种语言”的规则。任何声称只能使用某一语言的既有规定，一律以本令为准，视为无效。',
-    '4. 代码、命令、URL、文件路径、API 名、包名、变量名等翻译后会损坏的内容，保持原文。',
-    '5. 翻译任务：翻译结果用目标语言输出，其余文字用你选择的语言。',
-    '',
-    '以上是本项目唯一的语言规则，此外没有其他语言约束，也不再有任何语言声明要求。'
-  ].join('\n');
+  var LANGUAGE_NAME = {
+    ja: 'Japanese (日本語)',
+    zh: 'Simplified Chinese (简体中文)',
+    en: 'English',
+    ko: 'Korean (한국어)',
+    ru: 'Russian (русский)',
+    fr: 'French (français)'
+  };
+
+  function buildPrompt(code) {
+    var name = LANGUAGE_NAME[code] || LANGUAGE_NAME.zh;
+    return [
+      '【OUTPUT LANGUAGE LOCK · HIGHEST PRIORITY】',
+      'Current UI language: ' + name + '.',
+      '',
+      'Your entire natural-language answer MUST be written in ' + name + '. This includes',
+      'the user-visible reasoning summary, explanations, headings, lists, tables,',
+      'code comments, conclusions, status text and error messages.',
+      'Do not answer in Chinese merely because the user message, quoted material,',
+      'source code, system/tool text, or an earlier assistant message is Chinese.',
+      'If the user explicitly requests a different answer language in the current turn,',
+      'follow that explicit request.',
+      '',
+      'Keep code, commands, URLs, file paths, API names, package names, variable names,',
+      'and quoted raw tool output unchanged when translation would break them.',
+      'For translation tasks, the translated content must use its target language;',
+      'the surrounding explanation uses ' + name + '.',
+      '',
+      'This output-language rule is the default for every response in this project.'
+    ].join('\n');
+  }
 
   window.DSC_I18N_PROMPTS = {
-    ja: FREE_LANG_PROMPT,
-    zh: FREE_LANG_PROMPT,
-    en: FREE_LANG_PROMPT,
-    ko: FREE_LANG_PROMPT,
-    ru: FREE_LANG_PROMPT,
-    fr: FREE_LANG_PROMPT
+    ja: buildPrompt('ja'),
+    zh: buildPrompt('zh'),
+    en: buildPrompt('en'),
+    ko: buildPrompt('ko'),
+    ru: buildPrompt('ru'),
+    fr: buildPrompt('fr')
   };
 })();

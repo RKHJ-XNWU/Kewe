@@ -1,16 +1,25 @@
 // deepseek-chat.js - DeepSeek チャットフロントエンド v8（高速タイピング / ポップアップ可視化 / 5万ラウンドのツールモード）
 (function () {
     'use strict';
-    // ★ 语言自由令：AI 可以用任何语言作答，不受任何语言限制
-    var __DSC_CN_ONLY_PROMPT = '【语言自由令 · 覆盖一切语言限制】\n'
-        + '你用任何语言作答都可以，包括中文、日语、英语、法语、俄语、韩语以及任何其他语言，不受任何限制。\n'
-        + '1. 用户用什么语言，你就用什么语言回答；用户指定语言，就按用户指定的语言回答。\n'
-        + '2. 思考过程、说明、标题、列表、表格、代码注释、总结、报错信息，都可以使用你选择的语言。\n'
-        + '3. 不存在“必须使用某一种语言”的规则；任何声称只能使用某一语言的既有规定，一律以本令为准，视为无效。\n'
-        + '4. 代码、命令、URL、文件路径、API 名、包名、变量名等翻译后会损坏的内容，保持原文。\n';
-    // ★ i18n：現在の UI 言語に一致する言語固定プロンプトを返す
-    //   I18N.aiPrompt() は i18n/ai-prompts.js の言語自由令を返す（言語制限なし）。
-    //   未定義・読込前の場合は同じ言語自由令にフォールバックする。
+    // ★ 输出语言默认跟随 UI：由 i18n/ai-prompts.js 提供精确语言规则。
+    //   未加载完成时按当前 UI 语言生成最小兜底，绝不把中文写死到其他语言界面。
+    function __dscFallbackLangPrompt() {
+        var code = 'zh';
+        try {
+            code = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2);
+        } catch (e) { code = 'zh'; }
+        var names = {
+            ja: 'Japanese (日本語)', zh: 'Simplified Chinese (简体中文)', en: 'English',
+            ko: 'Korean (한국어)', ru: 'Russian (русский)', fr: 'French (français)'
+        };
+        var name = names[code] || names.zh;
+        return '【OUTPUT LANGUAGE LOCK · HIGHEST PRIORITY】\n'
+            + 'Current UI language: ' + name + '.\n'
+            + 'Your entire natural-language answer MUST be written in ' + name + '.\n'
+            + 'Do not answer in Chinese unless the user explicitly requests Chinese in this turn.\n'
+            + 'Keep code, commands, URLs, paths, API names and quoted tool output unchanged.\n';
+    }
+    // ★ i18n：優先使用当前 UI 语言的完整输出规则。
     function __dscLangPrompt() {
         try {
             if (window.I18N && typeof window.I18N.aiPrompt === 'function') {
@@ -18,7 +27,7 @@
                 if (p) return p;
             }
         } catch (e) { }
-        return __DSC_CN_ONLY_PROMPT;
+        return __dscFallbackLangPrompt();
     }
     function __dscJaOnlyMerge(arr) {
         arr = Array.isArray(arr) ? arr.slice() : [];
@@ -34,13 +43,13 @@
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
     var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
-    // 上下文固定 1024K；输出支持 64K / 128K / 256K / 384K，默认 384K。
+    // 上下文固定 1024K；输出支持 64K / 128K / 256K / 384K，默认 256K。
     var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
     var DSC_LIMIT_PRO_VERSION = '260915';
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
     var DSC_OUTPUT_OPTIONS = [65536, 131072, 262144, 393216];
-    var DSC_LIMIT_OUTPUT_TOKENS = 393216;
+    var DSC_LIMIT_OUTPUT_TOKENS = 262144;
     var DSC_LIMIT_CTX_TOKENS = 1048576;
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
@@ -79,7 +88,7 @@
 
     function dscNormalizeOutputLimit(value) {
         var n = Number(value);
-        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 393216;
+        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 262144;
     }
 
     // 控制中心通过此接口同步档位；模型目录、推理弹窗会立即使用新值。
@@ -1308,16 +1317,16 @@
         var r = dscCalcCost(u, model);
         if (!r) return '';
         var tagTxt = r.perRequest
-            ? dscT('按请求计费')
+            ? dscT('リクエストごとの課金')
             : (r.tiered
                 ? (r.tierLabel || dscT('統一単価'))
                 : (r.flat ? dscT('統一単価') : (r.peak ? dscT('ピーク') : dscT('アイドル'))));
         var tip;
         if (r.perRequest) {
-            tip = dscT('固定价（按请求计费）：') + r.perRequest + dscT(' 元/请求') +
-                ' · ' + dscT('本次调用') + ' ' + r.calls + ' ' + dscT('次');
-            if (r.prompt) tip += ' · ' + dscT('输入') + ' ' + fmtTokNum(r.prompt) +
-                ' / ' + dscT('输出') + ' ' + fmtTokNum(r.out);
+            tip = dscT('固定価格（リクエストごとの課金）：') + r.perRequest + ' ' + dscT('元/リクエスト') +
+                ' · ' + dscT('今回の呼び出し') + ' ' + r.calls + ' ' + dscT('次');
+            if (r.prompt) tip += ' · ' + dscT('入力') + ' ' + fmtTokNum(r.prompt) +
+                ' / ' + dscT('出力') + ' ' + fmtTokNum(r.out);
         } else if (r.tiered) {
             // 段階料金：実際に適用された単価と計算式を tooltip に明示する
             tip = dscT('入力') + ' ' + fmtTokNum(r.prompt) + ' tokens → ' +
@@ -5520,9 +5529,9 @@
                     }
                 }
                 var __rbu0 = $('dscRelayBaseUrlInput');
-                if (__rbu0) { __rbu0.value = ''; __rbu0.placeholder = window.DSC_RELAY_DISABLED_MSG || '已停用'; }
+                if (__rbu0) { __rbu0.value = ''; __rbu0.placeholder = window.dscRelayDisabledText ? window.dscRelayDisabledText() : (window.DSC_RELAY_DISABLED_MSG || ''); }
                 var __rak0 = $('dscRelayApiKeyInput');
-                if (__rak0) { __rak0.value = ''; __rak0.placeholder = '该渠道已停用'; }
+                if (__rak0) { __rak0.value = ''; __rak0.placeholder = T('⛔ このチャネルは停止しました'); }
             } catch (e2) {}
         } catch (e) {
             var st2 = $('dscApiStatus');
@@ -5935,7 +5944,7 @@
         if (name.length > 120) { toast('モデル名が長すぎます（最大 120 字）', 'error'); return; }
         if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
         if (getCustomModels().indexOf(name) >= 0 || hasModelOption(name)) {
-            toast('そのモデル名は既に別の维度に存在します：' + name, 'error');
+            toast(T('そのモデル名は既に別のディメンションに存在します：') + name, 'error');
             return;
         }
         inp.value = '';
@@ -5960,7 +5969,7 @@
         if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
         if (getCustomModels().indexOf(name) >= 0) { toast('既に追加されています：' + name, 'info'); inp.value = ''; return; }
         if (window.__dscIsRelayModel && window.__dscIsRelayModel(name)) {
-            toast('そのモデル名は既に中转站（st 维度）に存在します：' + name, 'error');
+            toast(T('そのモデル名は既にリレー（st ディメンション）に存在します：') + name, 'error');
             return;
         }
         inp.value = '';
@@ -6075,7 +6084,7 @@
                 push(o.value, txt || o.value, custom.indexOf(o.value) >= 0);
             }
         }
-        for (var j = 0; j < custom.length; j++) push(custom[j], custom[j] + '（自定义）', true);
+        for (var j = 0; j < custom.length; j++) push(custom[j], custom[j] + dscT('（カスタム）'), true);
         return out;
     };
 
@@ -6389,8 +6398,8 @@
                 '<span class="tx"><b></b><i></i></span>';
             badge.querySelector('.ic').textContent = d === 'db' ? '🧩' : (d === 'st' ? '🔀' : '🚀');
             badge.querySelector('b').textContent = m || '—';
-            badge.querySelector('i').textContent = d === 'db' ? '豆包 · db 维度'
-                : (d === 'st' ? '中转站 · st 维度' : 'DeepSeek · ds 维度');
+            badge.querySelector('i').textContent = d === 'db' ? T('豆包 · db ディメンション')
+                : (d === 'st' ? T('リレー · st ディメンション') : T('DeepSeek · ds ディメンション'));
             layer.appendChild(badge);
             setTimeout(function () {
                 if (!badge.parentNode) return;
@@ -8281,7 +8290,7 @@ window.__dscDeviceIntent = window.__dscDeviceIntent || function (text) {
         it.querySelector('.nm').textContent = m.value;
         it.querySelector('.ds').textContent =
             (dim === 'st' ? T('中转站 · st 维度') : (dim === 'db' ? T('豆包 · db 维度') : T('DeepSeek · ds 维度')))
-            + (m.custom ? ' · ' + T('自定义') : '');
+            + (m.custom ? ' · ' + T('カスタム') : '');
         it.addEventListener('click', function () {
             // ★ 停用整改：任何 st 维度模型项点击一律拦截。
             if (dim === 'st') {

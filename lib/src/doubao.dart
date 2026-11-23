@@ -2195,7 +2195,7 @@ Map<String, dynamic> _modelListJson() {
     final v = dbCanonicalModelValue(c);
     if (v.isEmpty) continue;
     if (list.any((e) => e['value'] == v)) continue;
-    // ★ 自定义模型与预设模型同一口径：同样声明 1024K / 384K 强制上限
+    // ★ 自定义模型与预设模型同一口径：同样声明 1024K / 256K 强制上限
     list.add({
       'value': v,
       'label': v,

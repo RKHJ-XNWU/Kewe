@@ -507,4 +507,69 @@ I18N.add('en',`
     既に追加されています：|Already added:
     最大出力は 64K / 128K / 256K / 384K から選択してください|Choose a maximum output of 64K, 128K, 256K or 384K
     最大出力レベルの保存に失敗しました|Failed to save the maximum output tier
+    🗑️ クリア|🗑️ Clear
+    すべてのファイルを消去しますか？この操作は元に戻せません。|Clear all files? This action cannot be undone.
+    消去中…|Clearing…
+    消去に失敗しました|Clearing failed
+    {0} 件のファイルを消去しました|Cleared {0} files
+    すべてのファイルを消去しました|All files cleared
+    消去に失敗しました：{0}|Clearing failed: {0}
+    DeepSeek モデル（ds ディメンション · 公式 + カスタム）|DeepSeek models (ds dimension · official + custom)
+    リレーモデル（st ディメンション · プリセット + カスタム）|Relay models (st dimension · presets + custom)
+    （未選択）|(Not selected)
+    [次][抗截断]gemini-3.8-flash（1リクエスト 0.025 元）|[Per request][Anti-truncation]gemini-3.8-flash (¥0.025 per request)
+    リレー API Key|Relay API Key
+    リレー Base URL（/v1 を含む）|Relay Base URL (including /v1)
+    リレー設定（停止中 · プライバシー上の懸念により全面停止。DeepSeek / Doubao は影響を受けません）|Relay settings (disabled · fully retired due to privacy risk; DeepSeek / Doubao are unaffected)
+    ストリーミング出力（既定でオン）|Streaming output (on by default)
+    🤖 対話モデルを切り替え|🤖 Switch chat model
+    DeepSeek（ds）/ リレー（st）/ Doubao（db）の3リスト + 個別カスタムモデル|Three lists: DeepSeek (ds), relay (st) and Doubao (db), each with independent custom models
+    リレー（停止中）|Relay (disabled)
+    開くとモデルが歌声を生成できます（enable_music。エンドツーエンド音声モデル内蔵機能、追加料金なし）|When enabled, the model can sing (enable_music; built into the end-to-end speech model at no extra charge)
+    開くと音声通話でウェブ検索を利用できます（enable_volc_websearch。Volcengine コンソールで統合情報検索の有効化が必要）|When enabled, voice calls can use web search (enable_volc_websearch; enable fused information search in the Volcengine console)
+    Doubao 音声読み上げ速度を制御（session.audio.output.speed、-50〜100、値が大きいほど速い）|Controls Doubao speech speed (session.audio.output.speed, -50 to 100; higher is faster)
+    リクエストごとの課金|Per-request billing
+    固定価格（リクエストごとの課金）：|Fixed price (per-request billing):
+    元/リクエスト|CNY/request
+    今回の呼び出し|This call
+    コピーに失敗：テキストを長押しして手動でコピーしてください|Copy failed: long-press the text and copy it manually
+    合成に失敗：バックエンドから音声 URL が返されませんでした|Synthesis failed: the backend did not return an audio URL
+    音声の読み込みに失敗しました。しばらくしてから再試行してください|Audio failed to load. Please try again later.
+    ブラウザが再生をブロックしました。ページを一度タップしてから再試行してください|The browser blocked playback. Tap the page once, then try again.
+    🟦 DeepSeek · ds ディメンション|🟦 DeepSeek · ds dimension
+    DeepSeek カスタムモデル名（例：my-deepseek-model）|DeepSeek custom model name (e.g. my-deepseek-model)
+    🔀 リレー · st ディメンション|🔀 Relay · st dimension
+    リレーカスタムモデル名（例：gpt-4o）|Relay custom model name (e.g. gpt-4o)
+    🧩 豆包 · db ディメンション|🧩 Doubao · db dimension
+    音声のダウンロードに失敗しました（HTTP {0}）|Audio download failed (HTTP {0})
+    ダウンロードした音声が空です（{0} バイト）|The downloaded audio is empty ({0} bytes)
+    音声のデコードに失敗しました（{0} バイトをダウンロード済み。有効な音声でない可能性があります）|Audio decoding failed ({0} bytes downloaded; the file may not be valid audio)
+    自動再生がブロックされました。通話パネルを一度タップしてから再試行してください|Autoplay was blocked. Tap the call panel once, then try again.
+    再生に失敗しました：{0}|Playback failed: {0}
+    音声の読み込みに失敗しました：{0}|Audio loading failed: {0}
+    リレー（st ディメンション）API は停止しました：このチャネルはユーザーのチャットプライバシーを漏えいするリスクがあるため、フロントエンドとバックエンドの両方で全面停止され、リレーモデルは一切呼び出せません。DeepSeek と豆包のディメンションは通常どおり利用できます。|Relay (st dimension) API is discontinued: because this channel risks exposing private chat data, it has been fully disabled across the frontend and backend. No relay model can be called. DeepSeek and Doubao dimensions remain available.
+    ⛔ このチャネルは停止しました|⛔ This channel is discontinued
+    分かりました|Got it
+    そのモデル名は既に別のディメンションに存在します：|That model name already exists in another dimension:
+    そのモデル名は既にリレー（st ディメンション）に存在します：|That model name already exists in the relay (st dimension):
+    豆包 · db ディメンション|Doubao · db dimension
+    リレー · st ディメンション|Relay · st dimension
+    DeepSeek · ds ディメンション|DeepSeek · ds dimension
+    変更時のみInput。空欄なら変更しません|Input only when changing. Leave blank to keep unchanged
+    語速 -50〜100、0 は既定値|Speed -50 to 100; 0 is the default
+    生成方法|Generation method
+    音色（ペア）|Voice pair
+    A: 皆さん、こんにちは。
+B: 今日はAIについて話しましょう。|A: Hello, everyone.
+B: Let’s talk about AI today.
+    1分|1 min
+    2分|2 min
+    3分|3 min
+    4分|4 min
+    6分|6 min
+    7分|7 min
+    8分|8 min
+    9分|9 min
+    10分|10 min
+    5分（既定）|5 min (default)
 `);

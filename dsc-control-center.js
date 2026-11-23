@@ -6,7 +6,7 @@
     'use strict';
 
     var OPTIONS = [65536, 131072, 262144, 393216];
-    var DEFAULT_OUTPUT = 393216;
+    var DEFAULT_OUTPUT = 262144;
     var CONTEXT_WINDOW = 1048576;
     var STORAGE_KEY = 'dsc_output_limit_v2';
     var state = {
@@ -23,9 +23,9 @@
     var COPY = {
         zh: {
             outputOpen: '打开全模型最大输出选择器', outputTitle: '最大输出核心', outputSubtitle: '选择一个档位，立即强制应用到全部模型',
-            outputEyebrow: '全局输出协议', maxOutput: '最大输出', currentChoice: '当前选择', outputHint: '四档自由选择 · 默认 384K · 自动保存',
+            outputEyebrow: '全局输出协议', maxOutput: '最大输出', currentChoice: '当前选择', outputHint: '四档自由选择 · 默认 256K · 自动保存',
             tier64: '疾速', tier128: '均衡', tier256: '深研', tier384: '无界',
-            desc64: '短回复 · 低延迟', desc128: '日常对话 · 稳定均衡', desc256: '长文创作 · 深度推理', desc384: '极限输出 · 默认档位',
+            desc64: '短回复 · 低延迟', desc128: '日常对话 · 稳定均衡', desc256: '长文创作 · 深度推理 · 默认档位', desc384: '极限输出 · 最高档位',
             providerNote: '1K = 1024 tokens。此处设置的是请求上限；上游服务商自身的模型限制仍然有效。', outputSaved: '全模型最大输出已切换为 {0}', outputSaveError: '档位保存失败，请重试',
             contextOpen: '查看实时上下文窗口', contextTitle: '上下文窗口', contextSubtitle: '动态查看当前会话的上下文占用与真实用量', contextEyebrow: '实时上下文监测',
             live: '实时', estimated: '实时估算', providerReported: '上游实测', used: '已占用', remaining: '剩余空间', capacity: '窗口容量',
@@ -36,9 +36,9 @@
         },
         ja: {
             outputOpen: '全モデルの最大出力セレクターを開く', outputTitle: '最大出力コア', outputSubtitle: 'レベルを選ぶと、すべてのモデルへ即時に強制適用されます',
-            outputEyebrow: 'グローバル出力プロトコル', maxOutput: '最大出力', currentChoice: '現在の選択', outputHint: '4 段階 · 初期値 384K · 自動保存',
+            outputEyebrow: 'グローバル出力プロトコル', maxOutput: '最大出力', currentChoice: '現在の選択', outputHint: '4 段階 · 初期値 256K · 自動保存',
             tier64: '迅速', tier128: '均衡', tier256: '深層', tier384: '無限',
-            desc64: '短い応答 · 低遅延', desc128: '日常会話 · 安定バランス', desc256: '長文作成 · 深い推論', desc384: '極限出力 · 初期レベル',
+            desc64: '短い応答 · 低遅延', desc128: '日常会話 · 安定バランス', desc256: '長文作成 · 深い推論 · 初期値', desc384: '極限出力 · 最高レベル',
             providerNote: '1K = 1024 tokens。ここで設定するのはリクエスト上限です。プロバイダー側のモデル制限も引き続き適用されます。', outputSaved: '全モデルの最大出力を {0} に切り替えました', outputSaveError: 'レベルの保存に失敗しました。もう一度お試しください',
             contextOpen: 'リアルタイムのコンテキストを表示', contextTitle: 'コンテキストウィンドウ', contextSubtitle: '現在の会話の使用量とプロバイダー実測値を動的に表示', contextEyebrow: 'リアルタイムコンテキスト監視',
             live: 'ライブ', estimated: 'リアルタイム推定', providerReported: 'プロバイダー実測', used: '使用量', remaining: '残り容量', capacity: 'ウィンドウ容量',
@@ -49,9 +49,9 @@
         },
         en: {
             outputOpen: 'Open maximum output selector for all models', outputTitle: 'Maximum output core', outputSubtitle: 'Choose a tier and enforce it instantly across every model',
-            outputEyebrow: 'Global output protocol', maxOutput: 'Maximum output', currentChoice: 'Current selection', outputHint: 'Four tiers · 384K by default · Saved automatically',
+            outputEyebrow: 'Global output protocol', maxOutput: 'Maximum output', currentChoice: 'Current selection', outputHint: 'Four tiers · 256K by default · Saved automatically',
             tier64: 'Swift', tier128: 'Balanced', tier256: 'Deep', tier384: 'Ultra',
-            desc64: 'Short replies · Low latency', desc128: 'Daily chat · Stable balance', desc256: 'Long writing · Deep reasoning', desc384: 'Maximum output · Default tier',
+            desc64: 'Short replies · Low latency', desc128: 'Daily chat · Stable balance', desc256: 'Long writing · Deep reasoning · Default', desc384: 'Extreme output · Maximum tier',
             providerNote: '1K = 1024 tokens. This sets the requested cap; provider-specific model limits still apply.', outputSaved: 'Maximum output for all models is now {0}', outputSaveError: 'Could not save the tier. Please try again.',
             contextOpen: 'View live context window', contextTitle: 'Context window', contextSubtitle: 'Live occupancy for this conversation and reported provider usage', contextEyebrow: 'Live context monitor',
             live: 'Live', estimated: 'Live estimate', providerReported: 'Provider reported', used: 'Used', remaining: 'Remaining', capacity: 'Window capacity',
@@ -62,9 +62,9 @@
         },
         ko: {
             outputOpen: '모든 모델의 최대 출력 선택기 열기', outputTitle: '최대 출력 코어', outputSubtitle: '단계를 선택하면 모든 모델에 즉시 강제 적용됩니다',
-            outputEyebrow: '전역 출력 프로토콜', maxOutput: '최대 출력', currentChoice: '현재 선택', outputHint: '4단계 · 기본값 384K · 자동 저장',
+            outputEyebrow: '전역 출력 프로토콜', maxOutput: '최대 출력', currentChoice: '현재 선택', outputHint: '4단계 · 기본값 256K · 자동 저장',
             tier64: '신속', tier128: '균형', tier256: '심층', tier384: '초월',
-            desc64: '짧은 답변 · 낮은 지연', desc128: '일상 대화 · 안정적 균형', desc256: '장문 작성 · 심층 추론', desc384: '극한 출력 · 기본 단계',
+            desc64: '짧은 답변 · 낮은 지연', desc128: '일상 대화 · 안정적 균형', desc256: '장문 작성 · 심층 추론 · 기본값', desc384: '극한 출력 · 최고 단계',
             providerNote: '1K = 1024 tokens. 여기서 설정하는 값은 요청 상한이며, 제공사의 모델별 제한도 계속 적용됩니다.', outputSaved: '모든 모델의 최대 출력이 {0}(으)로 변경되었습니다', outputSaveError: '단계를 저장하지 못했습니다. 다시 시도하세요',
             contextOpen: '실시간 컨텍스트 창 보기', contextTitle: '컨텍스트 윈도우', contextSubtitle: '현재 대화의 점유율과 제공사 실측 사용량을 실시간으로 확인', contextEyebrow: '실시간 컨텍스트 모니터',
             live: '실시간', estimated: '실시간 추정', providerReported: '제공사 실측', used: '사용량', remaining: '남은 공간', capacity: '창 용량',
@@ -75,9 +75,9 @@
         },
         ru: {
             outputOpen: 'Открыть выбор максимального вывода для всех моделей', outputTitle: 'Ядро максимального вывода', outputSubtitle: 'Выберите уровень — он немедленно применится ко всем моделям',
-            outputEyebrow: 'Глобальный протокол вывода', maxOutput: 'Максимальный вывод', currentChoice: 'Текущий выбор', outputHint: 'Четыре уровня · 384K по умолчанию · Автосохранение',
+            outputEyebrow: 'Глобальный протокол вывода', maxOutput: 'Максимальный вывод', currentChoice: 'Текущий выбор', outputHint: 'Четыре уровня · 256K по умолчанию · Автосохранение',
             tier64: 'Быстро', tier128: 'Баланс', tier256: 'Глубоко', tier384: 'Максимум',
-            desc64: 'Короткие ответы · Низкая задержка', desc128: 'Ежедневный чат · Стабильный баланс', desc256: 'Длинные тексты · Глубокий анализ', desc384: 'Предельный вывод · По умолчанию',
+            desc64: 'Короткие ответы · Низкая задержка', desc128: 'Ежедневный чат · Стабильный баланс', desc256: 'Длинные тексты · Глубокий анализ · По умолчанию', desc384: 'Предельный вывод · Максимальный уровень',
             providerNote: '1K = 1024 tokens. Здесь задаётся лимит запроса; собственные ограничения моделей у провайдера также действуют.', outputSaved: 'Максимальный вывод всех моделей переключён на {0}', outputSaveError: 'Не удалось сохранить уровень. Повторите попытку',
             contextOpen: 'Открыть контекстное окно в реальном времени', contextTitle: 'Контекстное окно', contextSubtitle: 'Динамическая загрузка текущего диалога и фактические данные провайдера', contextEyebrow: 'Мониторинг контекста в реальном времени',
             live: 'Онлайн', estimated: 'Оценка в реальном времени', providerReported: 'Данные провайдера', used: 'Занято', remaining: 'Осталось', capacity: 'Ёмкость окна',
@@ -88,9 +88,9 @@
         },
         fr: {
             outputOpen: 'Ouvrir le sélecteur de sortie maximale pour tous les modèles', outputTitle: 'Noyau de sortie maximale', outputSubtitle: 'Choisissez un niveau pour l’imposer immédiatement à tous les modèles',
-            outputEyebrow: 'Protocole global de sortie', maxOutput: 'Sortie maximale', currentChoice: 'Sélection actuelle', outputHint: 'Quatre niveaux · 384K par défaut · Enregistrement automatique',
+            outputEyebrow: 'Protocole global de sortie', maxOutput: 'Sortie maximale', currentChoice: 'Sélection actuelle', outputHint: 'Quatre niveaux · 256K par défaut · Enregistrement automatique',
             tier64: 'Rapide', tier128: 'Équilibré', tier256: 'Profond', tier384: 'Ultime',
-            desc64: 'Réponses courtes · Faible latence', desc128: 'Dialogue quotidien · Équilibre stable', desc256: 'Textes longs · Raisonnement profond', desc384: 'Sortie extrême · Niveau par défaut',
+            desc64: 'Réponses courtes · Faible latence', desc128: 'Dialogue quotidien · Équilibre stable', desc256: 'Textes longs · Raisonnement profond · Par défaut', desc384: 'Sortie extrême · Niveau maximal',
             providerNote: '1K = 1024 tokens. Ceci définit la limite demandée ; les restrictions propres aux modèles du fournisseur restent applicables.', outputSaved: 'La sortie maximale de tous les modèles est passée à {0}', outputSaveError: 'Impossible d’enregistrer le niveau. Réessayez',
             contextOpen: 'Afficher la fenêtre de contexte en direct', contextTitle: 'Fenêtre de contexte', contextSubtitle: 'Occupation dynamique de la conversation et usage réel du fournisseur', contextEyebrow: 'Surveillance du contexte en direct',
             live: 'Direct', estimated: 'Estimation en direct', providerReported: 'Données fournisseur', used: 'Utilisé', remaining: 'Espace restant', capacity: 'Capacité de la fenêtre',
@@ -160,7 +160,7 @@
                 '<h2 id="dscOutputTitle" data-cc="outputTitle"></h2><p data-cc="outputSubtitle"></p></div>' +
                 '<button type="button" class="dsc-cc-close" data-close="output" aria-label="Close">×</button></header>' +
                 '<div class="dsc-output-core" aria-hidden="true"><span class="dsc-core-orbit orbit-a"></span><span class="dsc-core-orbit orbit-b"></span>' +
-                '<div class="dsc-core-center"><small data-cc="currentChoice"></small><strong id="dscOutputCurrent">384K</strong><span data-cc="maxOutput"></span></div></div>' +
+                '<div class="dsc-core-center"><small data-cc="currentChoice"></small><strong id="dscOutputCurrent">256K</strong><span data-cc="maxOutput"></span></div></div>' +
                 '<div class="dsc-output-game-hint" data-cc="gameHint"></div><div id="dscOutputOptions" class="dsc-output-options" role="radiogroup"></div>' +
                 '<div class="dsc-output-meta"><span data-cc="outputHint"></span><span class="dsc-output-global" data-cc="outputEyebrow"></span></div>' +
                 '<p class="dsc-cc-note" data-cc="providerNote"></p></section>';
@@ -185,7 +185,7 @@
                 '<div class="dsc-context-remaining"><span data-cc="remaining"></span><strong id="dscCtxRemaining">1024K</strong></div>' +
                 '<div class="dsc-context-model"><span data-cc="currentModel"></span><strong id="dscCtxModel">—</strong></div></div></div>' +
                 '<div class="dsc-context-grid"><div><span data-cc="capacity"></span><strong>1024K</strong></div>' +
-                '<div><span data-cc="outputCap"></span><strong id="dscCtxOutput">384K</strong></div>' +
+                '<div><span data-cc="outputCap"></span><strong id="dscCtxOutput">256K</strong></div>' +
                 '<div><span data-cc="messages"></span><strong id="dscCtxMessages">0</strong></div>' +
                 '<div><span data-cc="characters"></span><strong id="dscCtxCharacters">0</strong></div></div>' +
                 '<div class="dsc-provider-card"><div class="dsc-provider-title"><span data-cc="providerReported"></span><strong id="dscCtxReported">—</strong></div>' +

@@ -20,9 +20,17 @@
     // ============================================================
     window.DSC_RELAY_DISABLED = true;
     window.DSC_RELAY_DISABLED_MSG =
-        '中转站（st 维度）API 已停止服务：因该渠道存在泄露用户聊天隐私的风险，' +
-        '现已从前端到后端全面停用，无法再调用任何中转站模型。' +
-        'DeepSeek 与豆包维度可正常使用。';
+        'リレー（st ディメンション）API は停止しました：このチャネルはユーザーのチャットプライバシーを漏えいするリスクがあるため、' +
+        'フロントエンドとバックエンドの両方で全面停止され、リレーモデルは一切呼び出せません。' +
+        'DeepSeek と豆包のディメンションは通常どおり利用できます。';
+    window.dscRelayDisabledText = function () {
+        try {
+            if (window.I18N && typeof window.I18N.t === 'function') {
+                return window.I18N.t(window.DSC_RELAY_DISABLED_MSG);
+            }
+        } catch (e) {}
+        return window.DSC_RELAY_DISABLED_MSG;
+    };
 
     // 统一弹窗报错：优先用自定义模态框，退化到 alert，再退化到 toast。
     // 保证用户一点击任何 st 入口都会被明确告知“已停用”。
@@ -36,12 +44,12 @@
             ov.style.zIndex = '100090';
             ov.innerHTML =
                 '<div class="dsc-modal" style="max-width:420px;">' +
-                '<div class="dsc-modal-title">⛔ 该渠道已停用</div>' +
+                '<div class="dsc-modal-title">' + T('⛔ このチャネルは停止しました') + '</div>' +
                 '<div style="line-height:1.7;padding:6px 4px 14px;">' +
-                window.DSC_RELAY_DISABLED_MSG +
+                window.dscRelayDisabledText() +
                 '</div>' +
                 '<div class="dsc-modal-footer">' +
-                '<button type="button" class="dsc-btn primary" id="dscRelayBlockedOk">我知道了</button>' +
+                '<button type="button" class="dsc-btn primary" id="dscRelayBlockedOk">' + T('分かりました') + '</button>' +
                 '</div></div>';
             document.body.appendChild(ov);
             var close = function () { if (ov.parentNode) ov.parentNode.removeChild(ov); };
@@ -51,8 +59,8 @@
             try { if (window.vibrate) window.vibrate(30); } catch (e) {}
             return;
         } catch (e) {}
-        try { alert(window.DSC_RELAY_DISABLED_MSG); return; } catch (e2) {}
-        try { toast(window.DSC_RELAY_DISABLED_MSG, 'error'); } catch (e3) {}
+        try { alert(window.dscRelayDisabledText()); return; } catch (e2) {}
+        try { toast(window.dscRelayDisabledText(), 'error'); } catch (e3) {}
     };
 
     // 判定一个模型是否属于被停用的中转站目录（预置 + 自定义）。
@@ -452,17 +460,19 @@ var EDGE_VOICE_POOL = {
     // ------------------------------------------------------------
     // メニュー項目は「日本語キー＋実行関数」で保持し、言語切替時はラベルだけ貼り替える。
     // 再読込なしで言語を変えても、以前の言語の文言が残らないようにするため。
+    // 这里只保存“翻译源键”，禁止在模块加载时提前调用 T()：
+    // 提前翻译会把旧语言结果缓存进 MENU_ITEMS，切换语言后无法再还原。
     var MENU_ITEMS = [
-        { id: 'dscDbTtsBtn', ic: '🔊', label: T('豆包で音声生成'), tip: T('豆包音声生成'), open: function () { openTtsModal(); } },
-        { id: 'dscDbAudioGenBtn', ic: '🎬', label: T('豆包オーディオ生成'), tip: T('豆包オーディオ生成'), open: function () { openAudioGenModal(); } },
-        { id: 'dscDbImageBtn', ic: '🎨', label: T('豆包で画像生成'), tip: T('豆包画像生成'), open: function () { openImageModal(); } },
-        { id: 'dscDbVideoBtn', ic: '🎬', label: T('豆包で動画生成'), tip: T('豆包動画生成'), open: function () { openVideoModal(); } },
-        { id: 'dscDbPodcastBtn', ic: '🎧', label: T('豆包ポッドキャスト'), tip: T('豆包ポッドキャスト'), open: function () { openPodcastModal(); } },
-        { id: 'dscDbCallBtn', ic: '📞', label: T('豆包音声通話'), tip: T('豆包音声通話'), open: function () { openCallModal(); } },
-        { id: 'dscDbAsrBtn', ic: '🎤', label: T('録音ファイルを豆包で認識'), tip: T('豆包録音ファイル認識'), open: function () { openAsrModal(); } },
-        { id: 'dscDbTranslateBtn', ic: '🌐', label: T('豆包機械翻訳'), tip: T('豆包機械翻訳'), open: function () { openTranslateModal(); } },
+        { id: 'dscDbTtsBtn', ic: '🔊', label: '豆包で音声生成', tip: '豆包音声生成', open: function () { openTtsModal(); } },
+        { id: 'dscDbAudioGenBtn', ic: '🎬', label: '豆包オーディオ生成', tip: '豆包オーディオ生成', open: function () { openAudioGenModal(); } },
+        { id: 'dscDbImageBtn', ic: '🎨', label: '豆包で画像生成', tip: '豆包画像生成', open: function () { openImageModal(); } },
+        { id: 'dscDbVideoBtn', ic: '🎬', label: '豆包で動画生成', tip: '豆包動画生成', open: function () { openVideoModal(); } },
+        { id: 'dscDbPodcastBtn', ic: '🎧', label: '豆包ポッドキャスト', tip: '豆包ポッドキャスト', open: function () { openPodcastModal(); } },
+        { id: 'dscDbCallBtn', ic: '📞', label: '豆包音声通話', tip: '豆包音声通話', open: function () { openCallModal(); } },
+        { id: 'dscDbAsrBtn', ic: '🎤', label: '録音ファイルを豆包で認識', tip: '録音ファイルを豆包で認識', open: function () { openAsrModal(); } },
+        { id: 'dscDbTranslateBtn', ic: '🌐', label: '豆包機械翻訳', tip: '豆包機械翻訳', open: function () { openTranslateModal(); } },
         // 术语表隐藏
-        { id: 'dscDbEditBtn', ic: '🖌️', label: T('豆包画像編集'), tip: T('豆包画像編集'), open: function () { openEditModal(); } }
+        { id: 'dscDbEditBtn', ic: '🖌️', label: '豆包画像編集', tip: '豆包画像編集', open: function () { openEditModal(); } }
     ];
 
     function applyMenuLabels() {
@@ -683,15 +693,15 @@ var EDGE_VOICE_POOL = {
         card.appendChild(field('全双工の人設プロンプト（任意）',
             input('dscDbDuplexInstr', 'text', '空欄なら既定の短文プロンプト', '')));
         card.appendChild(switchRow('dscDbDuplexMusic', '歌唱能力（ネイティブ）',
-            '打开后模型可随口唱歌（enable_music，端到端语音模型内置能力，不额外计费）', false));
+            '開くとモデルが歌声を生成できます（enable_music。エンドツーエンド音声モデル内蔵機能、追加料金なし）', false));
         card.appendChild(switchRow('dscDbDuplexWeb', '内蔵ウェブ検索',
-            '打开后语音通话具备联网搜索能力（enable_volc_websearch，需在火山控制台开通融合信息搜索）', false));
+            '開くと音声通話でウェブ検索を利用できます（enable_volc_websearch。Volcengine コンソールで統合情報検索の有効化が必要）', false));
         card.appendChild(field('ウェブ検索 API Key（融合情報検索）',
-            input('dscDbDuplexWebKey', 'password', '变更时才需填写，留空保持不变'),
-            '开启内蔵ウェブ検索后需配置融合信息搜索 API Key（volc_websearch_api_key）'));
+            input('dscDbDuplexWebKey', 'password', '変更時のみ入力。空欄なら変更しません'),
+            '内蔵ウェブ検索を有効化した後、融合情報検索 API Key（volc_websearch_api_key）を設定してください'));
         card.appendChild(field('出力語速',
-            input('dscDbDuplexRate', 'number', '语速 -50~100，0 为默认', '0'),
-            '控制豆包语音播报语速（session.audio.output.speed，-50~100，数值越大越快）'));
+            input('dscDbDuplexRate', 'number', '語速 -50〜100、0 は既定値', '0'),
+            'Doubao 音声読み上げ速度を制御（session.audio.output.speed、-50〜100、値が大きいほど速い）'));
         card.appendChild(field('豆包音声 API Key（Seeduplex 用）',
             input('dscDbDuplexKey', 'password', '変更しない場合は空欄'),
             '方舟の API Key では 401 になります。豆包音声コンソールの API Key を入力してください。'));
@@ -1117,7 +1127,7 @@ var EDGE_VOICE_POOL = {
 
     function buildAudioGenModal() {
         var md = buildModal('dscDbAudioGenOverlay', '🎬', '豆包オーディオ生成（Seed-Audio）', 'シーン描写から、セリフ・効果音・BGMを含む完全な音声をエンドツーエンドで生成（最長2分）');
-        
+
         md.appendChild(field('オーディオシーンの説明（テキストプロンプト）', textarea('dscDbAudioGenPrompt', '例：優しい女性が夜に童話をそっと語り、背景にかすかな虫の声が聞こえる')));
         md.appendChild(field('音声ファイル名（任意）', input('dscDbAudioGenName', 'text', '例：童話')));
         md.appendChild(field('生成時間', select('dscDbAudioGenDuration', [
@@ -1134,7 +1144,7 @@ var EDGE_VOICE_POOL = {
         var st = el('div', 'dsc-db-status');
         st.id = 'dscDbAudioGenStatus';
         md.appendChild(st);
-        
+
         var res = el('div', 'dsc-db-result');
         res.id = 'dscDbAudioGenResult';
         md.appendChild(res);
@@ -1153,10 +1163,10 @@ var EDGE_VOICE_POOL = {
         go.addEventListener('click', async function () {
             var prompt = ($('dscDbAudioGenPrompt') || {}).value || '';
             if (!prompt.trim()) { setStatus(st, '⚠️ ' + T('音声シーン描写を入力してください'), 'err'); return; }
-            
+
             go.disabled = true;
             setStatus(st, T('生成中…（最大2分ほどかかる場合があります）'), 'busy');
-            
+
             try {
                 var d = await api('/audio-generate', {
                     method: 'POST',
@@ -1174,7 +1184,7 @@ var EDGE_VOICE_POOL = {
                 au.style.width = '100%';
                 res.appendChild(au);
                 res.appendChild(el('div', 'dsc-db-filename', T('ファイル名：{0}', f.name || '')));
-                
+
                 var row = el('div', 'dsc-db-row');
                 row.style.marginTop = '10px';
                 var dl = el('button', 'dsc-db-btn primary', T('音声をダウンロード'));
@@ -1182,7 +1192,7 @@ var EDGE_VOICE_POOL = {
                 dl.addEventListener('click', function () { openExternal(downloadUrl(f)); });
                 row.appendChild(dl);
                 res.appendChild(row);
-                
+
                 setStatus(st, T('✅ 生成成功：{0}', f.name || ''), 'ok');
                 toast(T('✅ 音声生成成功'), 'success');
                 refreshFiles();
@@ -2059,12 +2069,12 @@ var EDGE_VOICE_POOL = {
         var stage = el('div', 'dsc-db-podcast-stage');
 
         var grid = el('div', 'dsc-db-grid');
-        grid.appendChild(field('生成方式', select('dscDbPodAction', [
-            { value: '0', label: 'テキスト生成（素材ベース）' },
-            { value: '3', label: '対話合成' },
-            { value: '4', label: '話題ウェブ検索生成' }
+        grid.appendChild(field(T('生成方法'), select('dscDbPodAction', [
+            { value: '0', label: T('テキスト生成（素材ベース）') },
+            { value: '3', label: T('対話合成') },
+            { value: '4', label: T('話題ウェブ検索生成') }
         ], '0')));
-        grid.appendChild(field('音色（双人）', select('dscDbPodVoiceSel', PODCAST_VOICE_PAIRS, 'mizai_dayi')));
+        grid.appendChild(field(T('音色（ペア）'), select('dscDbPodVoiceSel', PODCAST_VOICE_PAIRS, 'mizai_dayi')));
         stage.appendChild(grid);
 
         var inputArea = el('div', 'dsc-db-podcast-input');
@@ -2085,7 +2095,7 @@ var EDGE_VOICE_POOL = {
         var foot = el('div', 'dsc-db-footer');
         var close = el('button', 'dsc-db-btn', T('閉じる'));
         close.type = 'button';
-        var go = el('button', 'dsc-db-btn primary', '生成播客');
+        var go = el('button', 'dsc-db-btn primary', T('ポッドキャストを生成'));
         go.type = 'button';
         go.id = 'dscDbPodGo';
         foot.appendChild(close);
@@ -2107,25 +2117,25 @@ var EDGE_VOICE_POOL = {
         var action = ($('dscDbPodAction') || {}).value || '0';
         area.innerHTML = '';
         if (action === '0') {
-            area.appendChild(field('入力テキスト / 素材', textarea('dscDbPodInputText', '例：今日は人工知能の発展史について、チューリングテストからディープラーニングまで語ります。')));
+            area.appendChild(field(T('入力テキスト / 素材'), textarea('dscDbPodInputText', T('例：今日は人工知能の発展史について、チューリングテストからディープラーニングまで語ります。'))));
         } else if (action === '3') {
-            area.appendChild(field('対話テキスト（1行1発話、形式 A:xxx / B:xxx。A/B は音色ペアの2人の話者に対応）', textarea('dscDbPodInputText', 'A: 皆さん、こんにちは。\nB: 今日はAIについて話しましょう。')));
+            area.appendChild(field(T('対話テキスト（1行1発話、形式 A:xxx / B:xxx。A/B は音色ペアの2人の話者に対応）'), textarea('dscDbPodInputText', T('A: 皆さん、こんにちは。\nB: 今日はAIについて話しましょう。'))));
         } else if (action === '4') {
-            area.appendChild(field('話題（ウェブ検索生成）', textarea('dscDbPodInputText', '例：2025年の人工知能分野の最新動向')));
+            area.appendChild(field(T('話題（ウェブ検索生成）'), textarea('dscDbPodInputText', T('例：2025年の人工知能分野の最新動向'))));
         }
-        area.appendChild(field('目標時間（1〜10分）', select('dscDbPodMinutes', [
-            { value: '1', label: '1分' },
-            { value: '2', label: '2分' },
-            { value: '3', label: '3分' },
-            { value: '4', label: '4分' },
-            { value: '5', label: '5分（既定）' },
-            { value: '6', label: '6分' },
-            { value: '7', label: '7分' },
-            { value: '8', label: '8分' },
-            { value: '9', label: '9分' },
-            { value: '10', label: '10分' }
+        area.appendChild(field(T('目標時間（1〜10分）'), select('dscDbPodMinutes', [
+            { value: '1', label: T('1分') },
+            { value: '2', label: T('2分') },
+            { value: '3', label: T('3分') },
+            { value: '4', label: T('4分') },
+            { value: '5', label: T('5分（既定）') },
+            { value: '6', label: T('6分') },
+            { value: '7', label: T('7分') },
+            { value: '8', label: T('8分') },
+            { value: '9', label: T('9分') },
+            { value: '10', label: T('10分') }
         ], '5')));
-        area.appendChild(field('ファイル名（任意）', input('dscDbPodName2', 'text', '例：マイポッドキャスト')));
+        area.appendChild(field(T('ファイル名（任意）'), input('dscDbPodName2', 'text', T('例：マイポッドキャスト'))));
     }
 
     // 把「A: xxx / B: xxx」对话文本解析成官方 nlp_texts（每项含 text + speaker）
@@ -2733,7 +2743,7 @@ var EDGE_VOICE_POOL = {
 
     async function startCall() {
         if (S.call && S.call.active) return;
-        
+
         S.call = newCallState();
 
         // 预解锁音频元素：用户刚点下「开始通话」的这一下就是可用手势，
@@ -2748,8 +2758,8 @@ var EDGE_VOICE_POOL = {
         } catch (e) {}
         S.call.active = true;
         S.call.micOn = true;
-        S.call.duplex = true; 
-        
+        S.call.duplex = true;
+
         var logBox = $('dscDbCallLog');
         if (logBox) logBox.innerHTML = '';
         addBubble('sys', T('全二重サービスに接続中…'));
@@ -2867,7 +2877,7 @@ var EDGE_VOICE_POOL = {
     function callLoop() {
         var c = S.call;
         if (!c || !c.active || c.playing || c.thinking || !c.micOn || !c.analyser || c.recording) return;
-        
+
         var buf = new Uint8Array(c.analyser.fftSize);
         c.analyser.getByteTimeDomainData(buf);
         var sum = 0;
@@ -2876,7 +2886,7 @@ var EDGE_VOICE_POOL = {
             sum += v * v;
         }
         var rms = Math.sqrt(sum / buf.length);
-        
+
         // ★ 修复：降低阈值到 0.015，只要稍微有点声音就开始录音
         if (rms > 0.015) {
             c.voiceFrames = (c.voiceFrames || 0) + 1;
@@ -3031,13 +3041,13 @@ var EDGE_VOICE_POOL = {
         //   界面只会显示「音频加载失败」，看不出真正原因。
         //   改成完整下载再播放后：不依赖 Range、不产生两段竞态，稳定可预期。
         fetch(url, { cache: 'no-store' }).then(function (res) {
-            if (!res.ok) throw new Error('下载音频失败（HTTP ' + res.status + '）');
+            if (!res.ok) throw new Error(T('音声のダウンロードに失敗しました（HTTP {0}）', res.status));
             return res.blob();
         }).then(function (blob) {
             if (!c.active) return;
             var size = blob ? blob.size : 0;
             if (!size || size < 200) {
-                throw new Error('下载到的音频为空（' + size + ' 字节）');
+                throw new Error(T('ダウンロードした音声が空です（{0} バイト）', size));
             }
             // 释放上一段语音的临时地址，避免内存一直涨
             if (c.lastObjUrl) {
@@ -3052,7 +3062,7 @@ var EDGE_VOICE_POOL = {
                 if (c.active) setCallStatus(T('聞き取り中…'), 'listening');
             };
             audio.onerror = function () {
-                fail('音频解码失败（已下载 ' + size + ' 字节，可能不是有效的音频）');
+                fail(T('音声のデコードに失敗しました（{0} バイトをダウンロード済み。有効な音声でない可能性があります）', size));
             };
 
             var p = audio.play();
@@ -3061,7 +3071,7 @@ var EDGE_VOICE_POOL = {
                     var nm = (e && e.name) || '';
                     // 自动播放被拦截：换数据源也没用，必须让用户点一下面板
                     if (nm === 'NotAllowedError') {
-                        fail('自动播放被拦截：请先点一下通话面板再试');
+                        fail(T('自動再生がブロックされました。通話パネルを一度タップしてから再試行してください'));
                         return;
                     }
                     // 其他情况（个别 WebView 不认 blob: 音频地址）：
@@ -3073,19 +3083,19 @@ var EDGE_VOICE_POOL = {
                             var p2 = audio.play();
                             if (p2 && p2.catch) {
                                 p2.catch(function (e2) {
-                                    fail('播放失败：' + ((e2 && e2.message) || e2));
+                                    fail(T('再生に失敗しました：{0}', (e2 && e2.message) || e2));
                                 });
                             }
                         };
-                        fr.onerror = function () { fail('音频读取失败'); };
+                        fr.onerror = function () { fail(T('音声の読み取りに失敗しました')); };
                         fr.readAsDataURL(blob);
                     } catch (e3) {
-                        fail('播放失败：' + ((e3 && e3.message) || e3));
+                        fail(T('再生に失敗しました：{0}', (e3 && e3.message) || e3));
                     }
                 });
             }
         }).catch(function (e) {
-            fail('音频加载失败：' + ((e && e.message) || e));
+            fail(T('音声の読み込みに失敗しました：{0}', (e && e.message) || e));
         });
     }
 
@@ -3167,7 +3177,7 @@ var EDGE_VOICE_POOL = {
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
         qmSyncBtn();   // 入力欄のモデル選択器も同時に追従
         var lbl = b.querySelector('.dsc-db-mode-lbl');
-        ensureDbModeIcon(lbl);
+        ensureDbModeIcon(lbl, on);
         // title は静的な文だけを翻訳対象にし、モデル値は識別子として連結する
         b.title = on
             ? T('豆包モード：オン（送信は豆包モデル）') + ' · ' + dbChatModel()
@@ -3413,11 +3423,14 @@ var EDGE_VOICE_POOL = {
         'stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.9"/>' +
         '</svg>';
 
-    function ensureDbModeIcon(lbl) {
+    function ensureDbModeIcon(lbl, on) {
         if (!lbl) return;
-        if (lbl.querySelector('svg')) return;
+        // 维度文字必须始终可见：激活态旧实现是白底 + 白 SVG，实际会消失。
+        var text = on ? 'DB' : 'DS';
+        if (lbl.textContent === text && !lbl.querySelector('svg')) return;
         lbl.textContent = '';
-        lbl.innerHTML = DB_MODE_ICON_SVG;
+        lbl.textContent = text;
+        lbl.setAttribute('aria-hidden', 'true');
     }
 
     // ------------------------------------------------------------
@@ -3590,7 +3603,7 @@ var EDGE_VOICE_POOL = {
         b.id = 'dscDbModeBtn';
         b.type = 'button';
         var lbl0 = el('span', 'dsc-db-mode-lbl');
-        ensureDbModeIcon(lbl0);
+        ensureDbModeIcon(lbl0, isDbMode());
         b.appendChild(lbl0);
         b.addEventListener('click', function () { setDbMode(!isDbMode()); });
         nb.parentNode.insertBefore(b, nb);
@@ -3719,11 +3732,11 @@ var EDGE_VOICE_POOL = {
         qmLocalDbModels().forEach(function (v) {
             if (seen[v]) return;
             seen[v] = 1;
-            out.push({ value: v, label: v + T('（自定义）'), custom: true });
+            out.push({ value: v, label: v + T('（カスタム）'), custom: true });
         });
         var cur = dbChatModel(), has = false;
         for (var i = 0; i < out.length; i++) { if (out[i].value === cur) { has = true; break; } }
-        if (!has && cur) out.unshift({ value: cur, label: cur + T('（自定义）'), custom: true });
+        if (!has && cur) out.unshift({ value: cur, label: cur + T('（カスタム）'), custom: true });
         return out;
     }
 
@@ -3797,9 +3810,9 @@ var EDGE_VOICE_POOL = {
     //     db → data/doubao/*.sts customModels  （POST /api/doubao/config）
     var qmAddKind = 'ds';
     var QM_KIND_META = {
-        ds: { title: '🟦 DeepSeek · ds 维度', ph: 'DeepSeek 自定义模型名（例：my-deepseek-model）' },
-        st: { title: '🔀 中转站 · st 维度', ph: '中转站自定义模型名（例：gpt-4o）' },
-        db: { title: '🧩 豆包 · db 维度', ph: '豆包自定义模型名（例：doubao-seed-2-2-pro）' }
+        ds: { title: '🟦 DeepSeek · ds ディメンション', ph: 'DeepSeek カスタムモデル名（例：my-deepseek-model）' },
+        st: { title: '🔀 リレー · st ディメンション', ph: 'リレーカスタムモデル名（例：gpt-4o）' },
+        db: { title: '🧩 豆包 · db ディメンション', ph: '豆包カスタムモデル名（例：doubao-seed-2-2-pro）' }
     };
 
     function qmHub() { return window.dscModelHub || {}; }
@@ -4170,7 +4183,7 @@ var EDGE_VOICE_POOL = {
         boot();
     }
 
-    
+
     // ------------------------------------------------------------
     // 豆包機械翻訳（支持32国语言，全功能版）
     // ------------------------------------------------------------
@@ -4192,6 +4205,29 @@ var EDGE_VOICE_POOL = {
         { value: 'bg', label: '保加利亚语' }, { value: 'sk', label: '斯洛伐克语' },
         { value: 'he', label: '希伯来语' }, { value: 'fa', label: '波斯语' }
     ];
+
+    function dscUiLocale() {
+        var l = (window.I18N && I18N.lang) || document.documentElement.lang || 'ja';
+        l = String(l).toLowerCase();
+        if (l === 'zh' || l === 'zh-cn') return 'zh-CN';
+        if (l === 'zh-tw' || l === 'zh-hant') return 'zh-TW';
+        return { ja: 'ja-JP', en: 'en-US', ko: 'ko-KR', ru: 'ru-RU', fr: 'fr-FR' }[l] || l;
+    }
+
+    function dscLangName(code) {
+        try {
+            var dn = new Intl.DisplayNames([dscUiLocale()], { type: 'language' });
+            var v = dn.of(code);
+            if (v) return v;
+        } catch (e) {}
+        return code;
+    }
+
+    function dscLangOptions() {
+        return TRANSLATE_LANGS.map(function (x) {
+            return { value: x.value, label: dscLangName(x.value) };
+        });
+    }
 
     function getTTSVoiceForLang(langCode) {
         var map = {
@@ -4298,7 +4334,7 @@ var EDGE_VOICE_POOL = {
                 flashCopied(btn);
                 toast(T('📋 已复制到剪贴板'), 'success');
             } else {
-                toast(T('复制失败：请长按文本手动选择复制'), 'error');
+                toast(T('コピーに失敗：テキストを長押しして手動でコピーしてください'), 'error');
             }
             return ok;
         });
@@ -4312,21 +4348,21 @@ var EDGE_VOICE_POOL = {
     function buildTranslateModal() {
         var md = buildModal('dscDbTranslateOverlay', '🌐', '豆包機械翻訳', '32 言語の相互翻訳に対応。');
         var langRow = el('div', 'dsc-db-grid');
-        langRow.appendChild(field('ソース言語（未選択なら自動検出）', select('dscDbTransSrcLang', 
-            [{ value: '', label: '自動検出' }].concat(TRANSLATE_LANGS), '')));
-        langRow.appendChild(field('ターゲット言語（必須）', select('dscDbTransTgtLang', TRANSLATE_LANGS, 'zh')));
+        langRow.appendChild(field(T('ソース言語（未選択なら自動検出）'), select('dscDbTransSrcLang',
+            [{ value: '', label: T('自動検出') }].concat(dscLangOptions()), '')));
+        langRow.appendChild(field(T('ターゲット言語（必須）'), select('dscDbTransTgtLang', dscLangOptions(), 'zh')));
         md.appendChild(langRow);
 
-        md.appendChild(field('翻訳するテキスト（1行1件）', textarea('dscDbTransText', 'テキストを入力...')));
-        
+        md.appendChild(field(T('翻訳するテキスト（1行1件）'), textarea('dscDbTransText', T('テキストを入力...'))));
+
         var st = el('div', 'dsc-db-status'); st.id = 'dscDbTransStatus'; md.appendChild(st);
         var res = el('div', 'dsc-db-result'); res.id = 'dscDbTransResult'; md.appendChild(res);
-        
+
         var foot = el('div', 'dsc-db-footer');
         var close = el('button', 'dsc-db-btn', T('閉じる'));
         var go = el('button', 'dsc-db-btn primary', T('翻訳'));
         foot.appendChild(close); foot.appendChild(go); md.appendChild(foot);
-        
+
         close.onclick = function () { closeModal('dscDbTranslateOverlay'); };
         go.onclick = function () {
             var raw = $('dscDbTransText').value;
@@ -4378,13 +4414,13 @@ var EDGE_VOICE_POOL = {
                     })(speakBtns[si]);
                 }
                 setStatus(st, T('✅ 翻訳成功'), 'ok');
-            }).catch(function(e){ 
-                setStatus(st, '❌ ' + (e && e.message ? e.message : T('翻訳失敗')), 'err'); 
+            }).catch(function(e){
+                setStatus(st, '❌ ' + (e && e.message ? e.message : T('翻訳失敗')), 'err');
             }).finally(function(){ go.disabled = false; });
         };
     }
 
-    
+
 
     // ------------------------------------------------------------
     // 语音朗读（下载落盘播放版）
@@ -4445,7 +4481,7 @@ var EDGE_VOICE_POOL = {
             body: { text: text, voice: getTTSVoiceForLang(lang), lang: lang }
         }).then(function (d) {
             if (!d.audioUrl) {
-                toast('合成失败：后端没有返回音频地址', 'error');
+                toast('合成に失敗：バックエンドから音声 URL が返されませんでした', 'error');
                 restore();
                 return;
             }
@@ -4453,9 +4489,9 @@ var EDGE_VOICE_POOL = {
             var audio = new Audio(d.audioUrl);
             TRANS_AUDIO.audio = audio;
             audio.onended = restore;
-            audio.onerror = function () { toast('音频加载失败，请稍后重试', 'error'); restore(); };
+            audio.onerror = function () { toast('音声の読み込みに失敗しました。しばらくしてから再試行してください', 'error'); restore(); };
             audio.play().catch(function () {
-                toast('播放被浏览器拦截，请先点一下页面再重试', 'error');
+                toast('ブラウザが再生をブロックしました。ページを一度タップしてから再試行してください', 'error');
                 restore();
             });
         }).catch(function (e) {

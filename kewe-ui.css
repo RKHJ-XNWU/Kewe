@@ -718,3 +718,112 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
 @supports (height: 100dvh) {
     #deepseekChatApp { height: 100dvh; }
 }
+
+/* ============================================================
+ * 2026-11-23 最终消息形态
+ * AI 正文不再使用任何气泡卡片；用户消息改为白底黑字。
+ * 这些规则放在文件末尾，确保覆盖前面所有桌面/手机断点。
+ * ============================================================ */
+#deepseekChatApp .dsc-msg.assistant .dsc-msg-bubble {
+    width: 100%;
+    max-width: 100%;
+    padding: 0;
+    color: var(--kewe-text);
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+#deepseekChatApp .dsc-msg.assistant .dsc-msg-bubble:hover {
+    transform: none;
+    border: 0;
+    box-shadow: none;
+}
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble {
+    width: fit-content;
+    max-width: min(88%, 760px);
+    margin-left: auto;
+    padding: 10px 14px;
+    color: #101722;
+    border: 1px solid #d7e0ea;
+    border-radius: 18px 8px 18px 18px;
+    background: #ffffff;
+    box-shadow: 0 8px 22px rgba(31, 55, 74, .075), inset 0 1px 0 #fff;
+}
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble p,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble li,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble strong,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble em,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble h1,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble h2,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble h3,
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble h4 {
+    color: #101722;
+}
+#deepseekChatApp .dsc-msg.user .dsc-msg-bubble:hover {
+    transform: none;
+    border-color: #cfd9e5;
+    box-shadow: 0 9px 24px rgba(31, 55, 74, .085), inset 0 1px 0 #fff;
+}
+
+/* 维度按钮：未激活显式显示 DS，激活显示 DB；杜绝白底白图标 */
+#deepseekChatApp .dsc-db-mode-btn {
+    color: #5b21b6;
+    background: linear-gradient(145deg, #ffffff, #f3efff);
+    border-color: #d8ceff;
+    box-shadow: 0 5px 15px rgba(91, 33, 182, .08);
+}
+#deepseekChatApp .dsc-db-mode-btn .dsc-db-mode-lbl {
+    width: 100%;
+    height: 100%;
+    color: inherit;
+    font: 800 10px/1 var(--kewe-mono);
+    letter-spacing: .055em;
+}
+#deepseekChatApp .dsc-db-mode-btn.active {
+    color: #ffffff;
+    border-color: #5646e8;
+    background: linear-gradient(145deg, #7c3aed 0%, #4f46e5 58%, #0e7490 100%);
+    box-shadow: 0 7px 20px rgba(79, 70, 229, .3);
+}
+#deepseekChatApp .dsc-db-mode-btn.active .dsc-db-mode-lbl { color: #ffffff; }
+
+/* 用量行与计价：禁止金额、价格标签被压成逐字换行 */
+#deepseekChatApp .dsc-msg-usage {
+    width: 100%;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+#deepseekChatApp .dsc-msg-usage .dsc-usage-chip {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+#deepseekChatApp .dsc-msg-usage .dsc-cost-chip {
+    flex: 0 0 auto;
+    margin-left: auto;
+    white-space: nowrap;
+}
+#deepseekChatApp .dsc-msg-usage .dsc-cost-chip > span {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+#deepseekChatApp .dsc-msg-usage .dsc-cost-tag {
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+@media (max-width: 600px) {
+    #deepseekChatApp .dsc-msg.user .dsc-msg-bubble {
+        max-width: 88%;
+        padding: 10px 13px;
+        border-radius: 17px 7px 17px 17px;
+    }
+    #deepseekChatApp .dsc-msg.assistant .dsc-msg-bubble {
+        max-width: 100%;
+        padding: 0;
+        border-radius: 0;
+    }
+    #deepseekChatApp .dsc-msg-usage .dsc-usage-chip { flex-basis: 100%; }
+    #deepseekChatApp .dsc-msg-usage .dsc-cost-chip { margin-left: auto; }
+}

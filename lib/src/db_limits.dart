@@ -2,7 +2,7 @@
 // db_limits.dart —— 全模型统一能力限制与全局输出档位
 //
 // · 上下文窗口：1024K（1K = 1024 tokens）。
-// · 最大输出：64K / 128K / 256K / 384K，默认 384K。
+// · 最大输出：64K / 128K / 256K / 384K，默认 256K。
 // · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
 //   聊天、续写及模型能力目录都读取同一个值。
 // · 推理等级不再参与最终 max_tokens 的计算。
@@ -13,7 +13,7 @@ import 'dart:io';
 import 'globals.dart';
 
 const int DB_NUM_1K = 1024;
-const int DB_DEFAULT_OUTPUT_TOKENS = 384 * DB_NUM_1K;
+const int DB_DEFAULT_OUTPUT_TOKENS = 256 * DB_NUM_1K;
 const List<int> DB_ALLOWED_OUTPUT_TOKENS = <int>[
   64 * DB_NUM_1K,
   128 * DB_NUM_1K,
@@ -64,7 +64,7 @@ int? dbParseOutputLimit(dynamic value) {
   return tokens;
 }
 
-/// 当前全局输出上限。文件不存在、损坏或含非法值时安全回退到 384K。
+/// 当前全局输出上限。文件不存在、损坏或含非法值时安全回退到 256K。
 int dbCurrentOutputLimit() {
   try {
     final parsed = dbParseOutputLimit(
