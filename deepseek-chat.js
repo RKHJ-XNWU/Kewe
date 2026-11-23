@@ -118,8 +118,8 @@
 
     // 推理等级弹窗里的强制声明（6 语言，跟随 UI 语言）
     function dscForcedLimitText(lim) {
-        var lang = 'ja';
-        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'ja').slice(0, 2); } catch (e) { lang = 'ja'; }
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
         // 未命中强制表的模型（2.1 turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 如实说明不受约束
         if (!lim) {
             var free = {
@@ -130,7 +130,7 @@
                 ru: 'Текущая модель не входит в таблицу жёстких лимитов (без ограничений 1024K / 256K) и работает по прежней логике Lv.999.',
                 fr: "Ce modèle n'est pas soumis à la table des limites forcées (pas de plafond 1024K / 256K) : comportement Lv.999 d'origine."
             };
-            return free[lang] || free.ja;
+            return free[lang] || free.zh;
         }
         var ctx = dscTokenLabel(lim.context), dyn = !!lim.dynamic;
         var map = {
@@ -141,7 +141,7 @@
             ru: 'Вы используете модель с жёстким лимитом (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite): контекстное окно принудительно ' + ctx + (dyn ? ' (динамическое)' : '') + ', максимальный вывод — 256K.',
             fr: "Vous utilisez un modèle à plafond forcé (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite) : la fenêtre de contexte est forcée à " + ctx + (dyn ? ' (dynamique)' : '') + ' et la sortie maximale à 256K.'
         };
-        return map[lang] || map.ja;
+        return map[lang] || map.zh;
     }
     var LONG_TEXT_DEFAULT_CHARS = 150000;
     var TTS_CHUNK_SIZE = 3000;
@@ -5282,11 +5282,84 @@
         else if (refNode && refNode.parentNode) refNode.parentNode.insertBefore(btn, refNode.nextSibling);
     }
 
+    // ★ 推理等级弹窗内「轮次 / max_tokens / 上下文窗口」明细的语言表
+    //   旧实现把这几句硬编码成日文，中文 UI 下会漏出「コンテキストウィンドウ」等日文；
+    //   现在统一走本表，跟随 UI 语言，缺省中文。
+    var DSC_LEVEL_COPY = {
+        zh: {
+            headForced: '🧠 {0} 轮 · max_tokens = {1}（强制 256K · 推理等级内的 max_tokens 已忽略）',
+            headFree: '🧠 {0} 轮 · max_tokens ≈ {1}',
+            ctxDynamic: '📚 上下文窗口 = {0}（动态：随用量按 32K 步进扩展，上限 {0}）',
+            ctxStatic: '📚 上下文窗口 = {0}（强制固定）',
+            stream: '流式输出',
+            name1: '单轮', name2: '双轮', name3: '三轮', name4: '四轮',
+            desc1: '直接回答', desc2: '回答 + 1 次反思', desc3: '回答 + 2 次反思', desc4: '回答 + 3 次反思'
+        },
+        ja: {
+            headForced: '🧠 {0} ラウンド · max_tokens = {1}（強制 256K / 推論レベル内の max_tokens は無視）',
+            headFree: '🧠 {0} ラウンド · max_tokens ≈ {1}',
+            ctxDynamic: '📚 コンテキストウィンドウ = {0}（動的：使用量に応じて 32K 刻みで拡張、上限 {0}）',
+            ctxStatic: '📚 コンテキストウィンドウ = {0}（強制）',
+            stream: 'ストリーミング出力',
+            name1: '単一ラウンド', name2: '二重ラウンド', name3: '三重ラウンド', name4: '四重ラウンド',
+            desc1: '直接回答', desc2: '回答 + 1 回の反省', desc3: '回答 + 2 回の反省', desc4: '回答 + 3 回の反省'
+        },
+        en: {
+            headForced: '🧠 {0} rounds · max_tokens = {1} (forced 256K · max_tokens inside the reasoning level is ignored)',
+            headFree: '🧠 {0} rounds · max_tokens ≈ {1}',
+            ctxDynamic: '📚 Context window = {0} (dynamic: grows in 32K steps with usage, cap {0})',
+            ctxStatic: '📚 Context window = {0} (forced)',
+            stream: 'streaming output',
+            name1: 'Single round', name2: 'Double round', name3: 'Triple round', name4: 'Quad round',
+            desc1: 'Direct answer', desc2: 'Answer + 1 reflection', desc3: 'Answer + 2 reflections', desc4: 'Answer + 3 reflections'
+        },
+        ko: {
+            headForced: '🧠 {0} 라운드 · max_tokens = {1} (강제 256K · 추론 레벨 내 max_tokens 무시)',
+            headFree: '🧠 {0} 라운드 · max_tokens ≈ {1}',
+            ctxDynamic: '📚 컨텍스트 윈도우 = {0} (동적: 사용량에 따라 32K 단위로 확장, 상한 {0})',
+            ctxStatic: '📚 컨텍스트 윈도우 = {0} (강제 고정)',
+            stream: '스트리밍 출력',
+            name1: '단일 라운드', name2: '이중 라운드', name3: '삼중 라운드', name4: '사중 라운드',
+            desc1: '직접 답변', desc2: '답변 + 1회 성찰', desc3: '답변 + 2회 성찰', desc4: '답변 + 3회 성찰'
+        },
+        ru: {
+            headForced: '🧠 {0} раунда · max_tokens = {1} (принудительно 256K · max_tokens уровня рассуждений игнорируется)',
+            headFree: '🧠 {0} раунда · max_tokens ≈ {1}',
+            ctxDynamic: '📚 Контекстное окно = {0} (динамическое: растёт шагами по 32K, предел {0})',
+            ctxStatic: '📚 Контекстное окно = {0} (принудительно)',
+            stream: 'потоковый вывод',
+            name1: 'Один раунд', name2: 'Два раунда', name3: 'Три раунда', name4: 'Четыре раунда',
+            desc1: 'Прямой ответ', desc2: 'Ответ + 1 размышление', desc3: 'Ответ + 2 размышления', desc4: 'Ответ + 3 размышления'
+        },
+        fr: {
+            headForced: '🧠 {0} tours · max_tokens = {1} (256K forcé · max_tokens du niveau de raisonnement ignoré)',
+            headFree: '🧠 {0} tours · max_tokens ≈ {1}',
+            ctxDynamic: '📚 Fenêtre de contexte = {0} (dynamique : +32K par paliers selon l’usage, plafond {0})',
+            ctxStatic: '📚 Fenêtre de contexte = {0} (forcé)',
+            stream: 'sortie en flux',
+            name1: 'Tour unique', name2: 'Double tour', name3: 'Triple tour', name4: 'Quadruple tour',
+            desc1: 'Réponse directe', desc2: 'Réponse + 1 réflexion', desc3: 'Réponse + 2 réflexions', desc4: 'Réponse + 3 réflexions'
+        }
+    };
+    function dscLevelCopy() {
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
+        return DSC_LEVEL_COPY[lang] || DSC_LEVEL_COPY.zh;
+    }
+    // 极简 {n} 占位替换（同一占位可在模板中重复出现）
+    function dscLevelFmt(tpl) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        return String(tpl == null ? '' : tpl).replace(/\{(\d+)\}/g, function (m, i) {
+            return args[i] == null ? m : args[i];
+        });
+    }
+
     function levelDetail(level) {
-        if (level <= 10) return { name: '単一ラウンド', rounds: 1, cost: '1x', desc: '直接回答' };
-        if (level <= 25) return { name: '二重ラウンド', rounds: 2, cost: '~2.5x', desc: '回答 + 1 回の反省' };
-        if (level <= 40) return { name: '三重ラウンド', rounds: 3, cost: '~4x', desc: '回答 + 2 回の反省' };
-        return { name: '四重ラウンド', rounds: 4, cost: '~6x', desc: '回答 + 3 回の反省' };
+        var c = dscLevelCopy();
+        if (level <= 10) return { name: c.name1, rounds: 1, cost: '1x', desc: c.desc1 };
+        if (level <= 25) return { name: c.name2, rounds: 2, cost: '~2.5x', desc: c.desc2 };
+        if (level <= 40) return { name: c.name3, rounds: 3, cost: '~4x', desc: c.desc3 };
+        return { name: c.name4, rounds: 4, cost: '~6x', desc: c.desc4 };
     }
     function levelTokens(level) {
         // ★ 强制上限优先：命中编程模型 / lite 档时，推理等级里的 max_tokens 被完全无视
@@ -5307,16 +5380,18 @@
         if (info) {
             var tok = levelTokens(level);
             var lim = dscForcedLimitOfCurrentModel();
-            var head = lim
-                ? '<div style="margin-bottom:4px;">🧠 ' + d.rounds + ' ラウンド · max_tokens = <span class="hl">' + tok.toLocaleString() + '</span>（強制 256K / 推論レベル内の max_tokens は無視）</div>'
-                : '<div style="margin-bottom:4px;">🧠 ' + d.rounds + ' ラウンド · max_tokens ≈ <span class="hl">' + tok.toLocaleString() + '</span></div>';
+            var c = dscLevelCopy(); // ★ 明细文案跟随 UI 语言（缺省中文）
+            var tokHtml = '<span class="hl">' + tok.toLocaleString() + '</span>';
+            var head = '<div style="margin-bottom:4px;">' +
+                dscLevelFmt(lim ? c.headForced : c.headFree, d.rounds, tokHtml) + '</div>';
             var ctxLine = '';
             if (lim) {
-                ctxLine = '<div style="margin-bottom:4px;">📚 コンテキストウィンドウ = <span class="hl">' +
-                    dscTokenLabel(lim.context) + '</span>' + (lim.dynamic ? '（動的：使用量に応じて 32K 刻みで拡張、上限 ' + dscTokenLabel(lim.context) + '）' : '（強制）') + '</div>';
+                var ctxHtml = '<span class="hl">' + dscTokenLabel(lim.context) + '</span>';
+                ctxLine = '<div style="margin-bottom:4px;">' +
+                    dscLevelFmt(lim.dynamic ? c.ctxDynamic : c.ctxStatic, ctxHtml) + '</div>';
             }
             info.innerHTML = head + ctxLine +
-                '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ストリーミング出力</div>';
+                '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ' + c.stream + '</div>';
         }
         var btn = $('dscLevelBtn');
         if (btn) {
@@ -5368,7 +5443,7 @@
         try { localStorage.setItem('dsc_reasoningLevel', String(FORCED_LEVEL)); } catch (e) {}
         updateLevelUI(state.reasoningLevel);
         closeLevelDialog();
-        toast('🧩 推論レベル Lv.' + state.reasoningLevel + '（固定）', 'success');
+        toast('🧩 推理等级 Lv.' + state.reasoningLevel + '（固定）', 'success');
     }
 
     async function openSettings() {
