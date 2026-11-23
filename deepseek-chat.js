@@ -43,14 +43,14 @@
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
     var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
-    // 上下文固定 1024K；输出支持 64K / 128K / 256K / 384K，默认 256K。
+    // 全站 K = 1000：上下文固定 1024K=1,024,000；输出 64K/128K/256K/384K，默认 256K。
     var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
     var DSC_LIMIT_PRO_VERSION = '260915';
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
     var DSC_OUTPUT_OPTIONS = [64000, 128000, 256000, 384000];
     var DSC_LIMIT_OUTPUT_TOKENS = 256000;
-    var DSC_LIMIT_CTX_TOKENS = 1048576;
+    var DSC_LIMIT_CTX_TOKENS = 1024000;
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
         'doubao-seed-2-1-pro': 'doubao-seed-2-1-pro-260915',
@@ -82,11 +82,11 @@
 
     function dscTokenLabel(n) {
         n = Number(n) || 0;
-        if (n >= 1024 && n % 1024 === 0) return (n / 1024) + 'K';
+        if (n >= 1000 && n % 1000 === 0) return (n / 1000) + 'K';
         return String(n);
     }
 
-    // 输出档位使用自定义十进制 K：64K=64,000，上下文仍使用二进制展示。
+    // 全站 K 使用自定义十进制：1K=1000 tokens（输出与上下文一致）。
     function dscOutputTokenLabel(n) {
         n = Number(n) || 0;
         if (n >= 1000 && n % 1000 === 0) return (n / 1000) + 'K';

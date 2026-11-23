@@ -2181,7 +2181,7 @@ Map<String, dynamic> _modelListJson() {
         if (m.cat == 'chat') ...{
           'audioInput': dbSupportsAudioInput(m.value),
           'videoInput': dbSupportsVideoInput(m.value),
-          // ★ 统一强制上限（db_limits.dart）：所有模型一律 上下文 1024K / 最大输出使用全局 64K–384K 档位，
+          // ★ 统一强制上限（db_limits.dart）：所有模型一律 上下文 1024K（1K=1000）/ 最大输出使用全局 64K–384K 档位，
           //   预设模型与自定义模型同一套口径；前端据此在推理等级弹窗里声明。
           'maxOutput': dbForcedMaxOutput(m.value),
           'contextWindow': dbForcedContextWindow(m.value),
@@ -2195,7 +2195,7 @@ Map<String, dynamic> _modelListJson() {
     final v = dbCanonicalModelValue(c);
     if (v.isEmpty) continue;
     if (list.any((e) => e['value'] == v)) continue;
-    // ★ 自定义模型与预设模型同一口径：同样声明 1024K / 256K 强制上限
+    // ★ 自定义模型与预设模型同一口径：同样声明 1024K（1K=1000）/ 256K 强制上限
     list.add({
       'value': v,
       'label': v,

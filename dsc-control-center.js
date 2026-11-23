@@ -8,7 +8,7 @@
     var OPTIONS = [64000, 128000, 256000, 384000];
     var DEFAULT_OUTPUT = 256000;
     var LEGACY_OUTPUT = { 65536: 64000, 131072: 128000, 262144: 256000, 393216: 384000 };
-    var CONTEXT_WINDOW = 1048576;
+    var CONTEXT_WINDOW = 1024000; // 1024K × 1000
     var STORAGE_KEY = 'dsc_output_limit_v2';
     var state = {
         output: DEFAULT_OUTPUT,
@@ -128,7 +128,7 @@
     }
     function formatCompact(value) {
         var n = Math.max(0, Number(value) || 0);
-        if (n >= 1024) return (n / 1024).toFixed(n >= 10240 ? 0 : 1).replace('.0', '') + 'K';
+        if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace('.0', '') + 'K';
         return String(Math.round(n));
     }
     function notify(message, type) {
