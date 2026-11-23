@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'cosplay.dart';
+import 'db_limits.dart';
 import 'deepseek_api.dart';
 import 'doubao.dart';
 import 'doubao_video_ark.dart';
@@ -850,6 +851,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
   if (model.isEmpty) model = cfg.model;
   if (model.isEmpty) model = DS_DEFAULT_MODEL;
+  // 历史模型值（如 doubao-seed-2-1-pro-260628）统一到当前版本号 260915，
+  // 否则方舟侧会因未知模型返回 404。别名表见 db_limits.dart。
+  model = dbCanonicalModelValue(model);
 
   // ========== 通道判定：中转站 > 豆包（火山方舟）> DeepSeek ==========
   // ① 中转站模型（sta1n.ai 等 OpenAI 兼容）→ 独立鉴权与终点；
@@ -941,8 +945,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     return;
   }
 
-  if (level < 1) level = 1;
-  if (level > 50) level = 50;
+  // ★ 推理等级：上限 999（前端 dscLevelRange 同步），等级不再决定 max_tokens。
+  level = dbClampReasoningLevel(level);
   var params = levelToParams(level);
   var maxTokens = params.maxTokens;
   var temperature = params.temperature;
@@ -953,6 +957,18 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     rounds = 1;
     temperature = 1.0;
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
+  }
+  // ★★★ 强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
+  //   编程模型（Doubao-Seed-Evolving / 2.1 Pro 260915）：上下文 1024K ・ 输出 256K；
+  //   2.1 lite：上下文 1024K（动态扩展）・ 输出 256K；
+  //   其余模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）不受约束，逻辑不变。
+  //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
+  final forcedOut = dbForcedMaxOutput(model);
+  if (forcedOut > 0) {
+    if (maxTokens != forcedOut) {
+      logp('🔒 强制最大输出: $model → $forcedOut tokens（原 $maxTokens，忽略推理等级 Lv.$level 的 max_tokens）');
+    }
+    maxTokens = forcedOut;
   }
   if (enableTools) temperature = 0.0;
 

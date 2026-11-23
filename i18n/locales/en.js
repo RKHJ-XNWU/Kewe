@@ -131,7 +131,7 @@ Tokens/回|Tokens/round
 メッセージを送信、または長押しで話す|Send a message, or long-press to talk
 ウェブ検索|Web Search
 深い思考|Deep Think
-推論レベル（1-50）|Reasoning level (1-50)
+推論レベル（1-999）|Reasoning level (1-999)
 改行を挿入|Insert line break
 添付をアップロード|Upload attachment
 送信|Send
@@ -1088,7 +1088,7 @@ API 呼び出しに失敗しました。アカウント残高を確認してく�
 画面には追加しましたが、.sts の書き込みに失敗（バックエンド未コンパイル？）|Added to UI, but .sts write failed (backend not compiled?)
 ツールモード：AI が自律的にツールを呼び出して複雑なタスクを遂行（最大 50 億ラウンド）|Tool mode: the AI autonomously calls tools to complete complex tasks (up to 5 billion rounds)
 現在のアドレスは安全な環境ではないため、マイクがブラウザに無効化されます。http://localhost:9999 からアクセスしてください～|This address isn't a secure context, so the browser disables the microphone. Please access from http://localhost:9999～
-上級モードでは推論レベル（Lv.1-50）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。|In advanced mode you can freely set the reasoning level (Lv.1-50). The level affects max_tokens and temperature, and all conversations stream in typewriter output.
+上級モードでは推論レベル（Lv.1-999）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。|In advanced mode you can freely set the reasoning level (Lv.1-999). The level affects max_tokens and temperature, and all conversations stream in typewriter output.
 `);
 
 I18N.add('en', `

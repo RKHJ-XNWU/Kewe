@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'db_limits.dart';
 import 'deepseek_api.dart';
 import 'doubao.dart';
 import 'ds_crypto.dart';
@@ -788,7 +789,9 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     return;
   }
   final cfg = getDsConfig();
-  final model = trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model);
+  // 历史值（如 doubao-seed-2-1-pro-260628）统一到当前版本号，避免 404
+  final model = dbCanonicalModelValue(
+      trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model));
 
   // ★★★ 停用整改：中转站（st 维度）聊天入口硬拦截 ★★★
   //   无论前端如何传参，只要显式 dim=st 或模型命中中转站目录，一律 403 拒绝，
@@ -851,9 +854,17 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     await dsJSONErr(res, 400, '没有可继续生成的内容');
     return;
   }
-  if (level < 1) level = 1;
-  if (level > 50) level = 50;
+  // ★ 推理等级上限 999（db_limits.dart）；豆包编程模型的最大输出强制 256K。
+  level = dbClampReasoningLevel(level);
   final params = levelToParams(level);
+  var maxTokens = params.maxTokens;
+  final contForcedOut = dbForcedMaxOutput(model);
+  if (contForcedOut > 0) {
+    if (maxTokens != contForcedOut) {
+      logp('🔒 续写强制最大输出: $model → $contForcedOut tokens（原 $maxTokens）');
+    }
+    maxTokens = contForcedOut;
+  }
 
   // i18n：继续生成时也注入与 UI 语言一致的语言固定提示词
   final uiLang = dsRequestLang(req, body);
@@ -889,7 +900,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
       callKey,
       model,
       apiMessages,
-      params.maxTokens,
+      maxTokens,
       params.temperature,
       1,
       (round, total, stage) {},

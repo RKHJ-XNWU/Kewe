@@ -213,6 +213,8 @@ String dbEffortFromLevel(int level, DbThinkingProfile prof) {
   if (!prof.supportsEffort) return '';
   var lv = level;
   if (lv <= 0) lv = 30;
+  // 推理等级上限已扩到 999（见 db_limits.dart）；>46 一律映射到最高档 max
+  if (lv > 999) lv = 999;
   if (lv > 50) lv = 50;
 
   final String want;

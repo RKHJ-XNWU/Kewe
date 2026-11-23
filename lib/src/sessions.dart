@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'db_limits.dart';
 import 'ds_crypto.dart';
 import 'ds_usage.dart';
 import 'files.dart';
@@ -902,12 +903,13 @@ class LevelParams {
 }
 
 LevelParams levelToParams(int level) {
-  var l = level;
-  if (l < 1) l = 1;
-  if (l > 50) l = 50;
+  // ★ 推理等级上限已改为 999（见 db_limits.dart）：等级只影响温度与反思轮数，
+  //   不再决定最终 max_tokens —— 豆包编程模型由 dbForcedMaxOutput() 强制覆盖。
+  final l = dbClampReasoningLevel(level);
+  const span = DB_REASONING_LEVEL_MAX - 1; // 999 → 998 个区间
   final maxTokens = DS_NORMAL_OUTPUT_TOKENS +
-      (l - 1) * (DS_MAX_OUTPUT_TOKENS - DS_NORMAL_OUTPUT_TOKENS) ~/ 49;
-  final temperature = 1.0 - (l - 1) * 0.9 / 49.0;
+      (l - 1) * (DS_MAX_OUTPUT_TOKENS - DS_NORMAL_OUTPUT_TOKENS) ~/ span;
+  final temperature = 1.0 - (l - 1) * 0.9 / span;
   int rounds;
   if (l <= 10) {
     rounds = 1;

@@ -57,6 +57,8 @@ const Map<String, TokenPrice> _PRICE = {
   '[asp]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
   '[抗截断]gemini-3.8-flash': TokenPrice(hit: 0.03, miss: 0.3, out: 1.5, flat: true),
   // 豆包 2.1-pro / 2.1-turbo / evolving：用户提供的单价（元 / 100 万 tokens）；缓存命中单价未提供，取输入单价
+  // 260915 为当前版本号；260628 保留为历史键，旧会话账单仍可复算
+  'doubao-seed-2-1-pro-260915': TokenPrice(hit: 1.2, miss: 6, out: 30, flat: true),
   'doubao-seed-2-1-pro-260628': TokenPrice(hit: 1.2, miss: 6, out: 30, flat: true),
   'doubao-seed-2-1-turbo-260628': TokenPrice(hit: 0.6, miss: 3, out: 15, flat: true),
   'doubao-seed-evolving-latest-version': TokenPrice(hit: 1.2, miss: 6, out: 30, flat: true),
@@ -70,7 +72,7 @@ const Map<String, TokenPrice> _PRICE = {
 const List<List<String>> _PRICE_PREFIX = [
   ['doubao-seed-2-1-lite', 'doubao-seed-2-1-lite-260915'],
   ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915'],
-  ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260628'],
+  ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260915'],
   ['doubao-seed-2-1-turbo', 'doubao-seed-2-1-turbo-260628'],
   ['doubao-seed-evolving', 'doubao-seed-evolving-latest-version'],
 ];

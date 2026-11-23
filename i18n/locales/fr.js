@@ -131,7 +131,7 @@ Tokens/回|Tokens/tour
 メッセージを送信、または長押しで話す|Envoyez un message ou maintenez pour parler
 ウェブ検索|Recherche web
 深い思考|Réflexion profonde
-推論レベル（1-50）|Niveau de raisonnement (1-50)
+推論レベル（1-999）|Niveau de raisonnement (1-999)
 改行を挿入|Insérer un saut de ligne
 添付をアップロード|Téléverser une pièce jointe
 送信|Envoyer
@@ -1088,7 +1088,7 @@ API 呼び出しに失敗しました。アカウント残高を確認してく�
 画面には追加しましたが、.sts の書き込みに失敗（バックエンド未コンパイル？）|Ajouté à l'interface, mais échec de l'écriture .sts (backend non compilé ?)
 ツールモード：AI が自律的にツールを呼び出して複雑なタスクを遂行（最大 50 億ラウンド）|Mode outils : l'IA appelle de façon autonome des outils pour des tâches complexes (jusqu'à 5 milliards de tours)
 現在のアドレスは安全な環境ではないため、マイクがブラウザに無効化されます。http://localhost:9999 からアクセスしてください～|Cette adresse n'est pas un contexte sécurisé, le navigateur désactive donc le microphone. Accédez via http://localhost:9999～
-上級モードでは推論レベル（Lv.1-50）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。|En mode avancé, vous pouvez définir librement le niveau de raisonnement (Lv.1-50). Le niveau influence max_tokens et temperature, et toutes les conversations s'affichent en streaming façon machine à écrire.
+上級モードでは推論レベル（Lv.1-999）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。|En mode avancé, vous pouvez définir librement le niveau de raisonnement (Lv.1-999). Le niveau influence max_tokens et temperature, et toutes les conversations s'affichent en streaming façon machine à écrire.
 `);
 
 I18N.add('fr', `

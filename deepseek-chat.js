@@ -27,8 +27,122 @@
     }
     console.log('[DSC] スクリプト読み込み中 v8');
 
-    var DEFAULT_LEVEL = 15;
-    var ADVANCED_DEFAULT_LEVEL = 30;
+    // ★★★ 强制推理等级 Lv.999（上限 999）★★★
+    //   所有者要求：推理等级固定 Lv.999，且「等级里的 max_tokens」一律无视——
+    //   豆包编程模型的最大输出由后端 db_limits.dart 强制为 256K，
+    //   前端 levelTokens() 只负责把这个强制值显示出来。
+    var FORCED_LEVEL = 999;
+    var LEVEL_MAX = 999;
+    var DEFAULT_LEVEL = FORCED_LEVEL;
+    var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
+    // 强制能力上限表（与后端 lib/src/db_limits.dart 保持一致，后端为准）
+    //   · Doubao-Seed-Evolving      → 上下文 1024K ・ 输出 256K
+    //   · 豆包 2.1 Pro（仅 260915）  → 上下文 1024K ・ 输出 256K
+    //   · 豆包 2.1 lite             → 上下文 1024K（动态）・ 输出 256K
+    //   · 其余模型（近日 turbo / mini / 2.0 lite / GLM / DeepSeek / 中转站）
+    //     一律不受约束，走原有逻辑不变
+    var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
+    var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
+    var DSC_LIMIT_PRO_VERSION = '260915';      // 只有这个版本的 2.1 Pro 才受约束
+    var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
+    var DSC_LIMIT_OUTPUT_TOKENS = 262144;      // 256K
+    var DSC_LIMIT_CTX_CODING_TOKENS = 1048576; // 1024K
+    var DSC_LIMIT_CTX_LITE_TOKENS = 1048576;   // 1024K（动态扩展，上限 1024K）
+    // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
+    var DSC_LIMIT_MODEL_ALIAS = {
+        'doubao-seed-2-1-pro': 'doubao-seed-2-1-pro-260915',
+        'doubao-seed-2-1-pro-260628': 'doubao-seed-2-1-pro-260915',
+        'doubao-seed-2-1-lite': 'doubao-seed-2-1-lite-260915'
+    };
+    function dscCanonicalLimitModel(m) {
+        m = String(m || '').trim().toLowerCase();
+        return DSC_LIMIT_MODEL_ALIAS[m] || m;
+    }
+    // 2.1 Pro：只有 260915 版本命中（其它版本号一律不算）
+    function dscIsPro260915(m) {
+        m = dscCanonicalLimitModel(m);
+        if (!m || m.indexOf(DSC_LIMIT_PRO_ROOT) !== 0) return false;
+        var rest = m.slice(DSC_LIMIT_PRO_ROOT.length);
+        if (!rest) return true;                    // 无版本号 = 当前版本
+        if (rest.charAt(0) !== '-') return false;  // 形如 doubao-seed-2-1-proxxx
+        rest = rest.slice(1);
+        if (!rest) return false;
+        return rest.split('-')[0] === DSC_LIMIT_PRO_VERSION;
+    }
+
+    function dscClampLevel(v) {
+        var n = parseInt(v, 10);
+        if (isNaN(n) || n < 1) n = 1;
+        if (n > LEVEL_MAX) n = LEVEL_MAX;
+        return n;
+    }
+
+    function dscTokenLabel(n) {
+        n = Number(n) || 0;
+        if (n >= 1024 && n % 1024 === 0) return (n / 1024) + 'K';
+        return String(n);
+    }
+
+    // 当前维度模型的强制上限（DeepSeek 维度返回 null → 保持原逻辑不变）
+    function dscForcedLimitOfCurrentModel() {
+        var isDb = false;
+        try { isDb = !!(window.dscDoubaoModeOn && window.dscDoubaoModeOn()); } catch (e1) { isDb = false; }
+        if (!isDb) return null;
+        var m = '';
+        try { m = window.dscDoubaoChatModel ? String(window.dscDoubaoChatModel() || '') : ''; } catch (e2) { m = ''; }
+        m = dscCanonicalLimitModel(m);
+        if (!m) return null;
+        var i;
+        // ① Evolving：整族受约束
+        for (i = 0; i < DSC_LIMIT_EVOLVING_PREFIX.length; i++) {
+            if (m.indexOf(DSC_LIMIT_EVOLVING_PREFIX[i]) === 0) {
+                return { kind: 'coding', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
+                         context: DSC_LIMIT_CTX_CODING_TOKENS, dynamic: false };
+            }
+        }
+        // ② 2.1 Pro：只认 260915 版本
+        if (dscIsPro260915(m)) {
+            return { kind: 'coding', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
+                     context: DSC_LIMIT_CTX_CODING_TOKENS, dynamic: false };
+        }
+        // ③ 2.1 lite：1024K 动态 ・ 输出 256K
+        for (i = 0; i < DSC_LIMIT_LITE_PREFIX.length; i++) {
+            if (m.indexOf(DSC_LIMIT_LITE_PREFIX[i]) === 0) {
+                return { kind: 'lite', model: m, maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
+                         context: DSC_LIMIT_CTX_LITE_TOKENS, dynamic: true };
+            }
+        }
+        // ④ 其它模型（turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 不受约束
+        return null;
+    }
+
+    // 推理等级弹窗里的强制声明（6 语言，跟随 UI 语言）
+    function dscForcedLimitText(lim) {
+        var lang = 'ja';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'ja').slice(0, 2); } catch (e) { lang = 'ja'; }
+        // 未命中强制表的模型（2.1 turbo / mini / 2.0 lite / GLM / DeepSeek …）→ 如实说明不受约束
+        if (!lim) {
+            var free = {
+                zh: '当前模型不在强制上限表内（不受 1024K / 256K 约束），按推理等级 Lv.999 的原有逻辑运行。',
+                ja: '現在のモデルは強制上限表の対象外です（1024K / 256K の制約なし）。推論レベル Lv.999 の従来ロジックで動作します。',
+                en: 'This model is not in the forced-limit table (no 1024K / 256K cap); it keeps the original Lv.999 behaviour.',
+                ko: '현재 모델은 강제 상한표 대상이 아닙니다(1024K / 256K 제한 없음). 추론 레벨 Lv.999의 기존 로직으로 동작합니다.',
+                ru: 'Текущая модель не входит в таблицу жёстких лимитов (без ограничений 1024K / 256K) и работает по прежней логике Lv.999.',
+                fr: "Ce modèle n'est pas soumis à la table des limites forcées (pas de plafond 1024K / 256K) : comportement Lv.999 d'origine."
+            };
+            return free[lang] || free.ja;
+        }
+        var ctx = dscTokenLabel(lim.context), dyn = !!lim.dynamic;
+        var map = {
+            zh: '由于你使用的是强制上限模型（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite），所以强制上下文窗口为 ' + ctx + (dyn ? '（动态变化）' : '') + '，强制输出最大为 256K。',
+            ja: '強制上限モデル（Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite）のため、コンテキストウィンドウは ' + ctx + (dyn ? '（動的変化）' : '') + '、最大出力は 256K に強制固定されます。',
+            en: 'Because you are using a forced-limit model (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite), the context window is forced to ' + ctx + (dyn ? ' (dynamic)' : '') + ' and max output is forced to 256K.',
+            ko: '강제 상한 모델(Doubao-Seed-Evolving／豆包 2.1 Pro 260915／豆包 2.1 lite)이므로 컨텍스트 윈도우는 ' + ctx + (dyn ? ' (동적 변화)' : '') + ', 최대 출력은 256K로 강제 고정됩니다.',
+            ru: 'Вы используете модель с жёстким лимитом (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite): контекстное окно принудительно ' + ctx + (dyn ? ' (динамическое)' : '') + ', максимальный вывод — 256K.',
+            fr: "Vous utilisez un modèle à plafond forcé (Doubao-Seed-Evolving / Doubao 2.1 Pro 260915 / Doubao 2.1 lite) : la fenêtre de contexte est forcée à " + ctx + (dyn ? ' (dynamique)' : '') + ' et la sortie maximale à 256K.'
+        };
+        return map[lang] || map.ja;
+    }
     var LONG_TEXT_DEFAULT_CHARS = 150000;
     var TTS_CHUNK_SIZE = 3000;
     // ★ 朗读打包参数（2026-11-14 修复「越读越慢、一卡一卡」）
@@ -958,6 +1072,7 @@
         },
         // ★ 豆包 2.1-pro / 2.1-turbo / evolving：用户提供的单价（元 / 百万 tokens）。
         //   仅给出输入与输出单价，缓存命中单价未提供，故 hit 与 miss 取同一输入单价（不低估费用）。
+        'doubao-seed-2-1-pro-260915': { hit: 1.2, miss: 6, out: 30, flat: true },
         'doubao-seed-2-1-pro-260628': { hit: 1.2, miss: 6, out: 30, flat: true },
         'doubao-seed-2-1-turbo-260628': { hit: 0.6, miss: 3, out: 15, flat: true },
         'doubao-seed-evolving-latest-version': { hit: 1.2, miss: 6, out: 30, flat: true },
@@ -988,7 +1103,7 @@
         ['doubao-seed-2-1-lite', 'doubao-seed-2-1-lite-260915'],
         ['doubao-seed-2.1-lite', 'doubao-seed-2-1-lite-260915'],
         ['doubao-seed-character', 'doubao-seed-character-260628'],
-        ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260628'],
+        ['doubao-seed-2-1-pro', 'doubao-seed-2-1-pro-260915'],
         ['doubao-seed-2-1-turbo', 'doubao-seed-2-1-turbo-260628'],
         ['doubao-seed-evolving', 'doubao-seed-evolving-latest-version']
     ];
@@ -3957,7 +4072,7 @@
 
         var effectiveLevel = state.reasoningLevel;
         if (!state.advancedMode) {
-            effectiveLevel = state.deepThink ? (DEFAULT_LEVEL + 5) : DEFAULT_LEVEL;
+            effectiveLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
         }
 
         var tipMsg = dscT('次で思考中: {0} ...', state.currentModel);
@@ -5011,7 +5126,7 @@
         if (enabled) {
             state.reasoningLevel = state.advancedLevel || ADVANCED_DEFAULT_LEVEL;
         } else {
-            state.reasoningLevel = state.deepThink ? (DEFAULT_LEVEL + 5) : DEFAULT_LEVEL;
+            state.reasoningLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
             state.tempLevel = state.reasoningLevel;
         }
         try { localStorage.setItem('dsc_advancedMode', enabled ? '1' : '0'); } catch (e) {}
@@ -5022,7 +5137,7 @@
     function toggleAdvancedMode() {
         if (state.advancedMode) {
             simpleConfirm('上級モードをオフ',
-                'オフにすると推論レベルはデフォルト Lv.' + (state.deepThink ? (DEFAULT_LEVEL + 5) : DEFAULT_LEVEL) + '。カスタマイズはできません。閉じますか？'
+                'オフにすると推論レベルはデフォルト Lv.' + (state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL) + '。カスタマイズはできません。閉じますか？'
             ).then(function (ok) {
                 if (!ok) return;
                 applyAdvancedMode(false);
@@ -5030,7 +5145,7 @@
             });
         } else {
             simpleConfirm('⚠️ 上級モードをオン',
-                '上級モードでは推論レベル（Lv.1-50）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。'
+                '上級モードでは推論レベル（Lv.1-999）を自由に設定できます。レベルは max_tokens と temperature に影響し、すべての対話はストリーミングのタイプライター出力になります。'
             ).then(function (ok) {
                 if (!ok) return;
                 applyAdvancedMode(true);
@@ -5174,7 +5289,11 @@
         return { name: '四重ラウンド', rounds: 4, cost: '~6x', desc: '回答 + 3 回の反省' };
     }
     function levelTokens(level) {
-        var maxTok = 8192 + (level - 1) * (120000 - 8192) / 49;
+        // ★ 强制上限优先：命中编程模型 / lite 档时，推理等级里的 max_tokens 被完全无视
+        var lim = dscForcedLimitOfCurrentModel();
+        if (lim && lim.maxOutput > 0) return lim.maxOutput;
+        var l = dscClampLevel(level);
+        var maxTok = 8192 + (l - 1) * (120000 - 8192) / (LEVEL_MAX - 1);
         return Math.round(maxTok);
     }
 
@@ -5187,8 +5306,16 @@
         if (tag) tag.textContent = String(level);
         if (info) {
             var tok = levelTokens(level);
-            info.innerHTML =
-                '<div style="margin-bottom:4px;">🧠 ' + d.rounds + ' ラウンド · max_tokens ≈ <span class="hl">' + tok.toLocaleString() + '</span></div>' +
+            var lim = dscForcedLimitOfCurrentModel();
+            var head = lim
+                ? '<div style="margin-bottom:4px;">🧠 ' + d.rounds + ' ラウンド · max_tokens = <span class="hl">' + tok.toLocaleString() + '</span>（強制 256K / 推論レベル内の max_tokens は無視）</div>'
+                : '<div style="margin-bottom:4px;">🧠 ' + d.rounds + ' ラウンド · max_tokens ≈ <span class="hl">' + tok.toLocaleString() + '</span></div>';
+            var ctxLine = '';
+            if (lim) {
+                ctxLine = '<div style="margin-bottom:4px;">📚 コンテキストウィンドウ = <span class="hl">' +
+                    dscTokenLabel(lim.context) + '</span>' + (lim.dynamic ? '（動的：使用量に応じて 32K 刻みで拡張、上限 ' + dscTokenLabel(lim.context) + '）' : '（強制）') + '</div>';
+            }
+            info.innerHTML = head + ctxLine +
                 '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ストリーミング出力</div>';
         }
         var btn = $('dscLevelBtn');
@@ -5207,26 +5334,41 @@
     }
 
     function openLevelDialog() {
-        if (!state.advancedMode) { toast('先に上級モードをオンにしてください', 'info'); return; }
         var overlay = $('dscLevelOverlay'), range = $('dscLevelRange');
-        if (!overlay || !range) return;
-        state.tempLevel = state.reasoningLevel;
-        range.value = state.tempLevel;
-        updateLevelUI(state.tempLevel);
+        if (!overlay) return;
+        // ★ 推理等级固定 Lv.999：不再受「上級モード」开关限制，
+        //   点击按钮必定弹出弹窗，并在弹窗顶部显示强制能力声明。
+        state.reasoningLevel = FORCED_LEVEL;
+        state.tempLevel = FORCED_LEVEL;
+        state.advancedLevel = FORCED_LEVEL;
+        if (range) {
+            try { range.max = String(LEVEL_MAX); } catch (eMax) {}
+            range.value = String(FORCED_LEVEL);
+            try { range.disabled = true; } catch (eDis) {}
+        }
+        var notice = $('dscLevelNotice');
+        if (notice) {
+            var lim = dscForcedLimitOfCurrentModel();
+            notice.textContent = dscForcedLimitText(lim);
+            notice.style.display = '';
+        }
+        updateLevelUI(FORCED_LEVEL);
         overlay.classList.add('open');
+        try { toast('🧩 ' + dscForcedLimitText(dscForcedLimitOfCurrentModel()), 'info'); } catch (eT) {}
     }
     function closeLevelDialog() {
         var overlay = $('dscLevelOverlay');
         if (overlay) overlay.classList.remove('open');
     }
     function saveLevelDialog() {
-        if (!state.advancedMode) { closeLevelDialog(); return; }
-        state.reasoningLevel = state.tempLevel;
-        state.advancedLevel = state.tempLevel;
-        try { localStorage.setItem('dsc_reasoningLevel', String(state.advancedLevel)); } catch (e) {}
+        // 推理等级被强制固定为 Lv.999（等级内的 max_tokens 已不起作用）
+        state.reasoningLevel = FORCED_LEVEL;
+        state.advancedLevel = FORCED_LEVEL;
+        state.tempLevel = FORCED_LEVEL;
+        try { localStorage.setItem('dsc_reasoningLevel', String(FORCED_LEVEL)); } catch (e) {}
         updateLevelUI(state.reasoningLevel);
         closeLevelDialog();
-        toast('🧩 推論レベル Lv.' + state.reasoningLevel, 'success');
+        toast('🧩 推論レベル Lv.' + state.reasoningLevel + '（固定）', 'success');
     }
 
     async function openSettings() {
@@ -5368,16 +5510,15 @@
             state.enableTools = localStorage.getItem('dsc_enableTools') === '1';
             var savedModel = localStorage.getItem('dsc_currentModel');
             if (savedModel) state.currentModel = savedModel;
-            var lv = parseInt(localStorage.getItem('dsc_reasoningLevel') || String(ADVANCED_DEFAULT_LEVEL), 10);
-            if (isNaN(lv) || lv < 1) lv = ADVANCED_DEFAULT_LEVEL;
-            if (lv > 50) lv = 50;
+            // 推理等级一律收敛到强制值 Lv.999（历史 localStorage 值不再生效）
+            var lv = FORCED_LEVEL;
             state.advancedLevel = lv;
             var lt = parseInt(localStorage.getItem('dsc_longTextTargetChars') || String(LONG_TEXT_DEFAULT_CHARS), 10);
             if (isNaN(lt) || lt < 1000) lt = LONG_TEXT_DEFAULT_CHARS;
             if (lt > 500000) lt = 500000;
             state.longTextTargetChars = lt;
             if (state.advancedMode) state.reasoningLevel = lv;
-            else state.reasoningLevel = state.deepThink ? (DEFAULT_LEVEL + 5) : DEFAULT_LEVEL;
+            else state.reasoningLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
             state.tempLevel = state.reasoningLevel;
         } catch (e) {
             state.advancedMode = false;
@@ -6789,7 +6930,7 @@
         bind('dscDeepThinkBtn', 'click', function () {
             state.deepThink = !state.deepThink;
             if (!state.advancedMode) {
-                state.reasoningLevel = state.deepThink ? (DEFAULT_LEVEL + 5) : DEFAULT_LEVEL;
+                state.reasoningLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
                 state.tempLevel = state.reasoningLevel;
                 updateLevelUI(state.reasoningLevel);
             }

@@ -411,8 +411,11 @@ var EDGE_VOICE_POOL = {
     // 旧版が注入した豆包モデル群が残っていれば必ず撤去する。
     var DB_CHAT_VALUES = [
         'doubao-seed-2-0-mini-260428', 'doubao-seed-evolving-latest-version',
-        'doubao-seed-2-1-pro-260628', 'doubao-seed-2-1-turbo-260628',
-        'doubao-seed-2-0-lite-260428', 'glm-5-2-260617'
+        'doubao-seed-2-1-pro-260915', 'doubao-seed-2-1-lite-260915',
+        'doubao-seed-2-1-turbo-260628',
+        'doubao-seed-2-0-lite-260428', 'glm-5-2-260617',
+        // 旧版模型值：仅用于识别（清理遗留 option），不再作为可选值
+        'doubao-seed-2-1-pro-260628'
     ];
 
     function isDbModelValue(v) {
@@ -3120,8 +3123,13 @@ var EDGE_VOICE_POOL = {
     //   ・代わりにこのキーを最優先で参照し、送信モデルの解決に使う。
     var DB_CHAT_MODEL_OVERRIDE_KEY = 'dsc_doubao_chat_model';
 
+    var DB_LEGACY_MODEL_ALIAS = { 'doubao-seed-2-1-pro-260628': 'doubao-seed-2-1-pro-260915' };
+    function dbCanonicalModel(v) {
+        v = String(v || '').trim();
+        return DB_LEGACY_MODEL_ALIAS[v] || v;
+    }
     function dbChatModelOverride() {
-        try { return String(localStorage.getItem(DB_CHAT_MODEL_OVERRIDE_KEY) || '').trim(); } catch (e) { return ''; }
+        try { return dbCanonicalModel(localStorage.getItem(DB_CHAT_MODEL_OVERRIDE_KEY) || ''); } catch (e) { return ''; }
     }
 
     function setDbChatModelOverride(v) {
@@ -3135,7 +3143,8 @@ var EDGE_VOICE_POOL = {
         var ov = dbChatModelOverride();
         if (ov) return ov;
         var m = (S.cfg && S.cfg.chatModel) ? String(S.cfg.chatModel).trim() : '';
-        return m || 'doubao-seed-2-1-pro-260628';
+        // 默认对话模型：260915（豆包 2.1 Pro 的当前版本号）
+        return m || 'doubao-seed-2-1-pro-260915';
     }
 
     // 他モジュール（deepseek-chat.js）から参照する公開 API

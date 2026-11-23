@@ -16,6 +16,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'db_limits.dart';
 import 'doubao_wiki.dart';
 import 'doubao_thinking.dart';
 import 'ds_crypto.dart';
@@ -62,7 +63,8 @@ const List<DbModelSpec> dbModelCatalog = <DbModelSpec>[
   DbModelSpec('glm-5-2-260617', 'GLM-5.2（编程模型）', 'chat'),
   DbModelSpec('doubao-seed-2-0-mini-260428', 'Doubao-Seed-2.0-mini', 'chat'),
   DbModelSpec('doubao-seed-evolving-latest-version', 'Doubao-Seed-Evolving', 'chat'),
-  DbModelSpec('doubao-seed-2-1-pro-260628', 'Doubao-Seed-2.1-pro', 'chat'),
+  DbModelSpec('doubao-seed-2-1-pro-260915', 'Doubao-Seed-2.1-pro', 'chat'),
+  DbModelSpec('doubao-seed-2-1-lite-260915', 'Doubao-Seed-2.1-lite', 'chat'),
   DbModelSpec('doubao-seed-2-1-turbo-260628', 'Doubao-Seed-2.1-turbo', 'chat'),
   DbModelSpec('doubao-seed-2-0-lite-260428', 'Doubao-Seed-2.0-lite', 'chat'),
   DbModelSpec('doubao-seedream-5-5-261028', '生图5.5升级版', 'image'),
@@ -81,7 +83,7 @@ const List<String> dbImageStyles = <String>[
 ];
 
 const String DB_DEFAULT_BASE = 'https://ark.cn-beijing.volces.com/api/v3';
-const String DB_DEFAULT_CHAT_MODEL = 'doubao-seed-2-1-pro-260628';
+const String DB_DEFAULT_CHAT_MODEL = 'doubao-seed-2-1-pro-260915';
 const String DB_DEFAULT_IMAGE_MODEL = 'doubao-seedream-4-5-251128';
 const String DB_DEFAULT_IMAGEEDIT_MODEL = 'doubao-seedream-5-0-pro-260628';
 const String DB_DEFAULT_VIDEO_MODEL = 'doubao-seedance-2-0-260128';
@@ -255,6 +257,7 @@ const Set<String> dbVideoUnderstandModels = <String>{
   'doubao-seed-2-0-lite-260428',
   'doubao-seed-2-1-lite-260915',
   'doubao-seed-2-1-turbo-260628',
+  'doubao-seed-2-1-pro-260915',
   'doubao-seed-2-1-pro-260628',
   'doubao-seed-evolving-latest-version',
   'deepseek-v4-1-flash-261017',
@@ -2187,11 +2190,23 @@ Map<String, dynamic> _modelListJson() {
         if (m.cat == 'chat') ...{
           'audioInput': dbSupportsAudioInput(m.value),
           'videoInput': dbSupportsVideoInput(m.value),
+          // ★ 强制能力上限（db_limits.dart）：前端据此显示
+          //   「上下文窗口 1024K / 最大输出 256K」并在推理等级弹窗里声明。
+          //   maxOutput == 0 表示该模型不受强制表约束（走原有逻辑）。
+          'maxOutput': dbForcedMaxOutput(m.value),
+          'contextWindow': dbForcedContextWindow(m.value),
+          'contextDynamic': dbContextIsDynamic(m.value),
+          'contextWindowMin': dbContextIsDynamic(m.value)
+              ? DB_LITE_CTX_MIN_TOKENS
+              : dbForcedContextWindow(m.value),
+          'contextWindowStep': dbContextIsDynamic(m.value)
+              ? DB_LITE_CTX_STEP_TOKENS
+              : 0,
         },
       }
   ];
   for (final c in cfg.customModels) {
-    final v = c.trim();
+    final v = dbCanonicalModelValue(c);
     if (v.isEmpty) continue;
     if (list.any((e) => e['value'] == v)) continue;
     list.add({'value': v, 'label': v, 'category': 'chat', 'custom': true});
@@ -2201,6 +2216,13 @@ Map<String, dynamic> _modelListJson() {
     'styles': dbImageStyles,
     'audioCapableModels': dbAudioCapableModels,
     'videoCapableModels': dbVideoCapableModels,
+    // 推理等级：UI 上限与强制值（等级已不影响 max_tokens）
+    'reasoningLevelMin': DB_REASONING_LEVEL_MIN,
+    'reasoningLevelMax': DB_REASONING_LEVEL_MAX,
+    'reasoningLevelForced': DB_REASONING_LEVEL_FORCED,
+    'forcedMaxOutputTokens': DB_FORCED_OUTPUT_TOKENS,
+    'forcedContextCodingTokens': DB_FORCED_CTX_TOKENS_CODING,
+    'forcedContextLiteTokens': DB_FORCED_CTX_TOKENS_LITE,
   };
 }
 
@@ -2228,7 +2250,8 @@ Map<String, dynamic> _configJson() {
     'maskedAudioGenKey': audioGenMasked,
 
     'baseUrl': cfg.baseUrl,
-    'chatModel': cfg.chatModel,
+    // 历史版本号（260628）在读配置时就统一到 260915，避免前端回显旧值
+    'chatModel': dbCanonicalModelValue(cfg.chatModel),
     'imageModel': cfg.imageModel,
     'videoModel': cfg.videoModel,
     'ttsModel': cfg.ttsModel,
