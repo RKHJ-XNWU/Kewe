@@ -981,16 +981,18 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
   if (enableTools) temperature = 0.0;
 
-  // ========== 豆包模式 × 抖音百科：职责单一，绝不叠加 ==========
-  // 1) 豆包通道一律单轮：推理级别只抬高 max_tokens，不再触发多轮自我反思。
+  // ========== 豆包多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
+  // 1) 豆包维度全部对话模型按推理等级执行多轮反思（与 DeepSeek 同一套等级逻辑）；
+  //    工具模式独立走 function-calling 分支、不进入反思循环；长文模式保持单轮。
   // 2) 抖音百科（联网内容插件，仅 Responses API）生效期间强制关闭工具模式：
   //    否则 Chat Completions 的 function calling 与插件的 web_search 会在同一轮
   //    互相抢占，表现为「豆包模式搜索抖音百科时突然调用工具」的严重 bug。
   if (useDoubao && !longTextMode) {
-    if (rounds != 1) {
-      logp('🫘 豆包模式: 禁用多轮反思（rounds=$rounds → 1、max_tokens=$maxTokens 保持）');
+    if (enableTools && rounds > 1) {
+      logp('🫘 豆包工具模式: 不执行多轮反思（等级 Lv.$level / rounds=$rounds 仅作为工具迭代预算）');
+    } else if (!enableTools && rounds > 1) {
+      logp('🫘 豆包模式: 启用多轮反思（rounds=$rounds · Lv.$level）');
     }
-    rounds = 1;
   }
   // 抖音百科生效（含前缀强制）时工具模式必须让路：
   // 用户在豆包专属工具模式下打开百科，开关一开就自动关闭工具模式，

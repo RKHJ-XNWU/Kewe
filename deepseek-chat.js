@@ -5382,7 +5382,8 @@
             ctxStatic: '📚 上下文窗口 = {0}（强制固定）',
             stream: '流式输出',
             name1: '单轮', name2: '双轮', name3: '三轮', name4: '四轮',
-            desc1: '直接回答', desc2: '回答 + 1 次反思', desc3: '回答 + 2 次反思', desc4: '回答 + 3 次反思'
+            desc1: '直接回答', desc2: '回答 + 1 次反思', desc3: '回答 + 2 次反思', desc4: '回答 + 3 次反思',
+            toolNoReflect: '🔧 工具模式开启时不会执行多轮反思'
         },
         ja: {
             headForced: '🧠 {0} ラウンド · 最大トークン数 = {1}（全モデル共通 · 推論レベル内のトークン設定は無視）',
@@ -5391,7 +5392,8 @@
             ctxStatic: '📚 コンテキストウィンドウ = {0}（強制固定）',
             stream: 'ストリーミング出力',
             name1: '単一ラウンド', name2: '二重ラウンド', name3: '三重ラウンド', name4: '四重ラウンド',
-            desc1: '直接回答', desc2: '回答 + 1 回の反省', desc3: '回答 + 2 回の反省', desc4: '回答 + 3 回の反省'
+            desc1: '直接回答', desc2: '回答 + 1 回の反省', desc3: '回答 + 2 回の反省', desc4: '回答 + 3 回の反省',
+            toolNoReflect: '🔧 ツールモード中は多重ラウンドの反省を実行しません'
         },
         en: {
             headForced: '🧠 {0} rounds · max output = {1} (unified across all models · the max_tokens setting inside the reasoning level is ignored)',
@@ -5400,7 +5402,8 @@
             ctxStatic: '📚 Context window = {0} (forced and fixed)',
             stream: 'streaming output',
             name1: 'Single round', name2: 'Double round', name3: 'Triple round', name4: 'Quad round',
-            desc1: 'Direct answer', desc2: 'Answer + 1 reflection', desc3: 'Answer + 2 reflections', desc4: 'Answer + 3 reflections'
+            desc1: 'Direct answer', desc2: 'Answer + 1 reflection', desc3: 'Answer + 2 reflections', desc4: 'Answer + 3 reflections',
+            toolNoReflect: '🔧 Tool mode does not run multi-round reflection'
         },
         ko: {
             headForced: '🧠 {0} 라운드 · 최대 토큰 수 = {1} (모든 모델 공통 · 추론 레벨 내 토큰 설정 무시)',
@@ -5409,7 +5412,8 @@
             ctxStatic: '📚 컨텍스트 윈도우 = {0} (강제 고정)',
             stream: '스트리밍 출력',
             name1: '단일 라운드', name2: '이중 라운드', name3: '삼중 라운드', name4: '사중 라운드',
-            desc1: '직접 답변', desc2: '답변 + 1회 성찰', desc3: '답변 + 2회 성찰', desc4: '답변 + 3회 성찰'
+            desc1: '직접 답변', desc2: '답변 + 1회 성찰', desc3: '답변 + 2회 성찰', desc4: '답변 + 3회 성찰',
+            toolNoReflect: '🔧 도구 모드에서는 다중 라운드 성찰을 실행하지 않습니다'
         },
         ru: {
             headForced: '🧠 {0} раунда · максимум токенов = {1} (единый лимит для всех моделей · настройка вывода на уровне рассуждений игнорируется)',
@@ -5418,7 +5422,8 @@
             ctxStatic: '📚 Контекстное окно = {0} (принудительно зафиксировано)',
             stream: 'потоковый вывод',
             name1: 'Один раунд', name2: 'Два раунда', name3: 'Три раунда', name4: 'Четыре раунда',
-            desc1: 'Прямой ответ', desc2: 'Ответ + 1 размышление', desc3: 'Ответ + 2 размышления', desc4: 'Ответ + 3 размышления'
+            desc1: 'Прямой ответ', desc2: 'Ответ + 1 размышление', desc3: 'Ответ + 2 размышления', desc4: 'Ответ + 3 размышления',
+            toolNoReflect: '🔧 В режиме инструментов многораундовые размышления не выполняются'
         },
         fr: {
             headForced: '🧠 {0} tours · sortie maximale = {1} (limite unifiée pour tous les modèles · le réglage de sortie du niveau de raisonnement est ignoré)',
@@ -5427,7 +5432,8 @@
             ctxStatic: '📚 Fenêtre de contexte = {0} (forcée et fixe)',
             stream: 'sortie en flux',
             name1: 'Tour unique', name2: 'Double tour', name3: 'Triple tour', name4: 'Quadruple tour',
-            desc1: 'Réponse directe', desc2: 'Réponse + 1 réflexion', desc3: 'Réponse + 2 réflexions', desc4: 'Réponse + 3 réflexions'
+            desc1: 'Réponse directe', desc2: 'Réponse + 1 réflexion', desc3: 'Réponse + 2 réflexions', desc4: 'Réponse + 3 réflexions',
+            toolNoReflect: '🔧 Le mode outil n’exécute pas de réflexion multi-tours'
         }
     };
     function dscLevelCopy() {
@@ -5487,8 +5493,14 @@
                 ctxLine = '<div style="margin-bottom:4px;">' +
                     dscLevelFmt(c.ctxStatic, ctxHtml) + '</div>';
             }
+            var toolLine = '';
+            if (state.enableTools && d.rounds > 1) {
+                toolLine = '<div style="margin-top:4px;color:#b45309;font-size:0.7rem;">' +
+                    c.toolNoReflect + '</div>';
+            }
             info.innerHTML = head + ctxLine +
-                '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ' + c.stream + '</div>';
+                '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ' + c.stream + '</div>' +
+                toolLine;
         }
         var btn = $('dscLevelBtn');
         if (btn) {
@@ -6123,6 +6135,7 @@
         updateToolUI();
         var __dbBtn = $('dscDbToolModeBtn');
         if (__dbBtn) __dbBtn.classList.toggle('active', want);
+        if (typeof updateLevelUI === 'function') updateLevelUI(state.reasoningLevel);
         saveToolState();
         return want;
     };
@@ -7078,6 +7091,7 @@
             }
             state.enableTools = !state.enableTools;
             updateToolUI();
+            updateLevelUI(state.reasoningLevel);
             saveToolState();
             toast(state.enableTools ? '🤖 自律エージェントをオンにしました（最大 50 億ラウンド）' : '🤖 自律エージェントをオフにしました', 'info');
         });
