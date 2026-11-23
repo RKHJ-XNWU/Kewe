@@ -7,7 +7,8 @@
 //   384K=384,000，默认 384K（十进制 384,000，不使用二进制 393,216）。
 // · 模型特例（用户规则优先于上游二进制）：
 //   Seed-Character / charter 角色扮演模型 → 固定 32K=32,000；
-//   Doubao-Seed-2.0-lite → 固定 128K=128,000。
+//   Doubao-Seed-2.0-lite → 固定 128K=128,000；
+//   Doubao-Seed-2.1 lite / Pro / turbo / Evolving → 固定 256K=256,000。
 // · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
 //   聊天、续写及模型能力目录都读取同一个值。
 // · 推理等级不再参与最终 max_tokens 的计算。
@@ -34,6 +35,7 @@ const Map<int, int> DB_LEGACY_OUTPUT_TOKENS = <int, int>{
 const int DB_FORCED_CTX_TOKENS = 1024 * DB_TOKEN_K;
 const int DB_CHARACTER_OUTPUT_TOKENS = 32 * DB_TOKEN_K;
 const int DB_DOUBAO_20_LITE_OUTPUT_TOKENS = 128 * DB_TOKEN_K;
+const int DB_DOUBAO_21_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 
 const int DB_REASONING_LEVEL_MIN = 1;
 const int DB_REASONING_LEVEL_MAX = 999;
@@ -62,6 +64,17 @@ const List<String> dbDoubao20LiteModelPrefixes = <String>[
   'doubao-2.0-lite',
   'doubao-lite-2-0',
   'doubao-lite-2.0',
+];
+// 用户指定：Doubao-Seed-2.1 lite / Pro / turbo 与 Evolving 固定 256K（十进制 256000）。
+const List<String> dbDoubao21ModelPrefixes = <String>[
+  'doubao-seed-2-1-lite',
+  'doubao-seed-2.1-lite',
+  'doubao-seed-2-1-pro',
+  'doubao-seed-2.1-pro',
+  'doubao-seed-2-1-turbo',
+  'doubao-seed-2.1-turbo',
+  'doubao-seed-evolving',
+  'doubao-seed-evo',
 ];
 const Map<String, String> dbModelValueAliases = <String, String>{
   'doubao-seed-2-1-pro-260628': 'doubao-seed-2-1-pro-260915',
@@ -192,18 +205,30 @@ bool dbIsDoubao20LiteModel(String model) {
   return false;
 }
 
+bool dbIsDoubao21Model(String model) {
+  final m = dbCanonicalModelValue(model).toLowerCase();
+  if (m.isEmpty) return false;
+  for (final p in dbDoubao21ModelPrefixes) {
+    if (m.startsWith(p)) return true;
+  }
+  return false;
+}
+
 bool dbHasForcedLimits(String model) => model.trim().isNotEmpty;
 
-/// 仅返回「模型固定特例」：角色扮演 32,000；2.0-lite 128,000；其它 0。
+/// 仅返回「模型固定特例」：角色扮演 32,000；2.0-lite 128,000；
+/// 2.1 lite/Pro/turbo 与 Evolving 256,000；其它 0。
 /// 用于 API 边界兜底，确保任何调用路径都不会把特例模型放大。
 int dbSpecialModelMaxOutput(String model) {
   if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
   if (dbIsDoubao20LiteModel(model)) return DB_DOUBAO_20_LITE_OUTPUT_TOKENS;
+  if (dbIsDoubao21Model(model)) return DB_DOUBAO_21_OUTPUT_TOKENS;
   return 0;
 }
 
 /// 解析一次请求真正要发送的 max_tokens。
-/// 用户规则优先：角色扮演 32,000；2.0-lite 128,000；其余使用当前全局档位。
+/// 用户规则优先：角色扮演 32,000；2.0-lite 128,000；
+/// 2.1 lite/Pro/turbo 与 Evolving 256,000；其余使用当前全局档位。
 int dbForcedMaxOutput(String model) {
   if (!dbHasForcedLimits(model)) return 0;
   final special = dbSpecialModelMaxOutput(model);

@@ -50,6 +50,7 @@
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
     var DSC_OUTPUT_OPTIONS = [64000, 128000, 256000, 384000];
     var DSC_LIMIT_OUTPUT_TOKENS = 384000;
+    var DSC_LIMIT_DOUBAO_21_OUTPUT_TOKENS = 256000;
     var DSC_LIMIT_CTX_TOKENS = 1024000;
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
@@ -110,6 +111,13 @@
         if (m.indexOf('doubao-seed-2-0-lite') === 0 || m.indexOf('doubao-seed-2.0-lite') === 0 ||
             m.indexOf('doubao-2-0-lite') === 0 || m.indexOf('doubao-2.0-lite') === 0 ||
             m.indexOf('doubao-lite-2-0') === 0 || m.indexOf('doubao-lite-2.0') === 0) return 128000;
+        // 豆包 2.1 lite / Pro / turbo 与 Evolving：固定 256K（十进制 256,000）。
+        if (m.indexOf('doubao-seed-2-1-lite') === 0 || m.indexOf('doubao-seed-2.1-lite') === 0 ||
+            m.indexOf('doubao-seed-2-1-pro') === 0 || m.indexOf('doubao-seed-2.1-pro') === 0 ||
+            m.indexOf('doubao-seed-2-1-turbo') === 0 || m.indexOf('doubao-seed-2.1-turbo') === 0 ||
+            m.indexOf('doubao-seed-evolving') === 0 || m.indexOf('doubao-seed-evo') === 0) {
+            return DSC_LIMIT_DOUBAO_21_OUTPUT_TOKENS;
+        }
         return DSC_LIMIT_OUTPUT_TOKENS;
     }
 
@@ -179,12 +187,12 @@
         var ctx = dscTokenLabel(lim.context);
         var globalOut = dscOutputTokenLabel(DSC_LIMIT_OUTPUT_TOKENS);
         var map = {
-            zh: '上下文窗口 ' + ctx + '（固定）；全局最大输出 ' + globalOut + '。当前模型实际上限 ' + out + '。角色扮演固定 32K、2.0-lite 固定 128K（均为十进制）；推理等级内的输出设置已忽略。',
-            ja: 'コンテキスト ' + ctx + '（固定）。グローバル最大出力 ' + globalOut + '。現在のモデル実際上限 ' + out + '。ロールプレイは 32K、2.0-lite は 128K 固定（10進）。推論レベル内の出力設定は無視されます。',
-            en: 'Context window ' + ctx + ' (fixed); global maximum output ' + globalOut + '. Current model effective cap: ' + out + '. Roleplay is fixed at 32K and 2.0-lite at 128K (decimal); output settings inside the reasoning level are ignored.',
-            ko: '컨텍스트 ' + ctx + '(고정); 전역 최대 출력 ' + globalOut + '. 현재 모델 실제 상한 ' + out + '. 역할극은 32K, 2.0-lite는 128K로 고정(10진수). 추론 레벨의 출력 설정은 무시됩니다.',
-            ru: 'Контекст ' + ctx + ' (фиксированный); глобальный максимум вывода ' + globalOut + '. Фактический лимит текущей модели: ' + out + '. Ролевые модели — 32K, 2.0-lite — 128K (десятичные); настройки вывода уровня рассуждений игнорируются.',
-            fr: "Contexte " + ctx + " (fixe) ; sortie maximale globale " + globalOut + ". Plafond effectif du modèle courant : " + out + ". Roleplay fixé à 32K, 2.0-lite à 128K (décimal) ; le réglage de sortie du niveau de raisonnement est ignoré."
+            zh: '上下文窗口 ' + ctx + '（固定）；全局最大输出 ' + globalOut + '。当前模型实际上限 ' + out + '。角色扮演固定 32K、2.0-lite 固定 128K、2.1 lite/Pro/turbo/Evolving 固定 256K（均为十进制）；推理等级内的输出设置已忽略。',
+            ja: 'コンテキスト ' + ctx + '（固定）。グローバル最大出力 ' + globalOut + '。現在のモデル実際上限 ' + out + '。ロールプレイは 32K、2.0-lite は 128K、2.1 lite/Pro/turbo/Evolving は 256K 固定（10進）。推論レベル内の出力設定は無視されます。',
+            en: 'Context window ' + ctx + ' (fixed); global maximum output ' + globalOut + '. Current model effective cap: ' + out + '. Roleplay is fixed at 32K, 2.0-lite at 128K, and 2.1 lite/Pro/turbo/Evolving at 256K (decimal); output settings inside the reasoning level are ignored.',
+            ko: '컨텍스트 ' + ctx + '(고정); 전역 최대 출력 ' + globalOut + '. 현재 모델 실제 상한 ' + out + '. 역할극은 32K, 2.0-lite는 128K, 2.1 lite/Pro/turbo/Evolving은 256K로 고정(10진수). 추론 레벨의 출력 설정은 무시됩니다.',
+            ru: 'Контекст ' + ctx + ' (фиксированный); глобальный максимум вывода ' + globalOut + '. Фактический лимит текущей модели: ' + out + '. Ролевые модели — 32K, 2.0-lite — 128K, 2.1 lite/Pro/turbo/Evolving — 256K (десятичные); настройки вывода уровня рассуждений игнорируются.',
+            fr: "Contexte " + ctx + " (fixe) ; sortie maximale globale " + globalOut + ". Plafond effectif du modèle courant : " + out + ". Roleplay fixé à 32K, 2.0-lite à 128K, 2.1 lite/Pro/turbo/Evolving à 256K (décimal) ; le réglage de sortie du niveau de raisonnement est ignoré."
         };
         return map[lang] || map.zh;
     }
@@ -5376,7 +5384,7 @@
     //   数字单位 K 与 emoji 为通用符号；跟随 UI 语言，缺省中文。
     var DSC_LEVEL_COPY = {
         zh: {
-            headForced: '🧠 {0} 轮 · 最大输出 = {1}（全模型统一 · 推理等级内的输出设置已忽略）',
+            headForced: '🧠 {0} 轮 · 最大输出 = {1}（当前模型强制 · 推理等级内的输出设置已忽略）',
             headFree: '🧠 {0} 轮 · 最大输出 ≈ {1}',
             ctxDynamic: '📚 上下文窗口 = {0}（动态：随用量按 32K 步进扩展，上限 {0}）',
             ctxStatic: '📚 上下文窗口 = {0}（强制固定）',
@@ -5386,7 +5394,7 @@
             toolNoReflect: '🔧 工具模式开启时不会执行多轮反思'
         },
         ja: {
-            headForced: '🧠 {0} ラウンド · 最大トークン数 = {1}（全モデル共通 · 推論レベル内のトークン設定は無視）',
+            headForced: '🧠 {0} ラウンド · 最大トークン数 = {1}（現在のモデルで強制 · 推論レベル内のトークン設定は無視）',
             headFree: '🧠 {0} ラウンド · 最大トークン数 ≈ {1}',
             ctxDynamic: '📚 コンテキストウィンドウ = {0}（動的：使用量に応じて 32K 刻みで拡張、上限 {0}）',
             ctxStatic: '📚 コンテキストウィンドウ = {0}（強制固定）',
@@ -5396,7 +5404,7 @@
             toolNoReflect: '🔧 ツールモード中は多重ラウンドの反省を実行しません'
         },
         en: {
-            headForced: '🧠 {0} rounds · max output = {1} (unified across all models · the max_tokens setting inside the reasoning level is ignored)',
+            headForced: '🧠 {0} rounds · max output = {1} (forced for the current model · the max_tokens setting inside the reasoning level is ignored)',
             headFree: '🧠 {0} rounds · max output ≈ {1}',
             ctxDynamic: '📚 Context window = {0} (dynamic: grows in 32K steps with usage, cap {0})',
             ctxStatic: '📚 Context window = {0} (forced and fixed)',
@@ -5406,7 +5414,7 @@
             toolNoReflect: '🔧 Tool mode does not run multi-round reflection'
         },
         ko: {
-            headForced: '🧠 {0} 라운드 · 최대 토큰 수 = {1} (모든 모델 공통 · 추론 레벨 내 토큰 설정 무시)',
+            headForced: '🧠 {0} 라운드 · 최대 토큰 수 = {1} (현재 모델 강제 · 추론 레벨 내 토큰 설정 무시)',
             headFree: '🧠 {0} 라운드 · 최대 토큰 수 ≈ {1}',
             ctxDynamic: '📚 컨텍스트 윈도우 = {0} (동적: 사용량에 따라 32K 단위로 확장, 상한 {0})',
             ctxStatic: '📚 컨텍스트 윈도우 = {0} (강제 고정)',
@@ -5416,7 +5424,7 @@
             toolNoReflect: '🔧 도구 모드에서는 다중 라운드 성찰을 실행하지 않습니다'
         },
         ru: {
-            headForced: '🧠 {0} раунда · максимум токенов = {1} (единый лимит для всех моделей · настройка вывода на уровне рассуждений игнорируется)',
+            headForced: '🧠 {0} раунда · максимум токенов = {1} (принудительно для текущей модели · настройка вывода на уровне рассуждений игнорируется)',
             headFree: '🧠 {0} раунда · максимум токенов ≈ {1}',
             ctxDynamic: '📚 Контекстное окно = {0} (динамическое: растёт шагами по 32K, предел {0})',
             ctxStatic: '📚 Контекстное окно = {0} (принудительно зафиксировано)',
@@ -5426,7 +5434,7 @@
             toolNoReflect: '🔧 В режиме инструментов многораундовые размышления не выполняются'
         },
         fr: {
-            headForced: '🧠 {0} tours · sortie maximale = {1} (limite unifiée pour tous les modèles · le réglage de sortie du niveau de raisonnement est ignoré)',
+            headForced: '🧠 {0} tours · sortie maximale = {1} (forcée pour le modèle courant · le réglage de sortie du niveau de raisonnement est ignoré)',
             headFree: '🧠 {0} tours · sortie maximale ≈ {1}',
             ctxDynamic: '📚 Fenêtre de contexte = {0} (dynamique : +32K par paliers selon l’usage, plafond {0})',
             ctxStatic: '📚 Fenêtre de contexte = {0} (forcée et fixe)',
