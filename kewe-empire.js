@@ -632,7 +632,9 @@
   function isAuthed() {
     var gate = document.getElementById('keweAuthGate');
     var locked = document.documentElement.classList.contains('kewe-auth-locked');
-    if (gate && getComputedStyle(gate).display !== 'none') return false;
+    // 不调用 getComputedStyle：它会在每个 MutationObserver 回调里强制重排。
+    // 门禁显隐由 kewe-auth.js 写入 inline display，直接读 style 即可。
+    if (gate && gate.style.display && gate.style.display !== 'none') return false;
     return !locked;
   }
   function closeLayer(layer) {
@@ -1221,42 +1223,39 @@
     if (!isAuthed()) return;
     var menu = document.getElementById('dscMoreMenu');
     if (!menu) return;
-    if (!document.getElementById('keweHomeSos')) {
-      var sos = el('button', 'dsc-more-item');
+    var sos = document.getElementById('keweHomeSos');
+    if (!sos) {
+      sos = el('button', 'dsc-more-item');
       sos.id = 'keweHomeSos';
       sos.type = 'button';
       sos.innerHTML = '<span class="ic">🚨</span><span class="tx"></span>';
-      sos.querySelector('.tx').textContent = tr('chipEmergency');
       sos.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation(); openEmergency();
       });
       menu.insertBefore(sos, menu.firstChild);
     }
-    if (!document.getElementById('keweHomeKnowledge')) {
-      var kb = el('button', 'dsc-more-item');
+    var sosTx = sos.querySelector('.tx');
+    if (sosTx && sosTx.textContent !== tr('chipEmergency')) sosTx.textContent = tr('chipEmergency');
+
+    var kb = document.getElementById('keweHomeKnowledge');
+    if (!kb) {
+      kb = el('button', 'dsc-more-item');
       kb.id = 'keweHomeKnowledge';
       kb.type = 'button';
       kb.innerHTML = '<span class="ic">📚</span><span class="tx"></span>';
-      kb.querySelector('.tx').textContent = tr('kbMenu');
       kb.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation(); showKnowledgeStatus();
       });
-      var first = document.getElementById('keweHomeSos');
-      if (first && first.parentNode === menu) menu.insertBefore(kb, first.nextSibling);
+      if (sos.parentNode === menu) menu.insertBefore(kb, sos.nextSibling);
       else menu.insertBefore(kb, menu.firstChild);
     }
+    var kbTx = kb.querySelector('.tx');
+    if (kbTx && kbTx.textContent !== tr('kbMenu')) kbTx.textContent = tr('kbMenu');
   }
 
   function updatePresence() {
-    var authed = isAuthed();
-    var orb = document.getElementById('kewePowerOrb');
-    if (orb) {
-      var wanted = authed ? 'flex' : 'none';
-      if (orb.style.display !== wanted) orb.style.display = wanted;
-    }
-    var gate = document.getElementById('keweAuthGate');
-    if (gate && getComputedStyle(gate).display !== 'none') injectGateSos();
-    if (authed) injectHomeMenu();
+    if (isAuthed()) injectHomeMenu();
+    else injectGateSos();
   }
 
   // ------------------------------------------------------------
@@ -1268,14 +1267,21 @@
     updatePresence();
     injectHomeMenu();
 
-    // 认证门禁是动态创建/隐藏的，监听它并补 SOS。
+    // 认证门禁/菜单是动态创建的；只监听 body 的直接子节点与 html 的 class。
+    // 旧版监听 body 全子树 + attributes，会在流式输出/滚动/打字时反复触发
+    // getComputedStyle 与 DOM 扫描，是移动端点击/滑动卡顿的主因之一。
     try {
-      var mo = new MutationObserver(function () {
-        updatePresence();
-        injectGateSos();
-        injectHomeMenu();
-      });
-      mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+      var presenceQueued = false;
+      function queuePresence() {
+        if (presenceQueued) return;
+        presenceQueued = true;
+        var run = function () { presenceQueued = false; updatePresence(); };
+        if (window.requestAnimationFrame) requestAnimationFrame(run);
+        else setTimeout(run, 16);
+      }
+      var mo = new MutationObserver(queuePresence);
+      mo.observe(document.body, { childList: true });
+      mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
     } catch (e) {}
 
     document.addEventListener('keydown', function (e) {

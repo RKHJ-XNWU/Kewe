@@ -385,15 +385,24 @@
     }
   }
 
+  function inChatStream(node) {
+    var el = node && (node.nodeType === 1 ? node : node.parentNode);
+    if (!el || !el.closest) return false;
+    return !!el.closest('.dsc-msg-bubble, .dsc-msg-translation, .dsc-think-body, .dsc-think-body-text');
+  }
+
   function start() {
     if (!document.body || !window.MutationObserver) return;
     new MutationObserver(function (muts) {
       if (curLang() === 'ja') return;
       for (var i = 0; i < muts.length; i++) {
         var m = muts[i];
-        if (m.type === 'characterData') schedule(m.target.parentNode);
-        else if (m.addedNodes && m.addedNodes.length) {
-          for (var j = 0; j < m.addedNodes.length; j++) schedule(m.addedNodes[j]);
+        if (m.type === 'characterData') {
+          if (!inChatStream(m.target)) schedule(m.target.parentNode);
+        } else if (m.addedNodes && m.addedNodes.length) {
+          for (var j = 0; j < m.addedNodes.length; j++) {
+            if (!inChatStream(m.addedNodes[j])) schedule(m.addedNodes[j]);
+          }
         }
       }
     }).observe(document.body, {

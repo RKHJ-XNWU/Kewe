@@ -40,7 +40,10 @@ ProxyConf detectProxy() {
   add(getEnv('HTTP_PROXY'));
   add(getEnv('http_proxy'));
 
-  for (final p in ['$BASE_DIR/proxy.conf', '${Directory.current.path}/proxy.conf']) {
+  for (final p in [
+    '$BASE_DIR/proxy.conf',
+    '${Directory.current.path}/proxy.conf'
+  ]) {
     if (File(p).existsSync()) {
       try {
         for (final raw in File(p).readAsStringSync().split('\n')) {
@@ -115,7 +118,14 @@ void _applyProxy(HttpClient client) {
   final p = detectProxy();
   final hp = p.httpProxy;
   if (hp != null) {
-    client.findProxy = (uri) => 'PROXY ${Uri.parse(hp).host}:${Uri.parse(hp).port}';
+    client.findProxy = (uri) {
+      final host = uri.host.toLowerCase();
+      // 本机回环地址永远直连，避免把 adb / 本地模拟上游 / 本地服务绕到远端代理。
+      if (host == '127.0.0.1' || host == 'localhost' || host == '::1') {
+        return 'DIRECT';
+      }
+      return 'PROXY ${Uri.parse(hp).host}:${Uri.parse(hp).port}';
+    };
     logp('🌐 使用 HTTP 代理: $hp');
   } else if (p.socks5Host != null) {
     // Dart 的 HttpClient 无 SOCKS5 拨号注入点：保持直连并给出明确日志
@@ -135,7 +145,8 @@ Future<HttpClientResponse> httpSend(
   Duration? timeout,
   bool withTimeoutClient = true,
 }) async {
-  final client = withTimeoutClient ? globalHTTPClientWithTimeout : globalHTTPClient;
+  final client =
+      withTimeoutClient ? globalHTTPClientWithTimeout : globalHTTPClient;
   Future<HttpClientRequest> open() async {
     final req = await client.openUrl(method, uri);
     headers?.forEach(req.headers.set);

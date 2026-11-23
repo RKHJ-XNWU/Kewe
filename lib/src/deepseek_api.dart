@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'db_limits.dart';
 import 'doubao.dart';
 import 'ds_crypto.dart';
 import 'ds_usage.dart';
@@ -19,6 +20,45 @@ import 'sessions.dart';
 import 'tool_gate.dart';
 
 const String DS_API_URL = 'https://api.deepseek.com/chat/completions';
+
+/// API 边界统一解析 max_tokens：
+/// · 角色扮演（charter / character）固定 32,000（十进制）；
+/// · Doubao-Seed-2.0-lite 固定 128,000（十进制）；
+/// · 其它模型原样使用调用方传入值；<=0 时回退到全局档位（默认 384,000）。
+int dsResolveMaxTokens(String model, int maxTokens) {
+  final special = dbSpecialModelMaxOutput(model);
+  if (special > 0) return special;
+  if (maxTokens <= 0) return dbCurrentOutputLimit();
+  return maxTokens;
+}
+
+/// 从上游 400 文本解析 max_tokens 的二进制上限（如 32768 / 131072），
+/// 再按用户规则收敛到十进制档位（32000 / 128000），绝不直接沿用二进制值。
+int? _providerMaxTokensFromError(String text) {
+  final patterns = <RegExp>[
+    RegExp(r'\\u003c\s*=\s*(\d+)'), // JSON 里的 <=
+    RegExp(r'<\s*=\s*(\d+)'),
+    RegExp(r'less than or equal to\s*(\d+)', caseSensitive: false),
+  ];
+  for (final re in patterns) {
+    final m = re.firstMatch(text);
+    if (m != null) {
+      final n = int.tryParse(m.group(1) ?? '');
+      if (n != null && n > 0) return n;
+    }
+  }
+  return null;
+}
+
+int _decimalOutputCap(int provider) {
+  if (provider >= 393216) return 384000;
+  if (provider >= 262144) return 256000;
+  if (provider >= 131072) return 128000;
+  if (provider >= 65536) return 64000;
+  if (provider >= 32768) return 32000;
+  final k = (provider ~/ 1000) * 1000;
+  return k > 0 ? k : 32000;
+}
 
 // ------------------------------------------------------------
 // Agent 系统提示（工具模式强制注入，与 Go 版逐字一致）
@@ -205,6 +245,7 @@ List<Map<String, dynamic>> dsResolveTools(String model, String apiUrl) {
   }
   return dsToolSchemaProvider?.call() ?? const <Map<String, dynamic>>[];
 }
+
 Future<String> Function(String name, Map<String, dynamic> args)? dsToolExecutor;
 
 Future<String> dsSafeExecTool(String name, String argsJson) async {
@@ -242,7 +283,8 @@ List<Map<String, dynamic>> dsExtractReferences(Object? raw) {
     var title = '${r['title'] ?? r['name'] ?? r['site_name'] ?? ''}'.trim();
     if (title.isEmpty) title = url;
     var snippet =
-        '${r['summary'] ?? r['snippet'] ?? r['content'] ?? r['text'] ?? ''}'.trim();
+        '${r['summary'] ?? r['snippet'] ?? r['content'] ?? r['text'] ?? ''}'
+            .trim();
     if (snippet.length > 400) snippet = snippet.substring(0, 400);
     out.add({
       'title': title,
@@ -273,8 +315,12 @@ Stream<Map<String, dynamic>> sseData(HttpClientResponse resp) async* {
   }
 }
 
-Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls})>
-    _streamOnce({
+Future<
+    ({
+      String content,
+      String reasoning,
+      List<Map<String, dynamic>> toolCalls
+    })> _streamOnce({
   required String apiKey,
   required String model,
   required List<Map<String, dynamic>> messages,
@@ -284,14 +330,10 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
   void Function(String)? onReasoning,
   void Function(String)? onContent,
   DsUsageAcc? usageAcc,
-  bool clampMax = true,
   String apiUrl = DS_API_URL,
 }) async {
-  var mt = maxTokens;
-  if (mt <= 0) mt = 4096;
-  if (clampMax && mt > 120000) mt = 120000;
-  if (apiUrl != DS_API_URL && mt > 120000) mt = 120000;
-  if (temperature < 0) temperature = 0;
+  final mt = dsResolveMaxTokens(model, maxTokens);
+  var temperature0 = temperature < 0 ? 0.0 : temperature;
 
   // 豆包"快速模式"启用时禁用深度思考
   // （实测：到首段正文的等待时间 16.83s → 0.86s）
@@ -301,7 +343,7 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
     'messages': messages,
     'stream': true,
     'max_tokens': mt,
-    'temperature': temperature,
+    'temperature': temperature0,
     // ★ 也让豆包（方舟）返回 usage（原因见 callDsChatAPIStream 侧的注释）
     'stream_options': dsUsageStreamOptions(),
     if (thinkParam != null) 'thinking': thinkParam,
@@ -360,7 +402,8 @@ Future<({String content, String reasoning, List<Map<String, dynamic>> toolCalls}
   }
 
   if (resp.statusCode != 200) {
-    final txt = utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
+    final txt = utf8.decode(
+        await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
     throw Exception('HTTP ${resp.statusCode}: ${truncateBytes(txt, 400)}');
   }
@@ -437,10 +480,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
   String apiUrl = DS_API_URL,
   Map<String, dynamic>? extraBody,
 }) async {
-  var mt = maxTokens;
-  if (mt <= 0) mt = 8192;
-  if (mt > 300000) mt = 300000;
-  if (apiUrl != DS_API_URL && mt > 120000) mt = 120000;
+  final mt = dsResolveMaxTokens(model, maxTokens);
   var temp = temperature;
   if (temp <= 0) temp = 1.0;
 
@@ -479,6 +519,20 @@ Future<({String content, String reasoning})> callDsChatAPI(
     rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
   }
+  if (resp.statusCode == 400 && txt.toLowerCase().contains('max_tokens')) {
+    final providerCap = _providerMaxTokensFromError(txt);
+    if (providerCap != null) {
+      final decimalCap = _decimalOutputCap(providerCap);
+      if (decimalCap < mt) {
+        logp('⚠️ 上游拒绝 max_tokens=$mt（上限 $providerCap），'
+            '按十进制规则收敛到 $decimalCap 后重试');
+        body['max_tokens'] = decimalCap;
+        resp = await sendOnce(thinkParam != null);
+        rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
+        txt = utf8.decode(rawBytes, allowMalformed: true);
+      }
+    }
+  }
 
   if (resp.statusCode != 200) {
     String msg = '';
@@ -495,7 +549,10 @@ Future<({String content, String reasoning})> callDsChatAPI(
   usageAcc?.model = model;
   usageAcc?.addRaw(RawDsUsage.fromJson(result['usage']));
   final msg = asMap(asMap(choices[0])['message']);
-  return (content: mStr(msg, 'content'), reasoning: mStr(msg, 'reasoning_content'));
+  return (
+    content: mStr(msg, 'content'),
+    reasoning: mStr(msg, 'reasoning_content')
+  );
 }
 
 /// 原始响应（工具模式非流式）
@@ -504,7 +561,8 @@ class DsRawResponse {
   final String reasoning;
   final List<Map<String, dynamic>> toolCalls;
   final String finishReason;
-  DsRawResponse(this.content, this.reasoning, this.toolCalls, this.finishReason);
+  DsRawResponse(
+      this.content, this.reasoning, this.toolCalls, this.finishReason);
 }
 
 Future<DsRawResponse> callDsChatAPIRaw(
@@ -517,18 +575,15 @@ Future<DsRawResponse> callDsChatAPIRaw(
   DsUsageAcc? usageAcc, {
   String apiUrl = DS_API_URL,
 }) async {
-  var mt = maxTokens;
-  if (mt <= 0) mt = 8192;
-  if (mt > 300000) mt = 300000;
-  if (apiUrl != DS_API_URL && mt > 120000) mt = 120000;
-  if (temperature < 0) temperature = 0;
+  final mt = dsResolveMaxTokens(model, maxTokens);
+  final temp = temperature < 0 ? 0.0 : temperature;
 
   final body = <String, dynamic>{
     'model': model,
     'messages': messages,
     'stream': false,
     'max_tokens': mt,
-    'temperature': temperature,
+    'temperature': temp,
   };
   if (withTools) {
     body['tools'] = dsResolveTools(model, apiUrl);
@@ -578,12 +633,11 @@ Future<void> callDsChatAPIStream(
   DsUsageAcc? usageAcc, {
   String apiUrl = DS_API_URL,
   Map<String, dynamic>? extraBody,
+
   /// 联网引用（豆包自带联网搜索 references）出现时回调，供前端渲染交互卡片
   void Function(List<Map<String, dynamic>> references)? onReferences,
 }) async {
-  var mt = maxTokens;
-  if (mt <= 0) mt = 8192;
-  if (mt > 300000) mt = 300000;
+  final mt = dsResolveMaxTokens(model, maxTokens);
   var temp = temperature;
   if (temp <= 0) temp = 1.0;
 
@@ -594,11 +648,9 @@ Future<void> callDsChatAPIStream(
   //   这里回落到 dbThinkingParam(model)（快速模式 → thinking:{type:disabled}），
   //   与 _streamOnce 的处理保持一致。
   //   DeepSeek 通道 apiUrl == DS_API_URL，arkThink 恒为 null，行为零变化。
-  final arkHasThinking =
-      extraBody != null && extraBody.containsKey('thinking');
-  final arkThink = (apiUrl == DS_API_URL || arkHasThinking)
-      ? null
-      : dbThinkingParam(model);
+  final arkHasThinking = extraBody != null && extraBody.containsKey('thinking');
+  final arkThink =
+      (apiUrl == DS_API_URL || arkHasThinking) ? null : dbThinkingParam(model);
   final body = <String, dynamic>{
     'model': model,
     'messages': messages,
@@ -628,6 +680,7 @@ Future<void> callDsChatAPIStream(
   //   为了绝不制造"一开就报错"的新 bug 的保险。
   var droppedStreamOpts = false;
   var droppedWebSearch = false;
+  var droppedMaxTokens = false;
   for (var attempt = 0; resp.statusCode == 400 && attempt < 3; attempt++) {
     final txt = utf8.decode(
         await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
@@ -661,10 +714,25 @@ Future<void> callDsChatAPIStream(
       resp = await resend();
       continue;
     }
+    if (!droppedMaxTokens && low.contains('max_tokens')) {
+      final providerCap = _providerMaxTokensFromError(txt);
+      if (providerCap != null) {
+        final decimalCap = _decimalOutputCap(providerCap);
+        if (decimalCap < (body['max_tokens'] as num)) {
+          logp('⚠️ 上游拒绝 max_tokens=${body['max_tokens']}（上限 $providerCap），'
+              '按十进制规则收敛到 $decimalCap 后重试');
+          body['max_tokens'] = decimalCap;
+          droppedMaxTokens = true;
+          resp = await resend();
+          continue;
+        }
+      }
+    }
     throw Exception('HTTP 400: ${truncateBytes(txt, 400)}');
   }
   if (resp.statusCode != 200) {
-    final txt = utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
+    final txt = utf8.decode(
+        await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
     throw Exception('HTTP ${resp.statusCode}: ${truncateBytes(txt, 400)}');
   }
@@ -689,7 +757,9 @@ Future<void> callDsChatAPIStream(
       final wsRaw = tu['web_search'];
       final wsCount = wsRaw is int
           ? wsRaw
-          : (wsRaw is num ? wsRaw.toInt() : int.tryParse('${wsRaw ?? ''}') ?? 0);
+          : (wsRaw is num
+              ? wsRaw.toInt()
+              : int.tryParse('${wsRaw ?? ''}') ?? 0);
       if (wsCount > reportedSearchCount) {
         reportedSearchCount = wsCount;
         logp('📊 豆包联网搜索执行次数: $wsCount');
@@ -709,6 +779,7 @@ Future<void> callDsChatAPIStream(
           fresh.add(r);
         }
       }
+
       // 方舟文档：联网引用于 choices[].message.annotations（url_citation 列表）；
       // 部分网关用顶层 references，两种都收。
       final chMsg = asMap(asMap(choices[0])['message']);
@@ -763,8 +834,6 @@ Future<void> callDsChatAPIStream(
 //   · 同签名累计 8 次  → 判定无进展，硬收尾（防 A→B→A→B 交替空转）
 // ------------------------------------------------------------
 
-
-
 // ------------------------------------------------------------
 // 工具模式：流式多轮
 // ------------------------------------------------------------
@@ -790,7 +859,7 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
   String apiUrl = DS_API_URL,
 }) async {
   var maxIter = maxIterations <= 0 ? DS_TOOL_MAX_ITERATIONS : maxIterations;
-  var mt = maxTokens <= 0 ? 330000 : maxTokens;
+  var mt = dsResolveMaxTokens(model, maxTokens);
   temperature = 0.0; // 工具模式恒为 0（确定性输出）
   final tools = dsResolveTools(model, apiUrl);
 
@@ -811,7 +880,6 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
       onReasoning: onReasoning,
       onContent: onContent,
       usageAcc: usageAcc,
-      clampMax: false,
       apiUrl: apiUrl,
     );
 
@@ -905,7 +973,8 @@ Future<ToolStreamOutcome> callDsWithTools(
         apiUrl: apiUrl);
     if (resp.reasoning.trim().isNotEmpty) reasoningParts.add(resp.reasoning);
     if (resp.toolCalls.isEmpty) {
-      return ToolStreamOutcome(resp.content, reasoningParts.join('\n\n─────\n\n'), toolLogs);
+      return ToolStreamOutcome(
+          resp.content, reasoningParts.join('\n\n─────\n\n'), toolLogs);
     }
     currentMsgs.add({
       'role': 'assistant',
@@ -978,8 +1047,9 @@ Future<({String content, String reasoning})> callDsMultiRound(
 }) async {
   if (rounds < 1) rounds = 1;
   progressFn?.call(1, rounds, '正在生成初稿...');
-  final first = await callDsChatAPI(apiKey, model, messages, maxTokens, temperature,
-      usageAcc, apiUrl: apiUrl, extraBody: extraBody);
+  final first = await callDsChatAPI(
+      apiKey, model, messages, maxTokens, temperature, usageAcc,
+      apiUrl: apiUrl, extraBody: extraBody);
   if (rounds == 1) return (content: first.content, reasoning: first.reasoning);
 
   final reasoningParts = <String>[];
@@ -995,8 +1065,9 @@ Future<({String content, String reasoning})> callDsMultiRound(
       {'role': 'user', 'content': _reflectPrompt(i)},
     ];
     try {
-      final r = await callDsChatAPI(apiKey, model, reflectMsgs, maxTokens, temperature,
-          usageAcc, apiUrl: apiUrl, extraBody: extraBody);
+      final r = await callDsChatAPI(
+          apiKey, model, reflectMsgs, maxTokens, temperature, usageAcc,
+          apiUrl: apiUrl, extraBody: extraBody);
       if (r.content.trim().isEmpty) break;
       currentReply = r.content;
       if (r.reasoning.trim().isNotEmpty) {
@@ -1040,8 +1111,8 @@ Future<({String content, String reasoning})> callDsMultiRoundStream(
   }, (s) {
     firstContent.write(s);
     onContent?.call(s);
-  }, usageAcc, apiUrl: apiUrl, extraBody: extraBody,
-      onReferences: onReferences);
+  }, usageAcc,
+      apiUrl: apiUrl, extraBody: extraBody, onReferences: onReferences);
 
   if (rounds == 1) {
     return (
@@ -1066,15 +1137,15 @@ Future<({String content, String reasoning})> callDsMultiRoundStream(
     final newContent = StringBuffer();
     final newReasoning = StringBuffer();
     try {
-      await callDsChatAPIStream(apiKey, model, reflectMsgs, maxTokens, temperature,
-          (s) {
+      await callDsChatAPIStream(
+          apiKey, model, reflectMsgs, maxTokens, temperature, (s) {
         newReasoning.write(s);
         onReasoning?.call(s);
       }, (s) {
         newContent.write(s);
         onContent?.call(s);
-      }, usageAcc, apiUrl: apiUrl, extraBody: extraBody,
-          onReferences: onReferences);
+      }, usageAcc,
+          apiUrl: apiUrl, extraBody: extraBody, onReferences: onReferences);
     } catch (e) {
       logp('⚠️ 第 $i 轮反省失败: $e。使用上次的结果');
       break;
@@ -1097,7 +1168,7 @@ Future<({String content, String reasoning})> callDsMultiRoundStream(
 Future<String> callDsVisionAPI(String apiKey, String textPrompt,
     String imageBase64, String mime, int maxTokens, double temperature,
     {String model = '', String apiUrl = ''}) async {
-  var mt = maxTokens <= 0 ? 300000 : maxTokens;
+  final mt = dsResolveMaxTokens(model, maxTokens);
   var temp = temperature <= 0 ? 1.0 : temperature;
   final content = <Map<String, dynamic>>[];
   if (imageBase64.isNotEmpty) {
@@ -1121,12 +1192,14 @@ Future<String> callDsVisionAPI(String apiKey, String textPrompt,
     'temperature': temp,
   };
   final client = globalHTTPClientWithTimeout;
-  final req = await client.postUrl(Uri.parse(apiUrl.isNotEmpty ? apiUrl : DS_API_URL));
+  final req =
+      await client.postUrl(Uri.parse(apiUrl.isNotEmpty ? apiUrl : DS_API_URL));
   req.headers.set('Content-Type', 'application/json');
   req.headers.set('Authorization', 'Bearer $apiKey');
   req.add(utf8.encode(jsonEncode(body)));
   final resp = await req.close();
-  final txt = utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
+  final txt = utf8.decode(
+      await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
       allowMalformed: true);
   if (resp.statusCode != 200) {
     throw Exception('HTTP ${resp.statusCode}: ${truncateBytes(txt, 400)}');
@@ -1166,7 +1239,9 @@ String truncateSearchQuery(String s) {
 Future<List<int>> dsOfficialHTTPPost(
     String url, String apiKey, Map<String, dynamic> payload) async {
   final client = globalHTTPClient;
-  final req = await client.postUrl(Uri.parse(url)).timeout(const Duration(seconds: 120));
+  final req = await client
+      .postUrl(Uri.parse(url))
+      .timeout(const Duration(seconds: 120));
   req.headers.set('Content-Type', 'application/json');
   req.headers.set('Authorization', 'Bearer $apiKey');
   req.headers.set('Accept', 'application/json');
@@ -1180,8 +1255,8 @@ Future<List<int>> dsOfficialHTTPPost(
   return body;
 }
 
-Future<List<WebSearchResult>> deepseekOfficialSearch(
-    String apiKey, String query, int count, bool needContent, String oriQuestion) async {
+Future<List<WebSearchResult>> deepseekOfficialSearch(String apiKey,
+    String query, int count, bool needContent, String oriQuestion) async {
   final key = apiKey.trim();
   if (key.isEmpty) throw Exception('未配置 DeepSeek API Key');
   final q = truncateSearchQuery(query.trim());
@@ -1249,8 +1324,8 @@ Future<List<WebSearchResult>> combinedSearch(
   final cfg = getDsConfig();
   if (cfg.apiKey.isNotEmpty) {
     try {
-      final official = await deepseekOfficialSearch(
-          cfg.apiKey, query, maxR, false, query);
+      final official =
+          await deepseekOfficialSearch(cfg.apiKey, query, maxR, false, query);
       if (official.isNotEmpty) {
         logp('🔍 [网页搜索] DeepSeek 官方 API 返回了 ${official.length} 条');
         addResults(official);
@@ -1286,20 +1361,88 @@ Future<String> buildWebSearchContext(String query) async {
 const int DS_MAX_TEXT_EXTRACT = 200 * 1024;
 
 const Set<String> _textExts = {
-  '.txt', '.md', '.markdown', '.json', '.xml', '.yaml', '.yml', '.toml', '.ini',
-  '.conf', '.cfg', '.log', '.csv', '.tsv', '.env', '.go', '.js', '.mjs', '.cjs',
-  '.ts', '.tsx', '.jsx', '.py', '.java', '.kt', '.c', '.cpp', '.cc', '.cxx',
-  '.h', '.hpp', '.cs', '.rb', '.php', '.swift', '.rs', '.scala', '.lua', '.pl',
-  '.r', '.html', '.htm', '.css', '.scss', '.sass', '.less', '.vue', '.svelte',
-  '.sh', '.bash', '.zsh', '.bat', '.ps1', '.cmd', '.sql', '.graphql', '.gql',
-  '.proto', '.dockerfile', '.gitignore', '.editorconfig', '.makefile', '.gradle',
-  '.properties', '.tex', '.rst', '.srt', '.vtt', '.ass', '.dart',
+  '.txt',
+  '.md',
+  '.markdown',
+  '.json',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.conf',
+  '.cfg',
+  '.log',
+  '.csv',
+  '.tsv',
+  '.env',
+  '.go',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.jsx',
+  '.py',
+  '.java',
+  '.kt',
+  '.c',
+  '.cpp',
+  '.cc',
+  '.cxx',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.rb',
+  '.php',
+  '.swift',
+  '.rs',
+  '.scala',
+  '.lua',
+  '.pl',
+  '.r',
+  '.html',
+  '.htm',
+  '.css',
+  '.scss',
+  '.sass',
+  '.less',
+  '.vue',
+  '.svelte',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.bat',
+  '.ps1',
+  '.cmd',
+  '.sql',
+  '.graphql',
+  '.gql',
+  '.proto',
+  '.dockerfile',
+  '.gitignore',
+  '.editorconfig',
+  '.makefile',
+  '.gradle',
+  '.properties',
+  '.tex',
+  '.rst',
+  '.srt',
+  '.vtt',
+  '.ass',
+  '.dart',
 };
 
 const List<String> _textMimes = [
-  'application/json', 'application/xml', 'application/javascript',
-  'application/x-yaml', 'application/yaml', 'application/x-sh',
-  'application/x-httpd-php', 'application/x-python', 'application/rtf',
+  'application/json',
+  'application/xml',
+  'application/javascript',
+  'application/x-yaml',
+  'application/yaml',
+  'application/x-sh',
+  'application/x-httpd-php',
+  'application/x-python',
+  'application/rtf',
 ];
 
 bool isTextFile(String mimeType, String filename) {
@@ -1363,13 +1506,41 @@ class FileContext {
 }
 
 const Set<String> _audioExts = {
-  '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.flac',
-  '.amr', '.webm', '.mp4a', '.wma', '.aiff', '.aif', '.caf', '.mka',
+  '.mp3',
+  '.wav',
+  '.m4a',
+  '.aac',
+  '.ogg',
+  '.oga',
+  '.opus',
+  '.flac',
+  '.amr',
+  '.webm',
+  '.mp4a',
+  '.wma',
+  '.aiff',
+  '.aif',
+  '.caf',
+  '.mka',
 };
 
 const Set<String> _videoExts = {
-  '.mp4', '.mov', '.m4v', '.mkv', '.avi', '.webm', '.flv', '.wmv',
-  '.mpeg', '.mpg', '.ts', '.mts', '.m2ts', '.3gp', '.ogv', '.rmvb',
+  '.mp4',
+  '.mov',
+  '.m4v',
+  '.mkv',
+  '.avi',
+  '.webm',
+  '.flv',
+  '.wmv',
+  '.mpeg',
+  '.mpg',
+  '.ts',
+  '.mts',
+  '.m2ts',
+  '.3gp',
+  '.ogv',
+  '.rmvb',
 };
 
 bool _extInSet(String name, Set<String> exts) {
@@ -1382,7 +1553,8 @@ bool _extInSet(String name, Set<String> exts) {
 bool isAudioFile(String mimeType, String fileName) {
   if (mimeType.toLowerCase().startsWith('audio/')) return true;
   // video/webm 常见于浏览器录音，按音频对待
-  if (mimeType.toLowerCase() == 'video/webm' && _extInSet(fileName, _audioExts)) {
+  if (mimeType.toLowerCase() == 'video/webm' &&
+      _extInSet(fileName, _audioExts)) {
     return true;
   }
   return !mimeType.toLowerCase().startsWith('video/') &&
@@ -1462,7 +1634,8 @@ FileContext buildFileContext(List<String> fileIDs) {
 // ------------------------------------------------------------
 // 小说模式
 // ------------------------------------------------------------
-String buildNovelSystemPrompt() => '''你是一位经验丰富的长篇网络小说作家，擅长写结构扎实、情节跌宕、人物立体、看点丰富的长篇小说。文笔流畅自然，对话生动，能精准把控故事节奏。\n\n创作要求:\n1. 用用户使用的语言写作。若有指定则遵循该语言，任何语言都可以\n2. 从正文直接开始，不写标题、作者、前言、后记、总结、铺垫\n3. 章节划分清晰，每章以"第X章"或明确的小标题开头\n4. 突出人物性格，使对话契合人设\n5. 情节一贯，起承转合完整，不冗长也不跳跃\n6. 重视细节描写与情景营造，但不过度堆砌\n7. 完全遵循用户设定的主题、标签、分类、故事设定\n8. 不中途结束，尽可能写满指定字数''';
+String buildNovelSystemPrompt() =>
+    '''你是一位经验丰富的长篇网络小说作家，擅长写结构扎实、情节跌宕、人物立体、看点丰富的长篇小说。文笔流畅自然，对话生动，能精准把控故事节奏。\n\n创作要求:\n1. 用用户使用的语言写作。若有指定则遵循该语言，任何语言都可以\n2. 从正文直接开始，不写标题、作者、前言、后记、总结、铺垫\n3. 章节划分清晰，每章以"第X章"或明确的小标题开头\n4. 突出人物性格，使对话契合人设\n5. 情节一贯，起承转合完整，不冗长也不跳跃\n6. 重视细节描写与情景营造，但不过度堆砌\n7. 完全遵循用户设定的主题、标签、分类、故事设定\n8. 不中途结束，尽可能写满指定字数''';
 
 String buildNovelBasePrompt(
     String theme, String tags, String genre, String story, int targetChars) {
@@ -1487,7 +1660,8 @@ String trimNovelOverlap(String newChunk, String prevEnd) {
   if (newRunes.length < maxCheck) maxCheck = newRunes.length;
   for (var n = maxCheck; n >= 12; n--) {
     if (prevRunes.length < n || newRunes.length < n) continue;
-    final suffix = String.fromCharCodes(prevRunes.sublist(prevRunes.length - n));
+    final suffix =
+        String.fromCharCodes(prevRunes.sublist(prevRunes.length - n));
     if (newChunk.startsWith(suffix)) {
       return String.fromCharCodes(newRunes.sublist(n)).trim();
     }
@@ -1513,8 +1687,12 @@ String _novelContext(String full) {
   return '$head\n\n……（中间省略，已写部分）……\n\n$tail';
 }
 
-Future<({String text, String? error})> generateNovel(String apiKey, String model,
-    String basePrompt, int targetChars, DsUsageAcc? usageAcc) async {
+Future<({String text, String? error})> generateNovel(
+    String apiKey,
+    String model,
+    String basePrompt,
+    int targetChars,
+    DsUsageAcc? usageAcc) async {
   final full = StringBuffer();
   var lastPart = '';
   String? lastErr;
@@ -1533,7 +1711,8 @@ Future<({String text, String? error})> generateNovel(String apiKey, String model
     ];
     if (round > 0) {
       msgs.add({'role': 'user', 'content': basePrompt});
-      msgs.add({'role': 'assistant', 'content': _novelContext(full.toString())});
+      msgs.add(
+          {'role': 'assistant', 'content': _novelContext(full.toString())});
     }
     msgs.add({'role': 'user', 'content': userPrompt});
 
@@ -1600,7 +1779,8 @@ Future<({String text, String? error})> generateNovelStream(
     ];
     if (round > 0) {
       msgs.add({'role': 'user', 'content': basePrompt});
-      msgs.add({'role': 'assistant', 'content': _novelContext(full.toString())});
+      msgs.add(
+          {'role': 'assistant', 'content': _novelContext(full.toString())});
     }
     msgs.add({'role': 'user', 'content': userPrompt});
 
@@ -1612,8 +1792,8 @@ Future<({String text, String? error})> generateNovelStream(
     for (var attempt = 0; attempt < segMaxRetry; attempt++) {
       segBuf.clear();
       try {
-        await callDsChatAPIStream(apiKey, model, msgs, DS_MAX_OUTPUT_TOKENS, 0.9,
-            null, (s) {
+        await callDsChatAPIStream(
+            apiKey, model, msgs, DS_MAX_OUTPUT_TOKENS, 0.9, null, (s) {
           segBuf.write(s);
           onChunk?.call(s);
         }, usageAcc);
@@ -1678,7 +1858,11 @@ String cleanTTSText(String s, [String lang = '']) {
       sb.write(ch);
     }
   }
-  return sb.toString().split(RegExp(r'\s+')).where((e) => e.isNotEmpty).join(' ');
+  return sb
+      .toString()
+      .split(RegExp(r'\s+'))
+      .where((e) => e.isNotEmpty)
+      .join(' ');
 }
 
 /// 面向西文（法 / 俄 / 韩 / 英）的清洗。
@@ -1688,7 +1872,8 @@ String _cleanTTSTextKeepPunct(String s, String lang) {
 
   // 全角空格、引号、括号替换为"停顿"
   t = t.replaceAll(
-      RegExp(r'[\u3000"\u201C\u201D\u00AB\u00BB\u300C\u300D\u300E\u300F\uFF08\uFF09()\[\]{}<>\u300A\u300B\u3010\u3011\u3008\u3009\u3014\u3015\u3016\u3017]'),
+      RegExp(
+          r'[\u3000"\u201C\u201D\u00AB\u00BB\u300C\u300D\u300E\u300F\uFF08\uFF09()\[\]{}<>\u300A\u300B\u3010\u3011\u3008\u3009\u3014\u3015\u3016\u3017]'),
       ' ');
   t = t.replaceAll(RegExp(r'[#@&+=\\|^\$%/*]'), ' ');
 
@@ -1704,7 +1889,8 @@ String _cleanTTSTextKeepPunct(String s, String lang) {
   t = t.replaceAll(RegExp(r'[\u2013\u2014\u2015\u2026\u00B7\u2022]'), ' ');
 
   // 防止语音串扰：从谚文语音去掉假名，从西里尔语音去掉汉字
-  if (lang == 'ko') t = t.replaceAll(RegExp(r'[\u3040-\u309F\u30A0-\u30FF]'), ' ');
+  if (lang == 'ko')
+    t = t.replaceAll(RegExp(r'[\u3040-\u309F\u30A0-\u30FF]'), ' ');
   if (lang == 'ru') t = t.replaceAll(RegExp(r'[\u4E00-\u9FFF]'), ' ');
 
   return t.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).join(' ');

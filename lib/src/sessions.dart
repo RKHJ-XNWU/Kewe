@@ -17,7 +17,7 @@ import 'files.dart';
 import 'globals.dart';
 import 'kewe_secrets.dart';
 
-const int DS_MAX_OUTPUT_TOKENS = 120000;
+const int DS_MAX_OUTPUT_TOKENS = 384 * DB_TOKEN_K;
 
 /// ★ 维度：同一个会话（同一个聊天窗口）内，豆包与 DeepSeek 的消息流互相隔离。
 ///   DS_DIM_DS = DeepSeek 维度（默认）    DS_DIM_DB = 豆包维度
@@ -25,6 +25,7 @@ const int DS_MAX_OUTPUT_TOKENS = 120000;
 ///   旧数据没有第 9 字段 -> 解析为 DS_DIM_DS，与历史 100% 兼容。
 const String DS_DIM_DS = 'ds';
 const String DS_DIM_DB = 'db';
+
 /// ST 维度：独立于 DeepSeek（ds）/ 豆包（db）的第三条消息流，三者互不可见。
 const String DS_DIM_ST = 'st';
 const int DS_NORMAL_OUTPUT_TOKENS = 8192;
@@ -48,6 +49,7 @@ String _unprotectField(String escaped, {String fallback = ''}) {
     return fallback;
   }
 }
+
 const int DS_TTS_MAX_RUNES = 1000000;
 const int DS_TTS_CHUNK_RUNES = 2500;
 const int DS_TTS_CHUNK_HARD_MAX = 2900;
@@ -93,6 +95,7 @@ class DsMessage {
   String reasoning;
   bool reasoningTruncated;
   DsTokenUsage? usage;
+
   /// ★ 维度：'ds'（DeepSeek，默认）或 'db'（豆包）
   String dim;
 
@@ -416,7 +419,8 @@ bool updateDsSession(String id, String newTitle, String updatedAt) {
     final parts = trimmed.substring(3).split('|');
     if (parts.length < 4) continue;
     if (parts[0] == id) {
-      lines[i] = '#S|${parts[0]}|${escDs(_protectField(newTitle))}|${parts[2]}|$updatedAt';
+      lines[i] =
+          '#S|${parts[0]}|${escDs(_protectField(newTitle))}|${parts[2]}|$updatedAt';
       changed = true;
       break;
     }
@@ -432,7 +436,8 @@ bool appendDsMessage(DsMessage m) {
     return false;
   }
   final d = m.dim.isEmpty ? DS_DIM_DS : m.dim;
-  final line = '#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
+  final line =
+      '#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
       '${m.attachments}|${escDs(_protectField(m.reasoning))}|${dsEncodeUsageField(m.usage)}'
       '|$d\n';
   try {
@@ -473,7 +478,8 @@ DsMessage? updateDsMessageContent(String sessionID, String msgID,
     final created = parts[3];
     final mergedUsage = dsMergeUsage(dsParseUsageField(parts), addUsage);
     final keepDim = parts.length >= 8 ? parts[7].trim() : DS_DIM_DS;
-    lines[i] = '#M|${parts[0]}|${parts[1]}|${escDs(_protectField(newContent))}|$created|$att|'
+    lines[i] =
+        '#M|${parts[0]}|${parts[1]}|${escDs(_protectField(newContent))}|$created|$att|'
         '${escDs(_protectField(newReasoning))}|${dsEncodeUsageField(mergedUsage)}|'
         '${keepDim.isEmpty ? DS_DIM_DS : keepDim}';
     out = DsMessage(
@@ -570,7 +576,8 @@ class _DsTailEntry {
   final int limit;
   final String dimKey;
   final TailResult result;
-  const _DsTailEntry(this.size, this.mtimeMs, this.limit, this.dimKey, this.result);
+  const _DsTailEntry(
+      this.size, this.mtimeMs, this.limit, this.dimKey, this.result);
 }
 
 final Map<String, _DsTailEntry> _dsTailCache = <String, _DsTailEntry>{};
@@ -616,7 +623,8 @@ DsSession? readDsSessionHeaderFast(String path) {
   try {
     final raf = f.openSync();
     try {
-      final head = raf.readSync(size < _DS_HEAD_READ_BYTES ? size : _DS_HEAD_READ_BYTES);
+      final head =
+          raf.readSync(size < _DS_HEAD_READ_BYTES ? size : _DS_HEAD_READ_BYTES);
       final text = utf8.decode(head, allowMalformed: true);
       for (final raw in text.split('\n')) {
         final line = raw.trim();
@@ -643,7 +651,8 @@ void invalidateDsSessionCaches(String path) {
 
 /// 登录/注册后把旧版本 KWENC1 聊天密文迁移为明文，便于后端直接编辑数据文件。
 /// 已经是明文的字段跳过，可重复调用。
-int encryptLegacyUserDataForCurrentUser() => decryptLegacyChatDataForCurrentUser();
+int encryptLegacyUserDataForCurrentUser() =>
+    decryptLegacyChatDataForCurrentUser();
 
 int decryptLegacyChatDataForCurrentUser() {
   if (currentUserId.isEmpty) return 0;
@@ -674,17 +683,27 @@ int decryptLegacyChatDataForCurrentUser() {
       if (line.startsWith('#S|') && parts.length >= 4) {
         final title = unescDs(parts[1]);
         if (keweIsEncryptedText(title)) {
-          try { parts[1] = escDs(keweDecryptTextForUser(currentUserId, title)); changed = true; } catch (_) {}
+          try {
+            parts[1] = escDs(keweDecryptTextForUser(currentUserId, title));
+            changed = true;
+          } catch (_) {}
         }
       } else if (line.startsWith('#M|') && parts.length >= 4) {
         final content = unescDs(parts[2]);
         if (keweIsEncryptedText(content)) {
-          try { parts[2] = escDs(keweDecryptTextForUser(currentUserId, content)); changed = true; } catch (_) {}
+          try {
+            parts[2] = escDs(keweDecryptTextForUser(currentUserId, content));
+            changed = true;
+          } catch (_) {}
         }
         if (parts.length >= 6) {
           final reasoning = unescDs(parts[5]);
           if (keweIsEncryptedText(reasoning)) {
-            try { parts[5] = escDs(keweDecryptTextForUser(currentUserId, reasoning)); changed = true; } catch (_) {}
+            try {
+              parts[5] =
+                  escDs(keweDecryptTextForUser(currentUserId, reasoning));
+              changed = true;
+            } catch (_) {}
           }
         }
       }
@@ -721,7 +740,8 @@ void _putDsMsgsCache(String path, int size, int mtimeMs, List<DsMessage> msgs) {
     final removed = _dsMsgsCache.remove(k);
     if (removed != null) _dsMsgsCacheChars -= removed.chars;
   }
-  while (_dsMsgsCacheChars > _DS_MSGS_CACHE_MAX_CHARS && _dsMsgsCache.length > 1) {
+  while (
+      _dsMsgsCacheChars > _DS_MSGS_CACHE_MAX_CHARS && _dsMsgsCache.length > 1) {
     final k = _dsMsgsCache.keys.first;
     final removed = _dsMsgsCache.remove(k);
     if (removed != null) _dsMsgsCacheChars -= removed.chars;
@@ -746,7 +766,8 @@ List<DsSession> getAllDsSessions() {
   return sessions;
 }
 
-DsSession? getDsSession(String id) => readDsSessionHeaderFast(dsSessionPath(id));
+DsSession? getDsSession(String id) =>
+    readDsSessionHeaderFast(dsSessionPath(id));
 
 /// 返回的消息列表可能是缓存对象，调用方只读、不得就地修改字段
 List<DsMessage> getDsMessages(String sessionID, {String? dim}) {
@@ -765,8 +786,11 @@ List<DsMessage> getDsMessages(String sessionID, {String? dim}) {
   //   这样同一会话在 ds / db 两个维度之间切换都不会破坏缓存。
   List<DsMessage> all;
   final c = _dsMsgsCache[path];
-  if (size != null && mtimeMs != null && c != null &&
-      c.size == size && c.mtimeMs == mtimeMs) {
+  if (size != null &&
+      mtimeMs != null &&
+      c != null &&
+      c.size == size &&
+      c.mtimeMs == mtimeMs) {
     all = c.msgs;
   } else {
     final sf = readDsSessionFile(path);
@@ -787,7 +811,8 @@ List<DsMessage> pickHistoryWindow(List<DsMessage> history) {
   var totalChars = 0;
   for (var i = history.length - 1; i >= 0; i--) {
     final m = history[i];
-    if (m.role != 'user' && m.role != 'assistant' && m.role != 'system') continue;
+    if (m.role != 'user' && m.role != 'assistant' && m.role != 'system')
+      continue;
     final cl = runeLen(m.content);
     if (selected.length >= DS_MAX_HISTORY_MSGS) break;
     if (totalChars + cl > DS_MAX_HISTORY_CHARS && selected.isNotEmpty) break;
@@ -945,7 +970,8 @@ void migrateDsChatToPerSession() {
       '#S|${sess.id}|${escDs(_protectField(sess.title))}|${sess.createdAt}|${sess.updatedAt}'
     ];
     for (final m in bySess[sess.id] ?? const <DsMessage>[]) {
-      lines.add('#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
+      lines.add(
+          '#M|${m.id}|${m.role}|${escDs(_protectField(m.content))}|${m.createdAt}|'
           '${m.attachments}|${escDs(_protectField(m.reasoning))}|');
     }
     var content = lines.join('\n');

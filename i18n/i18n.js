@@ -365,6 +365,14 @@
     // 属性名 → 原文保存用の内部キー
     function attrStoreKey(name) { return '__i18nAttr_' + name.replace(/[^a-z]/gi, ''); }
 
+    // 流式正文/思考面板每个字符都会触发 characterData；不要对这些内容反复翻译。
+    // 一次性新消息仍在 childList 里翻译，正文内部追加则跳过。
+    function inChatStream(node) {
+        var el = node && (node.nodeType === 1 ? node : node.parentNode);
+        if (!el || !el.closest) return false;
+        return !!el.closest('.dsc-msg-bubble, .dsc-msg-translation, .dsc-think-body, .dsc-think-body-text');
+    }
+
     function startObserver() {
         if (observer || !global.MutationObserver || !document.body) return;
         observer = new MutationObserver(function (muts) {
@@ -374,6 +382,7 @@
                 if (m.type === 'characterData') {
                     var tn = m.target;
                     if (!tn || !tn.parentNode || tn.parentNode.nodeType !== 1) continue;
+                    if (inChatStream(tn)) continue;
                     if (tn.__i18nSrc === undefined) {
                         // 未翻訳ノードへの書き込み → 通常の翻訳対象
                         schedule(tn.parentNode);
@@ -413,8 +422,9 @@
                     var added = m.addedNodes || [];
                     for (var j = 0; j < added.length; j++) {
                         var nd = added[j];
+                        if (inChatStream(nd)) continue;
                         if (nd.nodeType === 1) schedule(nd);
-                        else if (nd.nodeType === 3 && nd.parentNode) schedule(nd.parentNode);
+                        else if (nd.nodeType === 3 && nd.parentNode && !inChatStream(nd.parentNode)) schedule(nd.parentNode);
                     }
                 }
             }

@@ -43,13 +43,13 @@
     var LEVEL_MAX = 999;
     var DEFAULT_LEVEL = FORCED_LEVEL;
     var ADVANCED_DEFAULT_LEVEL = FORCED_LEVEL;
-    // 全站 K = 1000：上下文固定 1024K=1,024,000；输出 64K/128K/256K/384K，默认 256K。
+    // 全站 K = 1000：上下文固定 1024K=1,024,000；输出 64K/128K/256K/384K，默认 384K（十进制 384,000）。
     var DSC_LIMIT_EVOLVING_PREFIX = ['doubao-seed-evolving'];
     var DSC_LIMIT_PRO_ROOT = 'doubao-seed-2-1-pro';
     var DSC_LIMIT_PRO_VERSION = '260915';
     var DSC_LIMIT_LITE_PREFIX = ['doubao-seed-2-1-lite'];
     var DSC_OUTPUT_OPTIONS = [64000, 128000, 256000, 384000];
-    var DSC_LIMIT_OUTPUT_TOKENS = 256000;
+    var DSC_LIMIT_OUTPUT_TOKENS = 384000;
     var DSC_LIMIT_CTX_TOKENS = 1024000;
     // 旧版本号 → 当前版本号（与后端 dbModelValueAliases 保持一致）
     var DSC_LIMIT_MODEL_ALIAS = {
@@ -97,7 +97,20 @@
         var n = Number(value);
         var legacy = { 65536: 64000, 131072: 128000, 262144: 256000, 393216: 384000 };
         n = legacy[n] || n;
-        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 256000;
+        return DSC_OUTPUT_OPTIONS.indexOf(n) >= 0 ? n : 384000;
+    }
+
+    // 模型固定特例：用户规则优先于上游二进制限制。
+    // 角色扮演（charter / character）固定 32K=32,000；2.0-lite 固定 128K=128,000。
+    function dscModelOutputCap(m) {
+        m = dscCanonicalLimitModel(m);
+        if (!m) return DSC_LIMIT_OUTPUT_TOKENS;
+        if (m.indexOf('doubao-seed-character') === 0 || m.indexOf('doubao-seed-charter') === 0 ||
+            m.indexOf('doubao-charter') === 0 || m.indexOf('charter') >= 0) return 32000;
+        if (m.indexOf('doubao-seed-2-0-lite') === 0 || m.indexOf('doubao-seed-2.0-lite') === 0 ||
+            m.indexOf('doubao-2-0-lite') === 0 || m.indexOf('doubao-2.0-lite') === 0 ||
+            m.indexOf('doubao-lite-2-0') === 0 || m.indexOf('doubao-lite-2.0') === 0) return 128000;
+        return DSC_LIMIT_OUTPUT_TOKENS;
     }
 
     // 控制中心通过此接口同步档位；模型目录、推理弹窗会立即使用新值。
@@ -126,7 +139,7 @@
         return {
             kind: 'universal',
             model: m || dscUnnamedModel(),
-            maxOutput: DSC_LIMIT_OUTPUT_TOKENS,
+            maxOutput: dscModelOutputCap(m),
             context: DSC_LIMIT_CTX_TOKENS,
             dynamic: false
         };
@@ -164,13 +177,14 @@
             return free[lang] || free.zh;
         }
         var ctx = dscTokenLabel(lim.context);
+        var globalOut = dscOutputTokenLabel(DSC_LIMIT_OUTPUT_TOKENS);
         var map = {
-            zh: '全部模型（预设、自定义、各维度）共享当前全局强制上限：上下文窗口 ' + ctx + '（固定），最大输出 ' + out + '；推理等级内的输出设置已忽略。',
-            ja: 'すべてのモデル（プリセット・カスタム・各次元）に現在のグローバル上限を強制適用：コンテキスト ' + ctx + '（固定）、最大出力 ' + out + '。推論レベル内の出力設定は無視されます。',
-            en: 'The current global caps apply to every model (preset, custom and all dimensions): context ' + ctx + ' (fixed), maximum output ' + out + '; output settings inside the reasoning level are ignored.',
-            ko: '모든 모델(프리셋·커스텀·모든 차원)에 현재 전역 상한을 강제 적용: 컨텍스트 ' + ctx + '(고정), 최대 출력 ' + out + '. 추론 레벨의 출력 설정은 무시됩니다.',
-            ru: 'Текущие глобальные лимиты применяются ко всем моделям (стандартным, пользовательским и всем режимам): контекст ' + ctx + ' (фиксированный), максимальный вывод ' + out + '; настройки вывода уровня рассуждений игнорируются.',
-            fr: "Les plafonds globaux actuels s'imposent à tous les modèles (prédéfinis, personnalisés et toutes dimensions) : contexte " + ctx + " (fixe), sortie maximale " + out + " ; le réglage de sortie du niveau de raisonnement est ignoré."
+            zh: '上下文窗口 ' + ctx + '（固定）；全局最大输出 ' + globalOut + '。当前模型实际上限 ' + out + '。角色扮演固定 32K、2.0-lite 固定 128K（均为十进制）；推理等级内的输出设置已忽略。',
+            ja: 'コンテキスト ' + ctx + '（固定）。グローバル最大出力 ' + globalOut + '。現在のモデル実際上限 ' + out + '。ロールプレイは 32K、2.0-lite は 128K 固定（10進）。推論レベル内の出力設定は無視されます。',
+            en: 'Context window ' + ctx + ' (fixed); global maximum output ' + globalOut + '. Current model effective cap: ' + out + '. Roleplay is fixed at 32K and 2.0-lite at 128K (decimal); output settings inside the reasoning level are ignored.',
+            ko: '컨텍스트 ' + ctx + '(고정); 전역 최대 출력 ' + globalOut + '. 현재 모델 실제 상한 ' + out + '. 역할극은 32K, 2.0-lite는 128K로 고정(10진수). 추론 레벨의 출력 설정은 무시됩니다.',
+            ru: 'Контекст ' + ctx + ' (фиксированный); глобальный максимум вывода ' + globalOut + '. Фактический лимит текущей модели: ' + out + '. Ролевые модели — 32K, 2.0-lite — 128K (десятичные); настройки вывода уровня рассуждений игнорируются.',
+            fr: "Contexte " + ctx + " (fixe) ; sortie maximale globale " + globalOut + ". Plafond effectif du modèle courant : " + out + ". Roleplay fixé à 32K, 2.0-lite à 128K (décimal) ; le réglage de sortie du niveau de raisonnement est ignoré."
         };
         return map[lang] || map.zh;
     }

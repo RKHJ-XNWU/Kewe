@@ -979,6 +979,8 @@
 /* モバイルではさらに厳格に */
 @media (max-width: 720px) {
     .dsc-msg { contain-intrinsic-size: auto 160px; }
+    /* 手机滚动只锁定纵向手势，避免横向拖动触发额外的命中测试 */
+    .dsc-messages { touch-action: pan-y; -webkit-overflow-scrolling: touch; }
 }
 /* ============================================================
    全会話検索のフローティングウィンドウ（メモリキャッシュ + カーソルページング版）

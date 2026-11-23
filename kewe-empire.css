@@ -536,3 +536,43 @@ html.kewe-auth-locked #kewePowerOrb { display: none !important; }
   .kwe-fx-aurora, .kwe-fx-grid, .kwe-fx-scan, .kwe-fx-particle,
   #kewePowerOrb::before, .kwe-core-ring, #keweGateSos { animation: none !important; }
 }
+
+/* ---------- 移动端性能优先：保留静态氛围，关闭持续合成/重绘 ---------- */
+@media (max-width: 820px), (hover: none) and (pointer: coarse) {
+  /* 只保留一层静态极光；其余粒子、网格、扫描线在手机端不生成视觉噪声。 */
+  #keweEmpireFx {
+    opacity: .22;
+    mix-blend-mode: normal;
+  }
+  .kwe-fx-a2, .kwe-fx-a3, .kwe-fx-grid, .kwe-fx-scan, .kwe-fx-particle {
+    display: none !important;
+  }
+  .kwe-fx-a1 {
+    animation: none !important;
+    transform: none !important;
+    filter: blur(30px);
+    opacity: .26;
+    will-change: auto;
+  }
+  #keweGateSos, #kewePowerOrb::before, .kwe-core-ring {
+    animation: none !important;
+  }
+  .dsc-kewe-ring, .dsc-kewe-star {
+    animation: none !important;
+  }
+  /* 顶栏/底栏的小型无限动画在手机上全部停掉；保留点击态与短过渡。 */
+  .dsc-output-limit-btn::after,
+  .dsc-context-live-dot,
+  .dsc-live-pill i,
+  #deepseekChatApp .dsc-toplang-btn::before,
+  #deepseekChatApp .dsc-db-mode-btn.active .dsc-db-mascot,
+  #deepseekChatApp .dsc-quick-model-btn::before,
+  .dsc-output-core::after,
+  .dsc-core-orbit.orbit-a,
+  .dsc-core-orbit.orbit-b,
+  .dsc-output-option.selected .dsc-option-scan,
+  #deepseekChatApp .dsc-switch-btn.db-pulse,
+  .pv-anim-breathing {
+    animation: none !important;
+  }
+}

@@ -74,7 +74,8 @@ String dsDimOf(String model, [String dim = '']) {
 }
 
 int dbToolMaxIterFor(String model, String apiUrl, int rounds) {
-  var maxIter = apiUrl != DS_API_URL ? dbToolMaxRounds(model) : DS_TOOL_MAX_ITERATIONS;
+  var maxIter =
+      apiUrl != DS_API_URL ? dbToolMaxRounds(model) : DS_TOOL_MAX_ITERATIONS;
   if (maxIter <= 0) maxIter = DS_TOOL_MAX_ITERATIONS;
   if (rounds > maxIter) maxIter = rounds;
   return maxIter;
@@ -97,6 +98,7 @@ Future<void> handleDsChatSendStream(
   bool enableTools, {
   /// ★ 维度（'ds' / 'db' / 'st'）。空串 → 照旧从模型判定。
   String dim = '',
+
   /// 用户是否在 UI 上开启了「联网搜索」。
   /// 抖音百科（方舟联网内容插件）只在确实要联网时才启用：
   /// 否则每一句普通聊天都会先跑一轮检索，首包被拖到数秒之后，
@@ -104,8 +106,10 @@ Future<void> handleDsChatSendStream(
   bool webSearch = false,
   ModelRouteDecision? route,
   String apiUrl = DS_API_URL,
+
   /// UI 语言（用于选择拒绝禁令）
   String lang = '',
+
   /// 方舟专用附加字段（如 thinking）。DeepSeek 通道保持为 null。
   Map<String, dynamic>? extraBody,
 
@@ -192,10 +196,10 @@ Future<void> handleDsChatSendStream(
     // 工具模式 × 联网内容插件：方舟客服确认 Responses API 的 tools
     // 数组可同时放置 web_search 与 function，由模型自动选择调用，故不再互斥。
     // 仅在豆包通道 + 已开信源 + 无音视频时混用，其余退回原有工具链。
-    final toolWikiSources = (apiUrl != DS_API_URL &&
-            (webSearch || forcedSources.isNotEmpty))
-        ? dbEffectiveSources(forcedSources)
-        : const <String>[];
+    final toolWikiSources =
+        (apiUrl != DS_API_URL && (webSearch || forcedSources.isNotEmpty))
+            ? dbEffectiveSources(forcedSources)
+            : const <String>[];
     final useWikiTools = toolWikiSources.isNotEmpty &&
         pendingVideoIds.isEmpty &&
         dbWikiMediaSupported(mediaParts);
@@ -321,8 +325,7 @@ Future<void> handleDsChatSendStream(
         'reasoning=${runeLen(toolReasoningBuf.toString())} 字, toolLogs=${toolLogs.length} 条');
 
     if (toolLogs.isEmpty && contentBuf.toString().trim().isEmpty) {
-      reasoningPump.push(
-          'AI 判断该问题无需调用工具，也没有返回正文。\n');
+      reasoningPump.push('AI 判断该问题无需调用工具，也没有返回正文。\n');
     }
 
     final now = DateTime.now();
@@ -397,8 +400,9 @@ Future<void> handleDsChatSendStream(
   // 方舟文档硬约束：sources=[douyin] 等属于「联网内容插件」，
   // 仅 Responses API 支持，Chat Completions 无法指定；因此这里分流。
   // 仅豆包通道 + 用户显式开启信源 + 纯文本输入时启用。
-  final wikiSources =
-      apiUrl != DS_API_URL ? dbEffectiveSources(forcedSources) : const <String>[];
+  final wikiSources = apiUrl != DS_API_URL
+      ? dbEffectiveSources(forcedSources)
+      : const <String>[];
   // 图片（image_url）可随 input_image 一起提交，与 web_search 并存；
   // 音频 / 视频在插件通道不保证可用，出现时回退原生多模态。
   final canUseWiki = (webSearch || forcedSources.isNotEmpty) &&
@@ -458,7 +462,8 @@ Future<void> handleDsChatSendStream(
         },
         (s) {
           if (reasoningStart != null) {
-            reasoningTotalMs += DateTime.now().difference(reasoningStart!).inMilliseconds;
+            reasoningTotalMs +=
+                DateTime.now().difference(reasoningStart!).inMilliseconds;
             reasoningStart = null;
           }
           firstContentAt ??= DateTime.now();
@@ -473,53 +478,55 @@ Future<void> handleDsChatSendStream(
       return;
     }
   } else {
-  try {
-    await callDsMultiRoundStream(
-      apiKey,
-      model,
-      apiMessages,
-      maxTokens,
-      temperature,
-      rounds,
-      (round, total, stage) {
-        sse.send('round', {'round': round, 'total': total, 'stage': stage});
-      },
-      (s) {
-        reasoningBuf.write(s);
-        reasoningStart ??= DateTime.now();
-        reasoningPump.push(s);
-      },
-      (s) {
-        if (s == '\x00__NEW_ROUND__\x00') {
-          contentBuf.clear();
-          sse.send('new_round', {'reset': true});
-          return;
-        }
-        if (reasoningStart != null) {
-          reasoningTotalMs += DateTime.now().difference(reasoningStart!).inMilliseconds;
-          reasoningStart = null;
-        }
-        firstContentAt ??= DateTime.now();
-        contentBuf.write(s);
-        sse.send('content', {'delta': s});
-      },
-      usageAcc,
-      apiUrl: apiUrl,
-      extraBody: extraBody,
-      onReferences: (list) {
-        // 豆包自带联网搜索的信源：仅在方舟通道出现，DeepSeek 恒为空。
-        sse.send('sources', {'items': list, 'channel': 'doubao'});
-      },
-    );
-  } catch (e) {
-    await sse.send('error', {'message': '$e'});
-    await sse.done();
-    return;
-  }
+    try {
+      await callDsMultiRoundStream(
+        apiKey,
+        model,
+        apiMessages,
+        maxTokens,
+        temperature,
+        rounds,
+        (round, total, stage) {
+          sse.send('round', {'round': round, 'total': total, 'stage': stage});
+        },
+        (s) {
+          reasoningBuf.write(s);
+          reasoningStart ??= DateTime.now();
+          reasoningPump.push(s);
+        },
+        (s) {
+          if (s == '\x00__NEW_ROUND__\x00') {
+            contentBuf.clear();
+            sse.send('new_round', {'reset': true});
+            return;
+          }
+          if (reasoningStart != null) {
+            reasoningTotalMs +=
+                DateTime.now().difference(reasoningStart!).inMilliseconds;
+            reasoningStart = null;
+          }
+          firstContentAt ??= DateTime.now();
+          contentBuf.write(s);
+          sse.send('content', {'delta': s});
+        },
+        usageAcc,
+        apiUrl: apiUrl,
+        extraBody: extraBody,
+        onReferences: (list) {
+          // 豆包自带联网搜索的信源：仅在方舟通道出现，DeepSeek 恒为空。
+          sse.send('sources', {'items': list, 'channel': 'doubao'});
+        },
+      );
+    } catch (e) {
+      await sse.send('error', {'message': '$e'});
+      await sse.done();
+      return;
+    }
   }
 
   if (reasoningStart != null) {
-    reasoningTotalMs += DateTime.now().difference(reasoningStart!).inMilliseconds;
+    reasoningTotalMs +=
+        DateTime.now().difference(reasoningStart!).inMilliseconds;
     reasoningStart = null;
   }
 
@@ -827,7 +834,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (!const <String>['moji', 'toutiao'].contains(explicitPlugin)) {
     explicitPlugin = '';
   }
-  final injectedPrompts = asList(body['injectedPrompts']).map((e) => '$e').toList();
+  final injectedPrompts =
+      asList(body['injectedPrompts']).map((e) => '$e').toList();
   final stream = mBool(body, 'stream');
 
   if (content.isEmpty && fileIDs.isEmpty && !novelMode) {
@@ -885,9 +893,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     await dsJSONErr(res, 400, '请先配置 DeepSeek API Key');
     return;
   }
-  final callKey = useDoubao
-      ? dbCfg.apiKey
-      : (useRelay ? relayCfg.apiKey : cfg.apiKey);
+  final callKey =
+      useDoubao ? dbCfg.apiKey : (useRelay ? relayCfg.apiKey : cfg.apiKey);
   final callUrl = useDoubao
       ? dbChatEndpoint()
       : (useRelay ? relayChatEndpoint() : DS_API_URL);
@@ -903,9 +910,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //     · 本请求 enableTools 被硬性置为 false，并同步 DsToolGate 为 OFF；
   //     · 插件走 Responses API 的 web_search(sources=[moji|toutiao])，
   //       与 function calling 是两条完全独立的通道。
-  final List<String> explicitSources = explicitPlugin.isEmpty
-      ? const <String>[]
-      : <String>[explicitPlugin];
+  final List<String> explicitSources =
+      explicitPlugin.isEmpty ? const <String>[] : <String>[explicitPlugin];
   if (explicitPlugin.isNotEmpty) {
     if (!useDoubao) {
       await dsJSONErr(res, 400, '墨迹天气 / 头条图文插件仅支持豆包模型，请先切换到豆包模式');
@@ -938,11 +944,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (novelMode) {
     if (stream) {
       await handleDsNovelGenerationStream(req, sessionID, cfg.apiKey, model,
-          novelTheme, novelTags, novelGenre, novelStory, novelChars, dim: chatDim);
+          novelTheme, novelTags, novelGenre, novelStory, novelChars,
+          dim: chatDim);
       return;
     }
-    await handleDsNovelGeneration(req, sessionID, cfg.apiKey, model,
-        novelTheme, novelTags, novelGenre, novelStory, novelChars, dim: chatDim);
+    await handleDsNovelGeneration(req, sessionID, cfg.apiKey, model, novelTheme,
+        novelTags, novelGenre, novelStory, novelChars,
+        dim: chatDim);
     return;
   }
 
@@ -960,13 +968,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
   // ★★★ 统一强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
-  //   ★ 2026-11-23 起所有模型：上下文 1024K（1K=1000，固定 1,024,000）；最大输出读取全局 64K–384K 档位。
+  //   ★ 2026-11-23 起所有模型：上下文 1024K（1K=1000，固定 1,024,000）；最大输出读取全局 64K–384K 档位；角色扮演固定 32K、2.0-lite 固定 128K。
   //     —— 预设模型、自定义模型、中转站、DeepSeek 维度全部统一，无例外。
   //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
   final forcedOut = dbForcedMaxOutput(model);
   if (forcedOut > 0) {
     if (maxTokens != forcedOut) {
-      logp('🔒 强制最大输出: $model → $forcedOut tokens（原 $maxTokens，忽略推理等级 Lv.$level 的 max_tokens）');
+      logp(
+          '🔒 强制最大输出: $model → $forcedOut tokens（原 $maxTokens，忽略推理等级 Lv.$level 的 max_tokens）');
     }
     maxTokens = forcedOut;
   }
@@ -1101,7 +1110,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   if (longTextMode) {
     final target = targetChars <= 0 ? DS_TARGET_CHARS_5M : targetChars;
-    userPrompt += '''\n\n【重要指令 · 超长文模式】\n请原样输出完整长文。目标字数为 $target 字（约 $target 字相当）。\n要求:\n1. 不写"接下来..."、"以下是..."、"总结"之类的前言或结语\n2. 从正文直接开始，章节划分清晰，内容充实\n3. 不以长度限制为由提前结束，尽可能写完\n4. 保持内容质量，避免重复注水''';
+    userPrompt +=
+        '''\n\n【重要指令 · 超长文模式】\n请原样输出完整长文。目标字数为 $target 字（约 $target 字相当）。\n要求:\n1. 不写"接下来..."、"以下是..."、"总结"之类的前言或结语\n2. 从正文直接开始，章节划分清晰，内容充实\n3. 不以长度限制为由提前结束，尽可能写完\n4. 保持内容质量，避免重复注水''';
   }
 
   // 图片内容提取（仅 DeepSeek 通道需要：先让视觉模型转述，再交给文本模型）
@@ -1113,8 +1123,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       final b64 = dsFileToBase64(imgID);
       if (b64.error == null && b64.b64.isNotEmpty) {
         logp('🖼️ 检测到第 ${i + 1}/${fileCtx.imageFileIds.length} 张图片。提取内容中...');
-        final visionPrompt =
-            '请详细说明第 ${i + 1} 张图片的内容，提取其中包含的所有文字，并归纳要点。';
+        final visionPrompt = '请详细说明第 ${i + 1} 张图片的内容，提取其中包含的所有文字，并归纳要点。';
         try {
           final desc = await callDsVisionAPI(
               callKey, visionPrompt, b64.b64, b64.mime, 4096, 1.0,
@@ -1193,10 +1202,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // idleTimeout 是 120 秒：流式模式下若等到主函数末尾才建立 SSE，
   // 等待期间连接会被掐断。因此「流式 + 含视频」时把媒体准备挪到 SSE 建连之后
   // （SSE 自带 15 秒心跳负责保活）。
-  final deferVideoPrepare = useDoubao &&
-      stream &&
-      !longTextMode &&
-      fileCtx.videoFileIds.isNotEmpty;
+  final deferVideoPrepare =
+      useDoubao && stream && !longTextMode && fileCtx.videoFileIds.isNotEmpty;
   if (useDoubao && fileCtx.hasMedia) {
     for (final id in fileCtx.imageFileIds) {
       final b64 = dsFileToBase64(id);
@@ -1218,7 +1225,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         return;
       }
       final prepared = await dbPrepareAudioForArk(raw, meta.name);
-      dbMediaParts.add(dbAudioPart(prepared.format, base64Encode(prepared.bytes)));
+      dbMediaParts
+          .add(dbAudioPart(prepared.format, base64Encode(prepared.bytes)));
       logp('🎧 将音频直接发送给豆包语音理解: ${meta.name} (${prepared.format})');
     }
     // 视频：不再 readAsBytesSync + base64（2GB 走那条路必然 OOM）。
@@ -1345,8 +1353,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   // ============ 流式分支 ============
   if (stream && !longTextMode) {
-    await handleDsChatSendStream(req, callKey, model, apiMessages,
-        maxTokens, temperature, rounds, sessionID, content, fileIDs, useTools,
+    await handleDsChatSendStream(req, callKey, model, apiMessages, maxTokens,
+        temperature, rounds, sessionID, content, fileIDs, useTools,
         webSearch: webSearch || forcedSources.isNotEmpty,
         route: route,
         apiUrl: callUrl,
@@ -1366,7 +1374,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp('🔧 启用工具模式，开始多轮 function calling（最多 $DS_TOOL_MAX_ITERATIONS 轮）');
     final usageAcc = DsUsageAcc();
     final agentMsgs = <Map<String, dynamic>>[
-      {'role': 'system', 'content': dbToolSystemPromptFor(model, callUrl, uiLang)},
+      {
+        'role': 'system',
+        'content': dbToolSystemPromptFor(model, callUrl, uiLang)
+      },
       ...apiMessages,
     ];
     ToolStreamOutcome outcome;
@@ -1478,7 +1489,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       final rb = StringBuffer();
       final cb = StringBuffer();
       await callDbVideoResponsesStream(
-        callKey, model, apiMessages, maxTokens,
+        callKey,
+        model,
+        apiMessages,
+        maxTokens,
         (s) => rb.write(s),
         (s) => cb.write(s),
         usageAcc,
