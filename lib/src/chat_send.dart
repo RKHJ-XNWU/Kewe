@@ -1289,6 +1289,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final sysParts = <String>[];
   sysParts.add(dsLangSystemPrompt(uiLang));
   sysParts.add(knowledgeSystemPromptForChat(uiLang));
+  final autoKnowledge = knowledgeContextForQuery(content);
+  if (autoKnowledge.isNotEmpty) sysParts.add(autoKnowledge);
   if (deepThink) {
     sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
   }

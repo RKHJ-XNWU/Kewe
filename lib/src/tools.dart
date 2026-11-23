@@ -740,7 +740,8 @@ List<Map<String, dynamic>> buildDsTools() {
         '检索当前账号知识库和共享 skill.md 基础资料。任何用户事实、偏好、历史决定都应先检索。',
         objSchema({
           'query': str('检索词'),
-          'limit': integer('最多返回条数，默认 12')
+          'limit': integer('最多返回条数，默认 12'),
+          'collection': str('可选知识域：core/emergency/phone/site/knowledge/language/security/execution')
         }, ['query'])),
     fnTool(
         'knowledge_read',
@@ -753,6 +754,7 @@ List<Map<String, dynamic>> buildDsTools() {
           'id': str('已有条目 id；新建可省略'),
           'title': str('标题'),
           'content': str('正文'),
+          'collection': str('知识域：core/emergency/phone/site/knowledge/language/security/execution'),
           'tags': {
             'type': 'array',
             'description': '标签数组',
@@ -2708,6 +2710,7 @@ Future<String> executeDsTool(String name, Map<String, dynamic> args) async {
           title: mStr(args, 'title'),
           content: mStr(args, 'content'),
           tags: tags,
+          collection: mStr(args, 'collection').isEmpty ? null : mStr(args, 'collection'),
         );
         return '已保存知识 ${meta['id']} · ${meta['title']}';
       } catch (e) {

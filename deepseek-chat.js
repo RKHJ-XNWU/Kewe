@@ -5633,7 +5633,15 @@
             state.deepThink = localStorage.getItem('dsc_deepThink') === '1';
             state.advancedMode = localStorage.getItem('dsc_advancedMode') === '1';
             state.longTextMode = localStorage.getItem('dsc_longTextMode') === '1';
-            state.enableTools = localStorage.getItem('dsc_enableTools') === '1';
+            var savedTools = localStorage.getItem('dsc_enableTools');
+            // 2026-11-23：一句话行动模式默认开启一次；用户之后手动关闭仍会记住。
+            if (localStorage.getItem('dsc_toolDefaultOnV2') !== '1') {
+                state.enableTools = true;
+                localStorage.setItem('dsc_toolDefaultOnV2', '1');
+                localStorage.setItem('dsc_enableTools', '1');
+            } else {
+                state.enableTools = savedTools === '1';
+            }
             var savedModel = localStorage.getItem('dsc_currentModel');
             if (savedModel) state.currentModel = savedModel;
             // 推理等级一律收敛到强制值 Lv.999（历史 localStorage 值不再生效）

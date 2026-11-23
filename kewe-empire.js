@@ -25,6 +25,10 @@
       commandPlaceholder: '例如：打开单词本 / 记住我的紧急联系人 / 帮我查手机上的资料 / 救命',
       go: '执行',
       chipKnowledge: '知识库',
+      kbMenu: '知识库状态',
+      kbUnitEntries: '条',
+      kbUnitDomains: '域',
+      kbUnitChars: '字',
       chipEmergency: 'SOS 保命',
       chipPhone: '手机自动化',
       chipNewChat: '新会话',
@@ -117,6 +121,10 @@
       commandPlaceholder: 'e.g. open my vocab book / remember my emergency contact / search my phone / help me',
       go: 'Run',
       chipKnowledge: 'Knowledge',
+      kbMenu: 'Knowledge status',
+      kbUnitEntries: 'entries',
+      kbUnitDomains: 'domains',
+      kbUnitChars: 'chars',
       chipEmergency: 'SOS',
       chipPhone: 'Phone ops',
       chipNewChat: 'New chat',
@@ -209,6 +217,10 @@
       commandPlaceholder: '例：単語帳を開く / 緊急連絡先を覚える / スマホを検索 / 助けて',
       go: '実行',
       chipKnowledge: '知識ベース',
+      kbMenu: '知識ベース状態',
+      kbUnitEntries: '件',
+      kbUnitDomains: '領域',
+      kbUnitChars: '文字',
       chipEmergency: 'SOS 救命',
       chipPhone: 'スマホ操作',
       chipNewChat: '新規会話',
@@ -301,6 +313,10 @@
       commandPlaceholder: '예: 단어장 열기 / 긴급 연락처 기억 / 휴대폰 검색 / 살려줘',
       go: '실행',
       chipKnowledge: '지식',
+      kbMenu: '지식 상태',
+      kbUnitEntries: '항목',
+      kbUnitDomains: '영역',
+      kbUnitChars: '자',
       chipEmergency: 'SOS',
       chipPhone: '휴대폰 자동화',
       chipNewChat: '새 대화',
@@ -393,6 +409,10 @@
       commandPlaceholder: 'напр.: открыть словарь / запомнить экстренный контакт / найти в телефоне / помогите',
       go: 'Запуск',
       chipKnowledge: 'Знания',
+      kbMenu: 'Статус знаний',
+      kbUnitEntries: 'записей',
+      kbUnitDomains: 'доменов',
+      kbUnitChars: 'символов',
       chipEmergency: 'SOS',
       chipPhone: 'Телефон',
       chipNewChat: 'Новый чат',
@@ -485,6 +505,10 @@
       commandPlaceholder: 'ex. ouvrir mon vocabulaire / retenir mon contact d’urgence / chercher dans mon téléphone / au secours',
       go: 'Lancer',
       chipKnowledge: 'Connaissances',
+      kbMenu: 'État des connaissances',
+      kbUnitEntries: 'entrées',
+      kbUnitDomains: 'domaines',
+      kbUnitChars: 'caractères',
       chipEmergency: 'SOS',
       chipPhone: 'Téléphone',
       chipNewChat: 'Nouveau chat',
@@ -603,7 +627,7 @@
     e.textContent = msg;
     e.classList.add('show');
     clearTimeout(e.__timer);
-    e.__timer = setTimeout(function () { e.classList.remove('show'); }, 2200);
+    e.__timer = setTimeout(function () { e.classList.remove('show'); }, 3200);
   }
   function isAuthed() {
     var gate = document.getElementById('keweAuthGate');
@@ -1184,6 +1208,45 @@
     gate.appendChild(btn);
   }
 
+  function showKnowledgeStatus() {
+    fetch('/api/knowledge/status', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+      .then(function (d) {
+        var domains = d.collections && typeof d.collections === 'object' ? Object.keys(d.collections).length : 0;
+        toast(tr('kbMenu') + ' · ' + (d.entries == null ? '—' : d.entries) + ' ' + tr('kbUnitEntries') + ' · ' + domains + ' ' + tr('kbUnitDomains') + ' · ' + (d.totalChars == null ? '—' : d.totalChars) + ' ' + tr('kbUnitChars'));
+      }).catch(function () { toast(tr('kbMenu') + ' · 读取失败'); });
+  }
+
+  function injectHomeMenu() {
+    if (!isAuthed()) return;
+    var menu = document.getElementById('dscMoreMenu');
+    if (!menu) return;
+    if (!document.getElementById('keweHomeSos')) {
+      var sos = el('button', 'dsc-more-item');
+      sos.id = 'keweHomeSos';
+      sos.type = 'button';
+      sos.innerHTML = '<span class="ic">🚨</span><span class="tx"></span>';
+      sos.querySelector('.tx').textContent = tr('chipEmergency');
+      sos.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation(); openEmergency();
+      });
+      menu.insertBefore(sos, menu.firstChild);
+    }
+    if (!document.getElementById('keweHomeKnowledge')) {
+      var kb = el('button', 'dsc-more-item');
+      kb.id = 'keweHomeKnowledge';
+      kb.type = 'button';
+      kb.innerHTML = '<span class="ic">📚</span><span class="tx"></span>';
+      kb.querySelector('.tx').textContent = tr('kbMenu');
+      kb.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation(); showKnowledgeStatus();
+      });
+      var first = document.getElementById('keweHomeSos');
+      if (first && first.parentNode === menu) menu.insertBefore(kb, first.nextSibling);
+      else menu.insertBefore(kb, menu.firstChild);
+    }
+  }
+
   function updatePresence() {
     var authed = isAuthed();
     var orb = document.getElementById('kewePowerOrb');
@@ -1193,6 +1256,7 @@
     }
     var gate = document.getElementById('keweAuthGate');
     if (gate && getComputedStyle(gate).display !== 'none') injectGateSos();
+    if (authed) injectHomeMenu();
   }
 
   // ------------------------------------------------------------
@@ -1200,42 +1264,31 @@
   // ------------------------------------------------------------
   function boot() {
     buildFx();
-    buildPowerOrb();
-    buildCommandLayer();
-    buildKnowledgeLayer();
     buildEmergencyLayer();
     updatePresence();
+    injectHomeMenu();
 
     // 认证门禁是动态创建/隐藏的，监听它并补 SOS。
     try {
       var mo = new MutationObserver(function () {
         updatePresence();
         injectGateSos();
+        injectHomeMenu();
       });
       mo.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
     } catch (e) {}
 
-    // 键盘：Alt+K 唤起指挥中心（桌面）
     document.addEventListener('keydown', function (e) {
-      if (e.altKey && (e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        openCommand();
-      }
-      if (e.key === 'Escape') {
-        if (state.emergencyOpen) { closeLayer(state.layers.emergency); state.emergencyOpen = false; }
-        else if (state.knowledgeOpen) { closeLayer(state.layers.knowledge); state.knowledgeOpen = false; }
-        else if (state.commandOpen) { closeLayer(state.layers.command); state.commandOpen = false; }
+      if (e.key === 'Escape' && state.emergencyOpen) {
+        closeLayer(state.layers.emergency); state.emergencyOpen = false;
       }
     });
 
     window.KeweEmpire = {
-      openCommand: openCommand,
-      openKnowledge: openKnowledge,
       openEmergency: openEmergency,
       forwardToModel: forwardToModel,
       refresh: updatePresence
     };
-    refreshCommandStats();
   }
 
   if (document.readyState === 'loading') {

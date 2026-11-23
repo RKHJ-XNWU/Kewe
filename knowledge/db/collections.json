@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "collections": [
+    {
+      "id": "core",
+      "title": "核心协议",
+      "description": "一句话目标如何被理解、拆解、执行与验收。"
+    },
+    {
+      "id": "emergency",
+      "title": "保命与应急",
+      "description": "现实危险时的最短路径、联系人、医疗卡与定位。"
+    },
+    {
+      "id": "phone",
+      "title": "手机自动化",
+      "description": "读取屏幕、点击、输入、应用控制与安全边界。"
+    },
+    {
+      "id": "site",
+      "title": "站点与数据",
+      "description": "Kewe 架构、账号目录、API、运行和备份。"
+    },
+    {
+      "id": "knowledge",
+      "title": "知识库运维",
+      "description": "多知识域、写入规范、检索策略和隐私边界。"
+    },
+    {
+      "id": "language",
+      "title": "多语言",
+      "description": "六语界面、语气、翻译与验收规则。"
+    },
+    {
+      "id": "security",
+      "title": "安全边界",
+      "description": "密钥、账号隔离、危险操作与 GitHub 发布。"
+    },
+    {
+      "id": "execution",
+      "title": "执行与交付",
+      "description": "任务闭环、调研、代码、報告和复盘。"
+    }
+  ]
+}

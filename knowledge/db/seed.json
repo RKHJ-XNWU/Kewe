@@ -1,30 +1,153 @@
 {
-  "version": 1,
+  "version": 2,
+  "seedVersion": 2,
   "title": "Kewe Sovereign Knowledge DB Seed",
   "createdAt": "2026-11-23T00:00:00+08:00",
+  "collections": [
+    {
+      "id": "core",
+      "title": "核心协议",
+      "description": "一句话目标如何被理解、拆解、执行与验收。"
+    },
+    {
+      "id": "emergency",
+      "title": "保命与应急",
+      "description": "现实危险时的最短路径、联系人、医疗卡与定位。"
+    },
+    {
+      "id": "phone",
+      "title": "手机自动化",
+      "description": "读取屏幕、点击、输入、应用控制与安全边界。"
+    },
+    {
+      "id": "site",
+      "title": "站点与数据",
+      "description": "Kewe 架构、账号目录、API、运行和备份。"
+    },
+    {
+      "id": "knowledge",
+      "title": "知识库运维",
+      "description": "多知识域、写入规范、检索策略和隐私边界。"
+    },
+    {
+      "id": "language",
+      "title": "多语言",
+      "description": "六语界面、语气、翻译与验收规则。"
+    },
+    {
+      "id": "security",
+      "title": "安全边界",
+      "description": "密钥、账号隔离、危险操作与 GitHub 发布。"
+    },
+    {
+      "id": "execution",
+      "title": "执行与交付",
+      "description": "任务闭环、调研、代码、報告和复盘。"
+    }
+  ],
   "entries": [
     {
       "id": "empire-core",
+      "collection": "core",
       "title": "帝国核心：一句话行动协议",
       "tags": [
         "empire",
         "protocol",
         "core"
       ],
-      "content": "用户说一句话时，先识别目标 → 查账号知识库 → 拆分步骤 → 执行 → 验收 → 沉淀。\n禁止把计划说成已完成。所有账号数据相互隔离。\n聊天正文按最终决定以明文保存在 data/users/<userId>/deepseek_chat/sessions/，前端不提供编辑入口。"
+      "content": "用户说一句话时，先识别真实目标 → 检索账号知识库 → 拆分最小步骤 → 执行 → 验收 → 沉淀。\n不能把计划说成已完成；不能假装工具成功；不能编造用户数据。\n所有账号数据相互隔离，聊天正文按账号目录明文保存，前端不提供编辑入口。"
+    },
+    {
+      "id": "core-decision",
+      "collection": "core",
+      "title": "行动决策矩阵",
+      "tags": [
+        "core",
+        "decision",
+        "routing"
+      ],
+      "content": "先判断任务类型：\n1. 普通问答/解释 → 直接回答。\n2. 涉及用户偏好、历史决定、路径、账号资料 → knowledge_search / knowledge_read。\n3. 需要操作手机或本机 → 先检查工具模式，再执行并截图验收。\n4. 删除、付款、发消息、改权限、安装应用 → 先明确确认。\n5. 现实危险 → 停止扩展任务，指向 SOS 与 110/120/119。\n计划只写给需要的人；能直接做就直接做。"
+    },
+    {
+      "id": "core-confirmation",
+      "collection": "core",
+      "title": "不可逆操作确认规则",
+      "tags": [
+        "core",
+        "confirmation",
+        "safety"
+      ],
+      "content": "以下动作必须让用户明确说“确认执行”：删除文件或知识、覆盖配置、发起付款、公开发布、发送消息给第三方、安装/卸载应用、修改权限、推送代码到远端。\n只得到“可以”“看着办”不算明确确认；确认必须包含具体对象和动作。\n执行后必须报告真实结果、失败原因和可回滚方式。"
+    },
+    {
+      "id": "core-delivery",
+      "collection": "execution",
+      "title": "交付与验收规范",
+      "tags": [
+        "core",
+        "delivery",
+        "qa"
+      ],
+      "content": "先确认用户要的交付物类型：回答、文档、表格、PPT、图片、视频、代码或链接。\n能在当前环境完成的，直接完成；不能完成的，说明缺什么，不伪造结果。\n交付前做一次最小验收：文件存在、内容可读、关键路径正确、移动端不遮挡。\n最终回复先给结果，再给位置或链接；不把中间产物当最终交付。"
     },
     {
       "id": "emergency-protocol",
+      "collection": "emergency",
       "title": "保命协议：危险时的最短路径",
       "tags": [
         "sos",
         "emergency",
         "safety"
       ],
-      "content": "网站不是救援机构。危险时先离开危险源到有人的安全处，拨打 110（报警）/120（急救）/119（消防救援），说清位置、事件、人数、伤情。\n网站 SOS 面板只提供号码、联系人、定位复制和本地医疗卡；不保证自动接通或获救。\n模型不得做医学诊断，不提供危险自救动作。"
+      "content": "网站不是救援机构，不能保证获救。\n危险时先离开危险源到有人的、明亮的地方；拨打 110（报警）/120（急救）/119（消防救援）；说清位置、发生什么、几个人、有没有人受伤。\nSOS 面板只提供号码、联系人、定位复制和本地医疗卡；模型不得做医学诊断，不提供危险自救动作。"
+    },
+    {
+      "id": "emergency-triage",
+      "collection": "emergency",
+      "title": "危险分级与第一句话",
+      "tags": [
+        "sos",
+        "triage",
+        "urgency"
+      ],
+      "content": "先判断：是否有正在发生的暴力、火灾、溺水、窒息、大出血、失去意识、被困或跟踪。\n有立即危险：不解释长篇，先让用户离开、呼救、拨号。\n无立即危险但可能升级：给出最多三步行动，并建议联系可信联系人。\n任何时候都不要让用户为了操作网站而延误呼救。"
+    },
+    {
+      "id": "emergency-contact",
+      "collection": "emergency",
+      "title": "紧急联系人与医疗卡",
+      "tags": [
+        "sos",
+        "contacts",
+        "medical"
+      ],
+      "content": "紧急联系人只保存在当前浏览器本地和账号知识库，不自动发送给第三方。\n医疗卡建议写：姓名、血型、过敏、长期用药、紧急联系人。\n不要写入身份证号、完整住址、银行卡、密码。\n联系人应至少有一个可拨通的号码；SOS 打开时不承诺自动拨号。"
+    },
+    {
+      "id": "emergency-location",
+      "collection": "emergency",
+      "title": "定位与位置表达",
+      "tags": [
+        "sos",
+        "location",
+        "privacy"
+      ],
+      "content": "只有用户点击并授权后才读取当前位置；定位不上传后台，除非用户主动复制或发送。\n向 110/120 描述位置时优先给：省市、区县、街道、门牌或最近地标、楼层/房间。\n无法定位时，让用户看周围招牌、地铁站、商户名，不要猜测坐标。"
+    },
+    {
+      "id": "emergency-scenarios",
+      "collection": "emergency",
+      "title": "常见危险场景的最短动作",
+      "tags": [
+        "sos",
+        "scenario",
+        "safety"
+      ],
+      "content": "暴力威胁：离开现场到有人的店铺/保安处，拨 110；不要争执或追击。\n火灾：低姿沿安全出口撤离，不乘电梯，拨 119。\n窒息/大出血/昏迷：拨 120，按接线员指示做，不自行诊断。\n走失/跟踪：进入明亮人多处，联系可信联系人并拨 110。\n网站只做信息聚合，不替代现场救援。"
     },
     {
       "id": "mobile-automation",
+      "collection": "phone",
       "title": "手机自动化操作手册",
       "tags": [
         "phone",
@@ -34,23 +157,278 @@
       "content": "先 adb_status 检查通道；再 get_screen_text 或 ocr_screen 读取界面；使用 adb_shell 执行 am/input/settings；用 wait_for_element 等待稳定；重复动作使用 batch_tap / batch_swipe。\n删除、付款、发消息、安装应用、修改权限必须二次确认。禁止绕过锁屏、验证码或平台风控，禁止隐蔽监控和骚扰。"
     },
     {
+      "id": "phone-read-loop",
+      "collection": "phone",
+      "title": "屏幕读取与观察循环",
+      "tags": [
+        "phone",
+        "ui",
+        "ocr"
+      ],
+      "content": "每次动作前先读当前界面，动作后重新截图确认，不凭记忆连续点击。\n优先用可见文字、content-desc 或资源 id 定位；坐标点击只用于没有语义控件的界面。\n页面加载慢时先 wait_for_element，不反复盲点；失败两次就回到上一步重新观察。"
+    },
+    {
+      "id": "phone-safe-actions",
+      "collection": "phone",
+      "title": "手机操作安全清单",
+      "tags": [
+        "phone",
+        "safety",
+        "confirmation"
+      ],
+      "content": "允许：打开应用、查询信息、滚动页面、复制用户指定文本、截屏验收。\n需确认：发送消息、删除数据、付款、安装/卸载、改系统设置、授权权限。\n禁止：绕过锁屏/验证码/平台风控，读取他人隐私，后台监控，批量骚扰，盗取账号。\n每次操作结束报告：做了什么、当前界面、是否成功。"
+    },
+    {
+      "id": "phone-app-control",
+      "collection": "phone",
+      "title": "应用启动、切换与停止",
+      "tags": [
+        "phone",
+        "apps",
+        "adb"
+      ],
+      "content": "启动优先用包名或明确的应用入口；不要猜不存在的 Activity。\n切换应用用系统最近任务或启动目标应用；需要返回时用系统返回键。\n停止任务前先确认没有未保存内容；清理缓存不等于退出账号。\n无法启动时读取错误提示，不重复点击。"
+    },
+    {
+      "id": "phone-batch",
+      "collection": "phone",
+      "title": "重复动作与批处理",
+      "tags": [
+        "phone",
+        "batch",
+        "automation"
+      ],
+      "content": "重复点击/滑动使用 batch_tap / batch_swipe，并在每批后截图验收。\n不要对未知页面执行无限循环；设置明确停止条件和最大次数。\n遇到弹窗、登录、验证码、支付页立即暂停并交给用户处理。\n批量操作不得用于刷量、骚扰或规避平台限制。"
+    },
+    {
+      "id": "site-architecture",
+      "collection": "site",
+      "title": "Kewe 架构地图",
+      "tags": [
+        "site",
+        "architecture",
+        "dart"
+      ],
+      "content": "Dart HTTP 服务入口 bin/main.dart；账号与鉴权在 lib/src/kewe_auth.dart；聊天发送在 lib/src/chat_send.dart；会话存储在 lib/src/sessions.dart；知识库在 lib/src/knowledge.dart；工具定义在 lib/src/tools.dart。\n前端是原生 HTML/CSS/JS，登录门禁在 kewe-auth.js/css；首页聊天在 deepseek-chat.js。\n改功能先找对应入口，不要跨层硬改。"
+    },
+    {
+      "id": "site-data-layout",
+      "collection": "site",
+      "title": "账号目录与明文聊天",
+      "tags": [
+        "site",
+        "data",
+        "plaintext"
+      ],
+      "content": "账号根目录：data/users/<userId>/。\n聊天：deepseek_chat/sessions/*.sts；标题、用户消息、AI 回复、思考链明文保存。\n知识：knowledge/db.json + knowledge/entries/<id>.md。\n附件：文件附件仍使用 KEWEFILE1 加密；聊天正文不加密。\n前端不提供聊天/思维链编辑；允许后端直接编辑数据文件。"
+    },
+    {
+      "id": "site-knowledge-schema",
+      "collection": "site",
+      "title": "知识库数据库结构",
+      "tags": [
+        "site",
+        "knowledge",
+        "schema"
+      ],
+      "content": "db.json 保存条目索引：id、collection、title、tags、file、createdAt、updatedAt。\nentries/<id>.md 保存标题与正文，末尾用 HTML 注释记录 tags。\ncollections 定义在 knowledge/db/collections.json；新增知识域只改元数据，不改代码。\nindex 是唯一入口，不要只写正文不写索引。"
+    },
+    {
+      "id": "site-api-map",
+      "collection": "site",
+      "title": "知识库 API 地图",
+      "tags": [
+        "site",
+        "api",
+        "knowledge"
+      ],
+      "content": "GET /api/knowledge/status：条目数、字符数、知识域统计。\nGET /api/knowledge/search?q=...&collection=...：检索。\nGET /api/knowledge/entry?id=...：读正文。\nGET /api/knowledge/collections：知识域列表。\nPOST /api/knowledge/save：保存/更新。\nPOST /api/knowledge/delete：删除，需确认。\n全部受登录门禁保护，未登录返回 404。"
+    },
+    {
+      "id": "site-run",
+      "collection": "site",
+      "title": "本地运行与测试",
+      "tags": [
+        "site",
+        "run",
+        "test"
+      ],
+      "content": "在项目根运行 dart analyze；启动用 dart run bin/main.dart，端口由 DSH_PORT 指定，数据根由 DSH_BASE 指定。\n测试知识库用登录后的 Cookie 调 API；测试前端用 390×844、360×800、320×568、768×1024。\n提交前检查 git diff，不把 data/、测试账号、PAT 写入仓库。"
+    },
+    {
+      "id": "site-backup",
+      "collection": "site",
+      "title": "备份与恢复原则",
+      "tags": [
+        "site",
+        "backup",
+        "recovery"
+      ],
+      "content": "备份前停止写入或确认没有正在生成的会话。\n备份 data/users/<userId>/ 与 knowledge 种子；不要把测试数据合并到正式账号。\n恢复时保留 token 与账号目录，不要跨账号覆盖。\n删除或覆盖前先移动/改名旧文件，不做不可逆清理。"
+    },
+    {
       "id": "knowledge-rules",
+      "collection": "knowledge",
       "title": "知识库使用规则",
       "tags": [
         "knowledge",
         "memory",
         "rules"
       ],
-      "content": "账号知识库位于 data/users/<userId>/knowledge/。db.json 是索引，entries/<id>.md 是正文，可直接用后端编辑器修改。\n模型用 knowledge_status / knowledge_search / knowledge_read / knowledge_save 访问。\n不得写入密码、Cookie、PAT、密钥；不得跨账号读取；不得把猜测写成用户事实。"
+      "content": "账号知识库位于 data/users/<userId>/knowledge/。db.json 是索引，entries/<id>.md 是正文，可直接用后端编辑器修改。\n模型用 knowledge_status / knowledge_search / knowledge_read / knowledge_save / knowledge_delete 访问。\n不得写入密码、Cookie、PAT、密钥；不得跨账号读取；不得把猜测写成用户事实。"
+    },
+    {
+      "id": "knowledge-collections",
+      "collection": "knowledge",
+      "title": "多知识域与分类",
+      "tags": [
+        "knowledge",
+        "collections",
+        "domain"
+      ],
+      "content": "默认知识域：core、emergency、phone、site、knowledge、language、security、execution。\n一条知识只归一个主域，用 tags 记录交叉主题。\n新建知识优先写入已有域；确有独立主题时才新增 domain，并同步 collections.json。\n检索时先按域缩小，再用关键词评分。"
+    },
+    {
+      "id": "knowledge-write",
+      "collection": "knowledge",
+      "title": "知识写入规范",
+      "tags": [
+        "knowledge",
+        "write",
+        "quality"
+      ],
+      "content": "标题要能独立识别，不用“记录”“备忘”这种空标题。\n正文先写结论/规则，再写步骤、边界和例外；一条一个主题。\n用户明确说过的事实、决定、偏好才写入；推测标注“待确认”。\n写入后返回 id、域、标题，方便下次检索；不要保存一次性闲聊。"
+    },
+    {
+      "id": "knowledge-retrieve",
+      "collection": "knowledge",
+      "title": "知识检索策略",
+      "tags": [
+        "knowledge",
+        "search",
+        "rag"
+      ],
+      "content": "先 knowledge_status 看域和条目；再按主题 knowledge_search。\n命中多条时读取最相关的 1–3 条正文，不把全部内容塞进回答。\n用户问“以前/上次/决定”时优先检索账号知识，不用凭空回忆。\n找不到就说明没有记录，不编造。"
+    },
+    {
+      "id": "knowledge-privacy",
+      "collection": "knowledge",
+      "title": "知识隐私边界",
+      "tags": [
+        "knowledge",
+        "privacy",
+        "security"
+      ],
+      "content": "知识库按账号隔离，不跨账号检索。\n不保存密码、验证码、Cookie、PAT、银行卡、身份证原图。\n健康信息只保存用户主动提供的医疗卡字段；不推断疾病。\n对外发送前先检查是否包含用户隐私；必要处用 [已隐藏] 代替。"
     },
     {
       "id": "language-rules",
+      "collection": "language",
       "title": "六语界面规则",
       "tags": [
         "i18n",
         "language"
       ],
       "content": "支持 zh / en / ja / ko / ru / fr。用户用哪种语言提问就用哪种语言回答。新增界面文案必须六语齐全，不能只写中文；代码、路径、API 名保持原文。"
+    },
+    {
+      "id": "language-tone",
+      "collection": "language",
+      "title": "语气与术语表",
+      "tags": [
+        "i18n",
+        "tone",
+        "glossary"
+      ],
+      "content": "中文：直接、短句、少铺垫。\nEnglish：plain, direct, no filler.\n日本語：丁寧だが簡潔、過度な敬語を避ける。\n한국어：간결하고 정중하게.\nРусский：прямо и без воды.\nFrançais：direct et concis.\n固定术语：knowledge → 知识库/Knowledge/知識ベース/지식/Знания/Connaissances。"
+    },
+    {
+      "id": "language-qa",
+      "collection": "language",
+      "title": "多语言验收清单",
+      "tags": [
+        "i18n",
+        "qa",
+        "ui"
+      ],
+      "content": "逐语言检查：标题、按钮、占位符、错误提示、空状态、SOS、知识域名称。\n不得出现中文残留（日语汉字除外）；不得把英文占位符当翻译。\n检查 320/360/390/768 宽度，按钮不遮挡输入框，菜单不被卡片覆盖。\n切换语言后刷新一次，确认持久化生效。"
+    },
+    {
+      "id": "security-secrets",
+      "collection": "security",
+      "title": "密钥与令牌处理",
+      "tags": [
+        "security",
+        "secrets",
+        "git"
+      ],
+      "content": "PAT、API Key、Cookie、密码只放在环境变量或本地临时文件，不写入仓库、remote、日志或用户可见回复。\n推送使用一次性 GIT_ASKPASS，完成后立即删除。\n发现密钥泄漏：先撤销/轮换，再清理历史；仅删除文件不够。\n不在知识库保存任何密钥。"
+    },
+    {
+      "id": "security-account",
+      "collection": "security",
+      "title": "账号隔离与访问控制",
+      "tags": [
+        "security",
+        "auth",
+        "account"
+      ],
+      "content": "每个请求在 auth Zone 内确定 userId，DATA_DIR 落到 data/users/<userId>/。\n未登录的业务 API 和私人静态文件返回 404，并带 X-Kewe-Auth: required。\n不得用前端参数指定其他 userId；不得跨账号读取文件。\n注销先确认，删除账号数据不可恢复。"
+    },
+    {
+      "id": "security-risky",
+      "collection": "security",
+      "title": "高风险请求处理",
+      "tags": [
+        "security",
+        "risk",
+        "policy"
+      ],
+      "content": "拒绝：绕过锁屏/验证码/平台风控、盗号、诈骗、赌博、制毒/爆炸物、伤害他人、隐蔽监控、传播恶意软件。\n可做：风险识别、证据整理、报警材料、账号保护、合法申诉。\n涉及现实暴力或人身危险：先建议离开并拨 110/120；不提供作战或报复方案。\n紧急不等于可以越过安全边界。"
+    },
+    {
+      "id": "execution-loop",
+      "collection": "execution",
+      "title": "任务闭环：计划—执行—验收",
+      "tags": [
+        "execution",
+        "planning",
+        "delivery"
+      ],
+      "content": "一句话目标先转成 3–7 个可验证步骤；能并行就并行，不能并行就顺序执行。\n每一步要有可观察结果：文件、API 返回、截图、日志或链接。\n失败时先读错误再改，不重复同一个失败动作超过两次。\n结束用“已完成/未完成/阻塞”三态报告；未完成写清下一步。"
+    },
+    {
+      "id": "execution-research",
+      "collection": "execution",
+      "title": "调研与信息核验",
+      "tags": [
+        "execution",
+        "research",
+        "sources"
+      ],
+      "content": "先定义问题、时间范围和判断标准，再搜索。\n优先官方文档、原始数据、仓库源码；二手内容只作线索。\n至少交叉两个来源，冲突时说明差异，不强行统一。\n引用要给可点击链接；结论与推测分开写。"
+    },
+    {
+      "id": "execution-code",
+      "collection": "execution",
+      "title": "代码修改与提交",
+      "tags": [
+        "execution",
+        "code",
+        "git"
+      ],
+      "content": "先读相关文件和调用链，再改最小范围；不做无关重构。\n改完运行静态分析和针对性测试；涉及页面要真实浏览器验收。\n提交前 git diff --check，确认不包含测试数据、密钥和临时文件。\n推送后核对远端 commit hash；不要只说“已推送”。"
+    },
+    {
+      "id": "execution-report",
+      "collection": "execution",
+      "title": "结果汇报格式",
+      "tags": [
+        "execution",
+        "report",
+        "ux"
+      ],
+      "content": "第一行给结论或交付链接。\n第二段只列用户需要知道的变化、风险和下一步。\n不粘贴内部推理、工具日志、账号 ID、密钥。\n失败时先说失败点，再给已保留的产物和恢复建议。"
     }
   ]
 }

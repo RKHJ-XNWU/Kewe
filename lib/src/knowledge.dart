@@ -17,11 +17,14 @@ import 'httpsrv.dart';
 const int KEWE_KNOWLEDGE_MAX_TITLE = 160;
 const int KEWE_KNOWLEDGE_MAX_CONTENT = 200000;
 const int KEWE_KNOWLEDGE_MAX_ENTRIES = 5000;
+const int KEWE_KNOWLEDGE_DB_VERSION = 2;
+const String KEWE_KNOWLEDGE_DEFAULT_COLLECTION = 'general';
 
 String get keweSharedKnowledgeRoot => '$BASE_DIR/knowledge';
 String get keweAccountKnowledgeRoot => '$DATA_DIR/knowledge';
 String get _keweKnowledgeDbPath => '${keweAccountKnowledgeRoot}/db.json';
 String get _keweKnowledgeEntriesDir => '${keweAccountKnowledgeRoot}/entries';
+String get _keweCollectionsPath => '$keweSharedKnowledgeRoot/db/collections.json';
 
 String _keweNow() => rfc3339(DateTime.now());
 
@@ -38,10 +41,84 @@ bool _keweSafeRelative(String path) {
 }
 
 Map<String, dynamic> _emptyDb() => {
-      'version': 1,
+      'version': KEWE_KNOWLEDGE_DB_VERSION,
+      'seedVersion': 0,
       'updatedAt': _keweNow(),
       'entries': <Map<String, dynamic>>[],
     };
+
+String _normalizeCollection(String raw) {
+  final s = raw.trim().toLowerCase();
+  if (RegExp(r'^[a-z0-9_-]{2,32}$').hasMatch(s)) return s;
+  return KEWE_KNOWLEDGE_DEFAULT_COLLECTION;
+}
+
+const Map<String, String> _keweCollectionAliases = {
+  'core': 'core',
+  'empire': 'core',
+  'protocol': 'core',
+  'emergency': 'emergency',
+  'sos': 'emergency',
+  'safety': 'emergency',
+  'phone': 'phone',
+  'adb': 'phone',
+  'automation': 'phone',
+  'site': 'site',
+  'architecture': 'site',
+  'data': 'site',
+  'knowledge': 'knowledge',
+  'memory': 'knowledge',
+  'language': 'language',
+  'i18n': 'language',
+  'security': 'security',
+  'execution': 'execution',
+};
+
+String _inferCollection(Map<String, dynamic> meta) {
+  final explicit = '${meta['collection'] ?? ''}'.trim().toLowerCase();
+  if (explicit.isNotEmpty) return _normalizeCollection(explicit);
+  final tags = meta['tags'];
+  if (tags is List) {
+    for (final t in tags) {
+      final v = _keweCollectionAliases['${t}'.trim().toLowerCase()];
+      if (v != null) return v;
+    }
+  }
+  return KEWE_KNOWLEDGE_DEFAULT_COLLECTION;
+}
+
+Map<String, String> _collectionTitles() {
+  final out = <String, String>{
+    'core': '核心协议',
+    'emergency': '保命与应急',
+    'phone': '手机自动化',
+    'site': '站点与数据',
+    'knowledge': '知识库运维',
+    'language': '多语言',
+    'security': '安全边界',
+    'execution': '执行与交付',
+  };
+  try {
+    final f = File(_keweCollectionsPath);
+    if (f.existsSync()) {
+      final decoded = jsonDecode(f.readAsStringSync());
+      final list = decoded is Map ? decoded['collections'] : null;
+      if (list is List) {
+        for (final c in list) {
+          if (c is Map) {
+            final id = _normalizeCollection('${c['id'] ?? ''}');
+            final title = '${c['title'] ?? ''}'.trim();
+            if (id.isNotEmpty && title.isNotEmpty) out[id] = title;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    logp('⚠️ 知识域元数据读取失败: $e');
+  }
+  return out;
+}
+
 
 Map<String, dynamic> _readDb() {
   try {
@@ -52,9 +129,18 @@ Map<String, dynamic> _readDb() {
       final entries = decoded['entries'];
       if (entries is List) {
         return {
-          'version': (decoded['version'] is num) ? (decoded['version'] as num).toInt() : 1,
+          'version': (decoded['version'] is num)
+              ? (decoded['version'] as num).toInt()
+              : KEWE_KNOWLEDGE_DB_VERSION,
+          'seedVersion': (decoded['seedVersion'] is num)
+              ? (decoded['seedVersion'] as num).toInt()
+              : 0,
           'updatedAt': decoded['updatedAt']?.toString() ?? _keweNow(),
-          'entries': entries.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(),
+          'entries': entries.whereType<Map>().map((e) {
+            final m = Map<String, dynamic>.from(e);
+            m['collection'] = _inferCollection(m);
+            return m;
+          }).toList(),
         };
       }
     }
@@ -65,7 +151,7 @@ Map<String, dynamic> _readDb() {
 }
 
 bool _writeDb(Map<String, dynamic> db) {
-  db['version'] = 1;
+  db['version'] = KEWE_KNOWLEDGE_DB_VERSION;
   db['updatedAt'] = _keweNow();
   return writeTextFile(_keweKnowledgeDbPath,
       '${const JsonEncoder.withIndent('  ').convert(db)}\n',
@@ -81,52 +167,72 @@ Map<String, dynamic>? _findEntry(Map<String, dynamic> db, String id) {
 
 String _entryPath(Map<String, dynamic> meta) => '$keweAccountKnowledgeRoot/${meta['file']}';
 
-Future<void> _ensureSeed() async {
+void _ensureSeed() {
   ensureDir(keweAccountKnowledgeRoot);
   ensureDir(_keweKnowledgeEntriesDir);
-  final dbFile = File(_keweKnowledgeDbPath);
-  if (dbFile.existsSync()) return;
-
-  final seedFile = File('$keweSharedKnowledgeRoot/db/seed.json');
+  var seedVersion = 2;
   List<dynamic> seedEntries = const [];
   try {
+    final seedFile = File('$keweSharedKnowledgeRoot/db/seed.json');
     if (seedFile.existsSync()) {
       final decoded = jsonDecode(seedFile.readAsStringSync());
-      if (decoded is Map && decoded['entries'] is List) {
-        seedEntries = decoded['entries'] as List;
+      if (decoded is Map) {
+        if (decoded['seedVersion'] is num) {
+          seedVersion = (decoded['seedVersion'] as num).toInt();
+        }
+        if (decoded['entries'] is List) seedEntries = decoded['entries'] as List;
       }
     }
   } catch (e) {
     logp('⚠️ 知识库种子读取失败: $e');
   }
 
-  final entries = <Map<String, dynamic>>[];
+  final dbFile = File(_keweKnowledgeDbPath);
+  final db = dbFile.existsSync() ? _readDb() : _emptyDb();
+  final currentSeedVersion =
+      (db['seedVersion'] is num) ? (db['seedVersion'] as num).toInt() : 0;
+  if (dbFile.existsSync() && currentSeedVersion >= seedVersion) return;
+
+  final entries = db['entries'] as List;
+  final existingIds = <String>{
+    for (final e in entries.whereType<Map>()) '${e['id']}'
+  };
+  var added = 0;
   for (var i = 0; i < seedEntries.length; i++) {
     final raw = seedEntries[i];
     if (raw is! Map) continue;
     final id = _keweSafeId('${raw['id'] ?? 'seed_$i'}');
+    if (existingIds.contains(id)) continue;
     final title = (raw['title'] ?? '知识 $i').toString().trim();
     final tagsRaw = raw['tags'];
     final tags = tagsRaw is List
         ? tagsRaw.map((t) => t.toString()).where((t) => t.isNotEmpty).toList()
         : <String>[];
+    final collection = _normalizeCollection('${raw['collection'] ?? ''}');
     final content = (raw['content'] ?? '').toString();
     final rel = 'entries/$id.md';
     ensureDir('$keweAccountKnowledgeRoot/entries');
-    writeTextFile('$keweAccountKnowledgeRoot/$rel',
-        '# $title\n\n${content.trim()}\n\n<!-- tags: ${tags.join(', ')} -->\n',
+    writeTextFile(
+        '$keweAccountKnowledgeRoot/$rel',
+        '# $title\n\n${content.trim()}\n\n<!-- collection: $collection · tags: ${tags.join(', ')} -->\n',
         mode: 0x1A4);
     entries.add({
       'id': id,
+      'collection': collection,
       'title': title,
       'tags': tags,
       'file': rel,
       'createdAt': _keweNow(),
       'updatedAt': _keweNow(),
     });
+    existingIds.add(id);
+    added++;
   }
-  _writeDb({'version': 1, 'updatedAt': _keweNow(), 'entries': entries});
-  logp('📚 知识库已初始化: ${entries.length} 条种子');
+  db['seedVersion'] = seedVersion;
+  _writeDb(db);
+  if (added > 0) {
+    logp('📚 知识库已初始化/升级: 新增 $added 条种子，共 ${entries.length} 条');
+  }
 }
 
 Future<void> initKnowledgeDir() async {
@@ -145,6 +251,7 @@ List<Map<String, dynamic>> _baseDocs() {
     out.add({
       'id': 'base:$rel',
       'title': title,
+      'collection': 'base',
       'tags': ['base', 'skill'],
       'file': rel,
       'kind': 'base',
@@ -180,10 +287,12 @@ String _snippet(String content, String q) {
   return '${start > 0 ? '…' : ''}${clean.substring(start, end)}${end < clean.length ? '…' : ''}';
 }
 
-List<Map<String, dynamic>> searchKnowledge(String query, {int limit = 20}) {
+List<Map<String, dynamic>> searchKnowledge(String query,
+    {int limit = 20, String collection = ''}) {
   ensureDir(keweAccountKnowledgeRoot);
   ensureDir(_keweKnowledgeEntriesDir);
   final q = query.trim().toLowerCase();
+  final filter = collection.trim().toLowerCase();
   final db = _readDb();
   final entries = (db['entries'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   final out = <Map<String, dynamic>>[];
@@ -211,6 +320,9 @@ List<Map<String, dynamic>> searchKnowledge(String query, {int limit = 20}) {
   }
 
   for (final meta in entries) {
+    final col = _inferCollection(meta);
+    if (filter.isNotEmpty && filter != 'base' && col != filter) continue;
+    if (filter == 'base') continue;
     String content = '';
     try { content = File(_entryPath(meta)).readAsStringSync(); } catch (_) {}
     final tags = meta['tags'] is List
@@ -222,6 +334,7 @@ List<Map<String, dynamic>> searchKnowledge(String query, {int limit = 20}) {
     out.add({
       'id': '${meta['id']}',
       'title': title,
+      'collection': col,
       'tags': tags,
       'kind': 'account',
       'updatedAt': '${meta['updatedAt'] ?? ''}',
@@ -231,11 +344,13 @@ List<Map<String, dynamic>> searchKnowledge(String query, {int limit = 20}) {
     });
   }
 
-  for (final doc in _baseDocs()) {
-    final content = readTextFileOr('$keweSharedKnowledgeRoot/${doc['file']}', '');
-    final score = scoreOf(doc['title'].toString(), ['base', 'skill'], content);
-    if (q.isNotEmpty && score <= 0) continue;
-    out.add({...doc, 'score': score, 'preview': _snippet(content, q)});
+  if (filter.isEmpty || filter == 'base') {
+    for (final doc in _baseDocs()) {
+      final content = readTextFileOr('$keweSharedKnowledgeRoot/${doc['file']}', '');
+      final score = scoreOf(doc['title'].toString(), ['base', 'skill'], content);
+      if (q.isNotEmpty && score <= 0) continue;
+      out.add({...doc, 'score': score, 'preview': _snippet(content, q)});
+    }
   }
 
   out.sort((a, b) => (b['score'] as int).compareTo(a['score'] as int));
@@ -263,6 +378,7 @@ Map<String, dynamic>? readKnowledgeEntry(String id) {
   if (!f.existsSync()) return null;
   return {
     ...meta,
+    'collection': _inferCollection(meta),
     'kind': 'account',
     'content': f.readAsStringSync(),
   };
@@ -273,6 +389,7 @@ Map<String, dynamic> saveKnowledgeEntry({
   required String title,
   required String content,
   List<String> tags = const [],
+  String? collection,
 }) {
   ensureDir(keweAccountKnowledgeRoot);
   ensureDir(_keweKnowledgeEntriesDir);
@@ -293,9 +410,12 @@ Map<String, dynamic> saveKnowledgeEntry({
   final finalId = _keweSafeId(id ?? 'k_${DateTime.now().millisecondsSinceEpoch}_${randomHex(5)}');
   final tagsClean = tags.map((t) => t.trim()).where((t) => t.isNotEmpty).take(12).toList();
   final existing = _findEntry(db, finalId);
+  final cleanCollection = _normalizeCollection(collection ??
+      (existing != null ? '${existing['collection'] ?? ''}' : ''));
   final meta = existing ??
       {
         'id': finalId,
+        'collection': cleanCollection,
         'title': cleanTitle,
         'tags': tagsClean,
         'file': 'entries/$finalId.md',
@@ -303,6 +423,7 @@ Map<String, dynamic> saveKnowledgeEntry({
         'updatedAt': _keweNow(),
       };
   meta['title'] = cleanTitle;
+  meta['collection'] = cleanCollection;
   meta['tags'] = tagsClean;
   meta['updatedAt'] = _keweNow();
   final rel = meta['file']?.toString() ?? 'entries/$finalId.md';
@@ -311,7 +432,7 @@ Map<String, dynamic> saveKnowledgeEntry({
   }
   ensureDir('$keweAccountKnowledgeRoot/entries');
   if (!writeTextFile('$keweAccountKnowledgeRoot/$rel',
-      '# $cleanTitle\n\n$cleanContent\n\n<!-- tags: ${tagsClean.join(', ')} -->\n')) {
+      '# $cleanTitle\n\n$cleanContent\n\n<!-- collection: $cleanCollection · tags: ${tagsClean.join(', ')} -->\n')) {
     throw const FormatException('知识正文写入失败');
   }
   if (existing == null) {
@@ -345,15 +466,19 @@ Map<String, dynamic> knowledgeStatus() {
   final db = _readDb();
   final entries = (db['entries'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   final topics = <String, int>{};
+  final collections = <String, int>{};
   var chars = 0;
   for (final e in entries) {
     final tags = e['tags'] is List ? (e['tags'] as List).map((t) => t.toString()) : <String>[];
     for (final t in tags) {
       topics[t] = (topics[t] ?? 0) + 1;
     }
+    final col = _inferCollection(e);
+    collections[col] = (collections[col] ?? 0) + 1;
     try { chars += File(_entryPath(e)).readAsStringSync().length; } catch (_) {}
   }
   final base = _baseDocs();
+  final titles = _collectionTitles();
   return {
     'ok': true,
     'title': 'Kewe Sovereign Knowledge OS',
@@ -361,6 +486,13 @@ Map<String, dynamic> knowledgeStatus() {
     'baseDocs': base.length,
     'totalChars': chars,
     'topics': topics,
+    'collections': collections,
+    'collectionInfo': collections.keys.map((id) => {
+          'id': id,
+          'title': titles[id] ?? id,
+          'entries': collections[id] ?? 0,
+        }).toList(),
+    'seedVersion': db['seedVersion'],
     'updatedAt': db['updatedAt'],
     'accountRoot': 'data/users/${currentUserId}/knowledge',
     'entriesDir': 'data/users/${currentUserId}/knowledge/entries',
@@ -368,6 +500,7 @@ Map<String, dynamic> knowledgeStatus() {
     'entriesPreview': entries.take(12).map((e) => {
           'id': e['id'],
           'title': e['title'],
+          'collection': _inferCollection(e),
           'tags': e['tags'],
           'updatedAt': e['updatedAt'],
         }).toList(),
@@ -379,26 +512,67 @@ Map<String, dynamic> knowledgeStatus() {
 String knowledgeSystemPromptForChat([String lang = 'zh']) {
   ensureDir(keweAccountKnowledgeRoot);
   ensureDir(_keweKnowledgeEntriesDir);
+  _ensureSeed();
   final db = _readDb();
-  final entries = (db['entries'] as List).whereType<Map>().take(24).map((e) {
-    final tags = e['tags'] is List ? (e['tags'] as List).join(',') : '';
-    return '- ${e['id']}: ${e['title']}${tags.isNotEmpty ? ' [$tags]' : ''}';
+  final rawEntries = (db['entries'] as List).whereType<Map>().toList();
+  final counts = <String, int>{};
+  final titles = _collectionTitles();
+  for (final e in rawEntries) {
+    final c = _inferCollection(Map<String, dynamic>.from(e));
+    counts[c] = (counts[c] ?? 0) + 1;
+  }
+  final domains = counts.keys
+      .map((id) => '${id}(${titles[id] ?? id}): ${counts[id]}')
+      .join(' · ');
+  final entries = rawEntries.take(40).map((e) {
+    final m = Map<String, dynamic>.from(e);
+    final tags = m['tags'] is List ? (m['tags'] as List).join(',') : '';
+    return '- [${_inferCollection(m)}] ${m['id']}: ${m['title']}${tags.isNotEmpty ? ' [$tags]' : ''}';
   }).join('\n');
   return '''
-【KEWE SOVEREIGN · 知识库与行动协议】
+【KEWE SOVEREIGN · 知识与行动协议】
 你是当前账号的私人行动中枢。用户说一句话时，先判断目标，再检索账号知识库，再执行。
 可用工具：knowledge_status、knowledge_search、knowledge_read、knowledge_save、knowledge_delete；
 手机操作工具：adb_status、adb_shell、ocr_screen、get_screen_text、wait_for_element、batch_tap。
+知识域（检索时可传 collection 参数）：${domains.isEmpty ? '（尚未建立知识域）' : domains}
 账号知识库你现在知道这些条目：
 ${entries.isEmpty ? '（尚未建立知识条目，可用 knowledge_save 保存长期事实）' : entries}
 规则：
-1) 不得编造用户数据；细节必须用 knowledge_search / knowledge_read 读取。
+1) 不得编造用户数据；细节必须用 knowledge_search / knowledge_read 读取；优先按对应知识域检索。
 2) 删除、付款、发消息、改权限、安装应用前必须让用户明确确认。
 3) 紧急危险：先建议离开危险源并拨打 110/120/119；网站不能保证救援，不能冒充救援机构。
 4) 不提供绕过锁屏、验证码、平台风控、隐蔽监控或伤害他人的方法。
 5) 聊天正文是账号目录中的明文数据，前端不允许编辑；不要声称用户可以前端改消息。
 6) 多语言：跟随用户语言；新增界面必须六语齐全。
+7) 用户说“记住/以后按这个来/这是规则”时，优先 knowledge_save 到最匹配的知识域，并在回复里报告 id。
 ''';
+}
+
+/// 当前消息命中的账号知识，用于在没有工具模式时也能读到正文。
+/// 只注入高相关条目，避免污染上下文。
+String knowledgeContextForQuery(String query, {int limit = 4, int maxChars = 6000}) {
+  final q = query.trim();
+  if (q.length < 2) return '';
+  _ensureSeed();
+  final hits = searchKnowledge(q, limit: limit * 3);
+  final buf = StringBuffer();
+  var used = 0;
+  for (final h in hits) {
+    if ('${h['kind']}' != 'account') continue;
+    final score = (h['score'] is num) ? (h['score'] as num).toInt() : 0;
+    if (score < 10) continue;
+    final entry = readKnowledgeEntry('${h['id']}');
+    if (entry == null) continue;
+    var content = '${entry['content'] ?? ''}'.trim();
+    if (content.isEmpty) continue;
+    if (content.length > 1600) content = '${content.substring(0, 1600)}…';
+    final block = '\n### [${entry['collection'] ?? KEWE_KNOWLEDGE_DEFAULT_COLLECTION}] ${entry['title']}\n$content\n';
+    if (used + block.length > maxChars) break;
+    buf.write(block);
+    used += block.length;
+  }
+  if (buf.isEmpty) return '';
+  return '【自动命中的账号知识（来自当前账号知识库）】\n$buf';
 }
 
 // ------------------------------------------------------------
@@ -409,25 +583,37 @@ Future<void> handleKnowledgeApi(HttpRequest req) async {
   final method = req.method;
   try {
     if (path == '/api/knowledge/status' && method == 'GET') {
-      await _ensureSeed();
+      _ensureSeed();
       await jsonResponse(req.response, 200, knowledgeStatus());
       return;
     }
     if (path == '/api/knowledge/search' && method == 'GET') {
-      await _ensureSeed();
+      _ensureSeed();
       final q = qp(req, 'q');
       final limit = int.tryParse(qp(req, 'limit')) ?? 20;
-      final items = searchKnowledge(q, limit: limit);
+      final collection = qp(req, 'collection');
+      final items = searchKnowledge(q, limit: limit, collection: collection);
       await jsonResponse(req.response, 200, {
         'ok': true,
         'query': q,
+        'collection': collection,
         'count': items.length,
         'items': items,
       });
       return;
     }
+    if (path == '/api/knowledge/collections' && method == 'GET') {
+      _ensureSeed();
+      final st = knowledgeStatus();
+      await jsonResponse(req.response, 200, {
+        'ok': true,
+        'seedVersion': st['seedVersion'],
+        'collections': st['collectionInfo'],
+      });
+      return;
+    }
     if (path == '/api/knowledge/entry' && method == 'GET') {
-      await _ensureSeed();
+      _ensureSeed();
       final id = qp(req, 'id');
       final entry = readKnowledgeEntry(id);
       if (entry == null) {
@@ -450,7 +636,7 @@ Future<void> handleKnowledgeApi(HttpRequest req) async {
       return;
     }
     if (path == '/api/knowledge/save' && method == 'POST') {
-      await _ensureSeed();
+      _ensureSeed();
       final body = await readJsonBody(req, limit: 2 * 1024 * 1024);
       final title = mStr(body, 'title');
       final content = mStr(body, 'content');
@@ -464,6 +650,7 @@ Future<void> handleKnowledgeApi(HttpRequest req) async {
         title: title,
         content: content,
         tags: tags,
+        collection: mStr(body, 'collection').isEmpty ? null : mStr(body, 'collection'),
       );
       await jsonResponse(req.response, 200, {
         'ok': true,
@@ -492,11 +679,12 @@ Future<void> handleKnowledgeApi(HttpRequest req) async {
 String knowledgeSearchToolText(Map<String, dynamic> args) {
   final q = mStr(args, 'query').isEmpty ? mStr(args, 'q') : mStr(args, 'query');
   final limit = intArgDefault(args, 'limit', 12);
-  final items = searchKnowledge(q, limit: limit);
+  final collection = mStr(args, 'collection');
+  final items = searchKnowledge(q, limit: limit, collection: collection);
   if (items.isEmpty) return '知识库中没有找到「$q」相关条目。';
-  final b = StringBuffer('知识库检索「$q」：\n');
+  final b = StringBuffer('知识库检索「$q」${collection.isEmpty ? '' : '（域: $collection）'}：\n');
   for (final x in items) {
-    b.writeln('- ${x['id']} | ${x['title']} | ${x['kind']} | ${x['preview']}');
+    b.writeln('- ${x['id']} | [${x['collection'] ?? '-'}] ${x['title']} | ${x['kind']} | ${x['preview']}');
   }
   return b.toString();
 }

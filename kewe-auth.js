@@ -551,8 +551,11 @@
     var btn = el('button', 'kewe-auth-lang-btn');
     btn.type = 'button';
     btn.setAttribute('aria-label', lm('language'));
+    btn.setAttribute('aria-haspopup', 'true');
     btn.innerHTML = SVG.globe + '<span>' + (LANG_META[state.lang] || LANG_META.zh).code + '</span>';
     var menu = el('div', 'kewe-auth-lang-menu');
+    menu.id = 'keweAuthLangMenu';
+    btn.setAttribute('aria-controls', menu.id);
     SUPPORTED.forEach(function (code) {
       var item = el('button', 'kewe-auth-lang-item' + (code === state.lang ? ' active' : ''));
       item.type = 'button';
@@ -570,7 +573,15 @@
       menu.classList.toggle('open');
       btn.setAttribute('aria-expanded', menu.classList.contains('open') ? 'true' : 'false');
     });
-    document.addEventListener('click', function () { menu.classList.remove('open'); }, true);
+    document.addEventListener('click', function () { menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && menu.classList.contains('open')) {
+        menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+    global.addEventListener('resize', function () {
+      menu.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    }, { passive: true });
     wrap.appendChild(btn);
     wrap.appendChild(menu);
     return wrap;
@@ -602,12 +613,8 @@
     brand.appendChild(languageMenu());
     card.appendChild(brand);
 
-    var e404 = el('div', 'kewe-auth-404');
-    e404.innerHTML = '<div class="num">404</div><div class="copy"><strong>' + lm('page404') + '</strong><span>' + lm('page404sub') + '</span></div>';
-    card.appendChild(e404);
-
     var titleRow = el('div', 'kewe-auth-title-row');
-    var tx = el('div');
+    var tx = el('div', 'kewe-auth-title-block');
     var title = el('h1', 'kewe-auth-title', lm(state.mode === 'register' ? 'titleRegister' : 'titleLogin'));
     title.id = 'keweAuthTitle';
     var sub = el('p', 'kewe-auth-sub', lm(state.mode === 'register' ? 'subRegister' : 'subLogin'));
@@ -616,8 +623,8 @@
     tx.appendChild(sub);
     var secure = el('div', 'kewe-auth-secure');
     secure.innerHTML = SVG.shield + '<span>' + lm('secure') + '</span>';
+    tx.appendChild(secure);
     titleRow.appendChild(tx);
-    titleRow.appendChild(secure);
     card.appendChild(titleRow);
 
     var tabs = el('div', 'kewe-auth-tabs');
