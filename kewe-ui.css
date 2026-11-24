@@ -1071,3 +1071,134 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
         flex: 0 0 40px !important;
     }
 }
+
+/* ============================================================
+ * 2026-11-24 · 多轮反思按钮 / 反思弹窗 / 强提醒 / 账号隔离备份弹窗
+ * ============================================================ */
+#deepseekChatApp .dsc-reflect-btn {
+    border-color: rgba(13, 148, 136, .32);
+    background: #f0fdfa;
+}
+#deepseekChatApp .dsc-reflect-btn .lvl-num {
+    color: #0f766e;
+    font-size: .74rem;
+    font-weight: 800;
+}
+#deepseekChatApp .dsc-reflect-btn:not(.active) .lvl-num { font-size: 1.08rem; }
+#deepseekChatApp .dsc-reflect-btn.active {
+    border-color: #0d9488;
+    background: #ccfbf1;
+    box-shadow: 0 0 12px rgba(13, 148, 136, .28);
+}
+/* 轮数数字占满圆心，反思按钮不显示右上角状态点，避免遮住「10」 */
+#deepseekChatApp .dsc-reflect-btn.active::before { display: none !important; }
+
+.dsc-reflect-modal { max-width: 430px; }
+.dsc-reflect-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 14px 0 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--kewe-line, rgba(15, 118, 110, .18));
+    border-radius: 14px;
+    background: rgba(240, 253, 250, .7);
+}
+.dsc-reflect-row-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dsc-reflect-row-label strong { color: var(--kewe-primary-strong, #0f766e); font-size: .82rem; }
+#dscReflectState { color: var(--kewe-muted, #64828f); font-size: .7rem; }
+.dsc-reflect-switch {
+    flex: 0 0 auto;
+    min-width: 72px;
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid rgba(100, 130, 143, .32);
+    border-radius: 999px;
+    background: #fff;
+    color: #64748b;
+    font: 700 .72rem/1 inherit;
+    cursor: pointer;
+    transition: all .2s ease;
+}
+.dsc-reflect-switch.on {
+    border-color: #0d9488;
+    background: #0d9488;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(13, 148, 136, .24);
+}
+.dsc-reflect-modal .dsc-level-display { margin-top: 4px; }
+.dsc-reflect-modal .dsc-level-num { color: #0f766e; }
+
+.dsc-warn-overlay { z-index: 100002; background: rgba(15, 23, 42, .55); }
+.dsc-reflect-warn {
+    max-width: 390px;
+    border: 1px solid rgba(220, 38, 38, .24);
+    box-shadow: 0 24px 64px rgba(127, 29, 29, .22);
+}
+.dsc-reflect-warn .dsc-modal-title { color: #b91c1c; line-height: 1.4; }
+.dsc-reflect-warn .dsc-modal-sub { color: #7f1d1d; }
+
+.dsc-backup-modal { max-width: 430px; }
+.dsc-backup-account {
+    position: relative;
+    margin: 14px 0 10px;
+    padding: 14px 14px 13px;
+    border: 1px solid rgba(13, 148, 136, .22);
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(240, 253, 250, .9), rgba(236, 254, 255, .72));
+}
+.dsc-backup-label { color: var(--kewe-muted, #64828f); font-size: .68rem; letter-spacing: .04em; }
+.dsc-backup-name {
+    margin-top: 5px;
+    color: #0f766e;
+    font-size: 1.04rem;
+    font-weight: 800;
+    line-height: 1.35;
+    word-break: break-all;
+}
+.dsc-backup-badge {
+    display: inline-flex;
+    align-items: center;
+    margin-top: 7px;
+    padding: 3px 8px;
+    border: 1px solid rgba(13, 148, 136, .22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .7);
+    color: #0f766e;
+    font-size: .64rem;
+    font-weight: 700;
+}
+.dsc-backup-scope {
+    padding: 11px 14px;
+    border: 1px solid var(--kewe-line, rgba(100, 130, 143, .16));
+    border-radius: 12px;
+    background: rgba(255, 255, 255, .6);
+}
+.dsc-backup-scope #dscBackupScopeText { margin-top: 4px; color: var(--kewe-text-2, #304b57); font-size: .76rem; line-height: 1.55; }
+.dsc-backup-note {
+    margin-top: 10px;
+    padding: 9px 11px;
+    border-left: 3px solid rgba(13, 148, 136, .35);
+    border-radius: 0 8px 8px 0;
+    background: rgba(240, 253, 250, .55);
+    color: var(--kewe-muted, #64828f);
+    font-size: .7rem;
+    line-height: 1.6;
+}
+@media (max-width: 420px) {
+    .dsc-reflect-row { padding: 11px 12px; }
+    .dsc-backup-account { padding: 12px; }
+}
+
+.dsc-level-slider-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 12px;
+    color: var(--kewe-muted, #64828f);
+    font-size: .72rem;
+    font-weight: 600;
+}
+.dsc-level-slider-head span:last-child { color: #0f766e; }

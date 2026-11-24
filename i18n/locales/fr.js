@@ -123,7 +123,7 @@ I18N.add('fr',`
     新規セッション|Nouvelle session
     その他の機能|Autres fonctions
     フォーラム · 投稿広場へ|Aller au forum · Place des publications
-    データバックアップ（data + imgs）|Sauvegarde des données (data + imgs)
+    データバックアップ（現在のアカウントのみ）|Sauvegarde des données (compte actuel uniquement)
     バックアップから復元|Restaurer depuis une sauvegarde
     閉じる|Fermer
     セッションを検索...|Rechercher des sessions...
@@ -1060,7 +1060,7 @@ I18N.add('fr',`
     お知らせの本文を入力|Saisir le corps de l'annonce
     タイトルを入力|Saisir un titre
     本文を入力|Saisir le corps
-    アップロードした .tar.gz バックアップで、現在の data/ と imgs/ ディレクトリ全体を上書きします。|La sauvegarde .tar.gz téléversée écrasera l'intégralité des répertoires data/ et imgs/ actuels.
+    アップロードした .tar.gz バックアップで、現在のアカウントのデータディレクトリを上書きします。|La sauvegarde .tar.gz téléversée écrasera le répertoire de données du compte actuel.
     この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！|Cette opération est irréversible. Vérifiez que les données actuelles ont bien été sauvegardées !
     .tar.gz バックアップファイルをアップロードしてください|Veuillez téléverser un fichier de sauvegarde .tar.gz
     プロンプト内容（送信メッセージの前に付加されます）|Contenu du prompt (ajouté avant le message envoyé)

@@ -498,6 +498,8 @@
         webSearch: false,
         deepThink: false,
         reasoningLevel: DEFAULT_LEVEL,
+        // 0=关闭多轮反思；1~10=反思次数（推理等级不再决定轮数）
+        reflectionRounds: 0,
         tempLevel: DEFAULT_LEVEL,
         advancedMode: false,
         advancedLevel: ADVANCED_DEFAULT_LEVEL,
@@ -4210,6 +4212,7 @@
                         webSearch: state.webSearch,
                         deepThink: state.deepThink,
                         reasoningLevel: effectiveLevel,
+                        reflectionRounds: state.reflectionRounds || 0,
                         longTextMode: false,
                         targetChars: state.longTextTargetChars,
                         // ★ 修复严重 Bug：旧实现写的是 state.enableTools || __dscDeviceIntent(content)，
@@ -4282,6 +4285,7 @@
                         webSearch: state.webSearch,
                         deepThink: state.deepThink,
                         reasoningLevel: effectiveLevel,
+                        reflectionRounds: state.reflectionRounds || 0,
                         longTextMode: state.longTextMode,
                         targetChars: state.longTextTargetChars,
                         // ★ 修复严重 Bug：旧实现写的是 state.enableTools || __dscDeviceIntent(content)，
@@ -5019,6 +5023,7 @@
                 content: text,
                 model: dscSendModelOf(),
                 reasoningLevel: 8,
+                reflectionRounds: 0,
                 deepThink: false,
                 webSearch: false,
                 longTextMode: false,
@@ -5395,69 +5400,94 @@
         else if (refNode && refNode.parentNode) refNode.parentNode.insertBefore(btn, refNode.nextSibling);
     }
 
-    // ★ 推理等级弹窗内「轮次 / 最大输出 / 上下文窗口」明细的语言表
+    // ★ 推理等级弹窗内「温度 / 最大输出 / 上下文窗口」明细的语言表
     //   每种语言只含本语言的措辞：技术参数名（max_tokens 等）按语言转写，
     //   数字单位 K 与 emoji 为通用符号；跟随 UI 语言，缺省中文。
+    //   等级不再决定反思轮数：这里只描述采样温度与输出上限。
     var DSC_LEVEL_COPY = {
         zh: {
-            headForced: '🧠 {0} 轮 · 最大输出 = {1}（当前模型强制 · 推理等级内的输出设置已忽略）',
-            headFree: '🧠 {0} 轮 · 最大输出 ≈ {1}',
+            title: '推理等级',
+            sub: '等级只影响采样温度与输出上限，不决定反思轮数；1–999 都默认直接回答。',
+            headForced: '🧠 Lv.{0} · 最大输出 = {1}（当前模型强制）',
+            headFree: '🧠 Lv.{0} · 最大输出 ≈ {1}',
             ctxDynamic: '📚 上下文窗口 = {0}（动态：随用量按 32K 步进扩展，上限 {0}）',
             ctxStatic: '📚 上下文窗口 = {0}（强制固定）',
             stream: '流式输出',
-            name1: '单轮', name2: '双轮', name3: '三轮', name4: '四轮',
-            desc1: '直接回答', desc2: '回答 + 1 次反思', desc3: '回答 + 2 次反思', desc4: '回答 + 3 次反思',
-            toolNoReflect: '🔧 工具模式开启时不会执行多轮反思'
+            name1: '高温 · 发散', name2: '中高温', name3: '中低温', name4: '低温 · 稳定',
+            desc1: '采样温度约 1.0，回答更发散', desc2: '采样温度约 0.7，兼顾发散与稳定',
+            desc3: '采样温度约 0.4，输出更稳定', desc4: '采样温度约 0.1，输出最稳定',
+            noReflect: '🔁 反思轮数请在底部「多轮反思」按钮中单独设置',
+            btnTitle: '推理等级'
         },
         ja: {
-            headForced: '🧠 {0} ラウンド · 最大トークン数 = {1}（現在のモデルで強制 · 推論レベル内のトークン設定は無視）',
-            headFree: '🧠 {0} ラウンド · 最大トークン数 ≈ {1}',
+            title: '推論レベル',
+            sub: 'レベルはサンプリング温度と出力上限だけに影響し、反省回数は決めません。1〜999 はすべて直接回答です。',
+            headForced: '🧠 Lv.{0} · 最大出力 = {1}（現在のモデルで強制）',
+            headFree: '🧠 Lv.{0} · 最大出力 ≈ {1}',
             ctxDynamic: '📚 コンテキストウィンドウ = {0}（動的：使用量に応じて 32K 刻みで拡張、上限 {0}）',
             ctxStatic: '📚 コンテキストウィンドウ = {0}（強制固定）',
             stream: 'ストリーミング出力',
-            name1: '単一ラウンド', name2: '二重ラウンド', name3: '三重ラウンド', name4: '四重ラウンド',
-            desc1: '直接回答', desc2: '回答 + 1 回の反省', desc3: '回答 + 2 回の反省', desc4: '回答 + 3 回の反省',
-            toolNoReflect: '🔧 ツールモード中は多重ラウンドの反省を実行しません'
+            name1: '高温 · 発散', name2: 'やや高温', name3: 'やや低温', name4: '低温 · 安定',
+            desc1: 'サンプリング温度 約1.0、より発散的', desc2: 'サンプリング温度 約0.7、発散と安定のバランス',
+            desc3: 'サンプリング温度 約0.4、より安定', desc4: 'サンプリング温度 約0.1、最も安定',
+            noReflect: '🔁 反省回数は下部の「多重ラウンド反省」ボタンで別途設定します',
+            btnTitle: '推論レベル'
         },
         en: {
-            headForced: '🧠 {0} rounds · max output = {1} (forced for the current model · the max_tokens setting inside the reasoning level is ignored)',
-            headFree: '🧠 {0} rounds · max output ≈ {1}',
+            title: 'Reasoning level',
+            sub: 'The level only affects sampling temperature and output cap; it never decides reflection rounds. Levels 1–999 answer directly.',
+            headForced: '🧠 Lv.{0} · max output = {1} (forced for the current model)',
+            headFree: '🧠 Lv.{0} · max output ≈ {1}',
             ctxDynamic: '📚 Context window = {0} (dynamic: grows in 32K steps with usage, cap {0})',
             ctxStatic: '📚 Context window = {0} (forced and fixed)',
             stream: 'streaming output',
-            name1: 'Single round', name2: 'Double round', name3: 'Triple round', name4: 'Quad round',
-            desc1: 'Direct answer', desc2: 'Answer + 1 reflection', desc3: 'Answer + 2 reflections', desc4: 'Answer + 3 reflections',
-            toolNoReflect: '🔧 Tool mode does not run multi-round reflection'
+            name1: 'Hot · divergent', name2: 'Warm', name3: 'Cool', name4: 'Cold · stable',
+            desc1: 'Sampling temperature ≈ 1.0, more divergent', desc2: 'Sampling temperature ≈ 0.7, balanced',
+            desc3: 'Sampling temperature ≈ 0.4, more stable', desc4: 'Sampling temperature ≈ 0.1, most stable',
+            noReflect: '🔁 Set reflection rounds separately with the “Multi-round reflection” button below',
+            btnTitle: 'Reasoning level'
         },
         ko: {
-            headForced: '🧠 {0} 라운드 · 최대 토큰 수 = {1} (현재 모델 강제 · 추론 레벨 내 토큰 설정 무시)',
-            headFree: '🧠 {0} 라운드 · 최대 토큰 수 ≈ {1}',
+            title: '추론 레벨',
+            sub: '레벨은 샘플링 온도와 출력 상한에만 영향을 주며, 성찰 횟수를 결정하지 않습니다. 1–999는 모두 직접 답변합니다.',
+            headForced: '🧠 Lv.{0} · 최대 출력 = {1} (현재 모델 강제)',
+            headFree: '🧠 Lv.{0} · 최대 출력 ≈ {1}',
             ctxDynamic: '📚 컨텍스트 윈도우 = {0} (동적: 사용량에 따라 32K 단위로 확장, 상한 {0})',
             ctxStatic: '📚 컨텍스트 윈도우 = {0} (강제 고정)',
             stream: '스트리밍 출력',
-            name1: '단일 라운드', name2: '이중 라운드', name3: '삼중 라운드', name4: '사중 라운드',
-            desc1: '직접 답변', desc2: '답변 + 1회 성찰', desc3: '답변 + 2회 성찰', desc4: '답변 + 3회 성찰',
-            toolNoReflect: '🔧 도구 모드에서는 다중 라운드 성찰을 실행하지 않습니다'
+            name1: '고온 · 발산', name2: '약간 고온', name3: '약간 저온', name4: '저온 · 안정',
+            desc1: '샘플링 온도 약 1.0, 더 발산적', desc2: '샘플링 온도 약 0.7, 균형',
+            desc3: '샘플링 온도 약 0.4, 더 안정적', desc4: '샘플링 온도 약 0.1, 가장 안정적',
+            noReflect: '🔁 성찰 횟수는 아래 「다중 라운드 성찰」 버튼에서 따로 설정하세요',
+            btnTitle: '추론 레벨'
         },
         ru: {
-            headForced: '🧠 {0} раунда · максимум токенов = {1} (принудительно для текущей модели · настройка вывода на уровне рассуждений игнорируется)',
-            headFree: '🧠 {0} раунда · максимум токенов ≈ {1}',
+            title: 'Уровень рассуждений',
+            sub: 'Уровень влияет только на температуру сэмплинга и лимит вывода, но не определяет число раундов рефлексии. Уровни 1–999 отвечают сразу.',
+            headForced: '🧠 Lv.{0} · максимум вывода = {1} (принудительно для текущей модели)',
+            headFree: '🧠 Lv.{0} · максимум вывода ≈ {1}',
             ctxDynamic: '📚 Контекстное окно = {0} (динамическое: растёт шагами по 32K, предел {0})',
             ctxStatic: '📚 Контекстное окно = {0} (принудительно зафиксировано)',
             stream: 'потоковый вывод',
-            name1: 'Один раунд', name2: 'Два раунда', name3: 'Три раунда', name4: 'Четыре раунда',
-            desc1: 'Прямой ответ', desc2: 'Ответ + 1 размышление', desc3: 'Ответ + 2 размышления', desc4: 'Ответ + 3 размышления',
-            toolNoReflect: '🔧 В режиме инструментов многораундовые размышления не выполняются'
+            name1: 'Высокая температура · вариативность', name2: 'Теплее', name3: 'Прохладнее', name4: 'Низкая температура · стабильность',
+            desc1: 'Температура ≈ 1.0, больше вариативности', desc2: 'Температура ≈ 0.7, баланс',
+            desc3: 'Температура ≈ 0.4, стабильнее', desc4: 'Температура ≈ 0.1, максимально стабильно',
+            noReflect: '🔁 Число раундов рефлексии задаётся отдельно кнопкой «Многораундовая рефлексия» ниже',
+            btnTitle: 'Уровень рассуждений'
         },
         fr: {
-            headForced: '🧠 {0} tours · sortie maximale = {1} (forcée pour le modèle courant · le réglage de sortie du niveau de raisonnement est ignoré)',
-            headFree: '🧠 {0} tours · sortie maximale ≈ {1}',
+            title: 'Niveau de raisonnement',
+            sub: 'Le niveau n’affecte que la température d’échantillonnage et la limite de sortie ; il ne détermine jamais le nombre de réflexions. Les niveaux 1–999 répondent directement.',
+            headForced: '🧠 Lv.{0} · sortie maximale = {1} (forcée pour le modèle courant)',
+            headFree: '🧠 Lv.{0} · sortie maximale ≈ {1}',
             ctxDynamic: '📚 Fenêtre de contexte = {0} (dynamique : +32K par paliers selon l’usage, plafond {0})',
             ctxStatic: '📚 Fenêtre de contexte = {0} (forcée et fixe)',
             stream: 'sortie en flux',
-            name1: 'Tour unique', name2: 'Double tour', name3: 'Triple tour', name4: 'Quadruple tour',
-            desc1: 'Réponse directe', desc2: 'Réponse + 1 réflexion', desc3: 'Réponse + 2 réflexions', desc4: 'Réponse + 3 réflexions',
-            toolNoReflect: '🔧 Le mode outil n’exécute pas de réflexion multi-tours'
+            name1: 'Chaud · divergent', name2: 'Assez chaud', name3: 'Assez froid', name4: 'Froid · stable',
+            desc1: 'Température ≈ 1.0, plus divergent', desc2: 'Température ≈ 0.7, équilibré',
+            desc3: 'Température ≈ 0.4, plus stable', desc4: 'Température ≈ 0.1, très stable',
+            noReflect: '🔁 Le nombre de réflexions se règle séparément via le bouton « Réflexion multi-tours » ci-dessous',
+            btnTitle: 'Niveau de raisonnement'
         }
     };
     function dscLevelCopy() {
@@ -5475,10 +5505,10 @@
 
     function levelDetail(level) {
         var c = dscLevelCopy();
-        if (level <= 10) return { name: c.name1, rounds: 1, cost: '1x', desc: c.desc1 };
-        if (level <= 25) return { name: c.name2, rounds: 2, cost: '~2.5x', desc: c.desc2 };
-        if (level <= 40) return { name: c.name3, rounds: 3, cost: '~4x', desc: c.desc3 };
-        return { name: c.name4, rounds: 4, cost: '~6x', desc: c.desc4 };
+        if (level <= 250) return { name: c.name1, desc: c.desc1 };
+        if (level <= 500) return { name: c.name2, desc: c.desc2 };
+        if (level <= 750) return { name: c.name3, desc: c.desc3 };
+        return { name: c.name4, desc: c.desc4 };
     }
     function levelTokens(level) {
         // ★ 模型上限优先：命中特例模型时，最终 max_tokens 取「档位」与「模型上限」的较小值
@@ -5494,41 +5524,40 @@
         var tag = $('dscLevelTag');
         var info = $('dscLevelInfo');
         var d = levelDetail(level);
+        var c = dscLevelCopy();
         if (num) num.textContent = level;
         if (tag) tag.textContent = String(level);
-        // 滑块两端和中点的说明随 UI 语言同步，不再写死「固定」。
+        // 标题/副标题跟随 UI 语言，明确「等级不决定反思轮数」。
+        var titleEl = $('dscLevelTitle');
+        if (titleEl) titleEl.textContent = '🧩 ' + c.title;
+        var subEl = $('dscLevelSub');
+        if (subEl) subEl.textContent = c.sub;
         var labelMin = $('dscLevelLabelMin');
         var labelMid = $('dscLevelLabelMid');
         var labelMax = $('dscLevelLabelMax');
-        var levelCopy = dscLevelCopy();
-        if (labelMin) labelMin.textContent = '1 · ' + levelCopy.name1;
+        if (labelMin) labelMin.textContent = '1 · ' + c.name1;
         if (labelMid) labelMid.textContent = '500 · ' + levelDetail(500).name;
-        if (labelMax) labelMax.textContent = LEVEL_MAX + ' · ' + levelCopy.name4;
+        if (labelMax) labelMax.textContent = LEVEL_MAX + ' · ' + c.name4;
         if (info) {
             var tok = levelTokens(level);
             var lim = dscForcedLimitOfCurrentModel();
-            var c = dscLevelCopy(); // ★ 明细文案跟随 UI 语言（缺省中文）
             var tokHtml = '<span class="hl">' + tok.toLocaleString() + '</span>';
             var head = '<div style="margin-bottom:4px;">' +
-                dscLevelFmt(lim ? c.headForced : c.headFree, d.rounds, tokHtml) + '</div>';
+                dscLevelFmt(lim ? c.headForced : c.headFree, level, tokHtml) + '</div>';
             var ctxLine = '';
             if (lim) {
                 var ctxHtml = '<span class="hl">' + dscTokenLabel(lim.context) + '</span>';
                 ctxLine = '<div style="margin-bottom:4px;">' +
                     dscLevelFmt(c.ctxStatic, ctxHtml) + '</div>';
             }
-            var toolLine = '';
-            if (state.enableTools && d.rounds > 1) {
-                toolLine = '<div style="margin-top:4px;color:#b45309;font-size:0.7rem;">' +
-                    c.toolNoReflect + '</div>';
-            }
             info.innerHTML = head + ctxLine +
                 '<div style="font-size:0.7rem;opacity:0.75;">' + d.desc + ' · ' + c.stream + '</div>' +
-                toolLine;
+                '<div style="margin-top:4px;font-size:0.7rem;opacity:0.8;color:#0f766e;">' + c.noReflect + '</div>';
         }
         var btn = $('dscLevelBtn');
         if (btn) {
             btn.classList.toggle('active', level > 1);
+            btn.title = c.btnTitle + ' Lv.' + level;
             var ic = btn.querySelector('.ic');
             if (ic) ic.style.display = 'none';
             var txtSpan = btn.querySelector('.lvl-num');
@@ -5539,13 +5568,14 @@
             }
             txtSpan.textContent = String(level);
         }
+        // 等级与反思完全解耦：刷新等级时同步刷新反思按钮的轮数/状态。
+        if (typeof updateReflectUI === 'function') updateReflectUI();
     }
 
     function openLevelDialog() {
         var overlay = $('dscLevelOverlay'), range = $('dscLevelRange');
         if (!overlay) return;
-        // ★ 推理等级默认 Lv.999，但允许在 1-999 之间真实拖动并持久化。
-        //   打开弹窗只回显当前已保存等级，绝不强制重置或锁死滑块。
+        // ★ 推理等级默认 Lv.999，允许在 1-999 之间真实拖动并持久化；与反思轮数无关。
         var current = dscClampLevel(state.reasoningLevel || DEFAULT_LEVEL);
         state.tempLevel = current;
         if (range) {
@@ -5567,8 +5597,7 @@
         if (overlay) overlay.classList.remove('open');
     }
     function saveLevelDialog() {
-        // ★ 拖动后的等级真实保存：写入本地持久层，并在高级模式中立即生效。
-        //   等级只影响推理轮次与 temperature；最终 max_tokens = min(档位, 模型上限)。
+        // ★ 拖动后的等级真实保存：只影响采样温度与初始输出上限，绝不改变反思轮数。
         var lv = dscClampLevel(state.tempLevel || state.reasoningLevel || DEFAULT_LEVEL);
         state.reasoningLevel = lv;
         state.advancedLevel = lv;
@@ -5583,6 +5612,243 @@
         updateLevelUI(lv);
         closeLevelDialog();
         toast('✅ ' + dscT('推論レベル Lv.') + ' ' + lv, 'success');
+    }
+
+    // ================= 多轮反思（独立开关，1–10 轮，与推理等级完全解耦） =================
+    var DSC_REFLECT_COPY = {
+        zh: {
+            title: '多轮反思', sub: '关闭时，推理等级 1–999 都直接回答；开启后才会执行多轮自我反思。',
+            stateOn: '已开启', stateOff: '已关闭', tagOn: '{0} 轮', tagOff: '关闭',
+            roundsLabel: '反思轮数（1–10）', rangeMin: '1 · 1 轮', rangeMax: '10 · 10 轮',
+            infoOff: '当前：关闭 · 模型只直接回答一次',
+            infoOn: '当前：开启 {0} 轮反思 · 共 {1} 次模型请求',
+            note: '1 轮反思 = 初稿 + 1 次复查；10 轮反思 = 共 11 次请求。耗时与费用会成倍增加。',
+            save: '保存', cancel: '取消',
+            toastOff: '已关闭多轮反思：推理等级不再影响回答轮数',
+            toastOn: '⚠️ 已开启多轮反思：{0} 轮（共 {1} 次模型请求）',
+            warnTitle: '⚠️ 强提醒：多轮反思即将开启',
+            warnBody: '开启后，模型会先给出初稿，再执行 {0} 轮自我反思，共 {1} 次模型请求。耗时和费用会显著增加，请确认确实需要。',
+            warnOk: '我已知晓，开启', warnCancel: '取消',
+            toolNote: '工具模式开启时不会执行多轮反思。',
+            btnOff: '多轮反思：已关闭', btnOn: '多轮反思：已开启 {0} 轮'
+        },
+        ja: {
+            title: '多重ラウンド反省', sub: 'オフのとき、推論レベル 1〜999 はすべて直接回答します。オンにした場合のみ多重反省を実行します。',
+            stateOn: 'オン', stateOff: 'オフ', tagOn: '{0} 回', tagOff: 'オフ',
+            roundsLabel: '反省回数（1〜10）', rangeMin: '1 · 1 回', rangeMax: '10 · 10 回',
+            infoOff: '現在：オフ · モデルは一度だけ直接回答します',
+            infoOn: '現在：オン · {0} 回の反省 · 合計 {1} 回のモデルリクエスト',
+            note: '1 回の反省 = 初稿 + 1 回の見直し。10 回 = 合計 11 回のリクエスト。時間と費用は大幅に増えます。',
+            save: '保存', cancel: 'キャンセル',
+            toastOff: '多重反省をオフにしました：推論レベルは回答の回数に影響しません',
+            toastOn: '⚠️ 多重反省をオンにしました：{0} 回（合計 {1} 回のリクエスト）',
+            warnTitle: '⚠️ 強い警告：多重反省をオンにします',
+            warnBody: 'オンにすると、モデルは初稿を出した後に {0} 回の自己反省を実行し、合計 {1} 回のリクエストになります。時間と費用が大幅に増えるため、本当に必要か確認してください。',
+            warnOk: '理解しました。オンにする', warnCancel: 'キャンセル',
+            toolNote: 'ツールモード中は多重反省を実行しません。',
+            btnOff: '多重反省：オフ', btnOn: '多重反省：オン（{0} 回）'
+        },
+        en: {
+            title: 'Multi-round reflection', sub: 'When off, reasoning levels 1–999 all answer directly. Only when on does the model run multiple reflection rounds.',
+            stateOn: 'On', stateOff: 'Off', tagOn: '{0} rounds', tagOff: 'Off',
+            roundsLabel: 'Reflection rounds (1–10)', rangeMin: '1 · 1 round', rangeMax: '10 · 10 rounds',
+            infoOff: 'Current: off · the model answers directly once',
+            infoOn: 'Current: on · {0} reflection rounds · {1} model requests in total',
+            note: '1 reflection = draft + 1 review; 10 rounds = 11 requests in total. Time and cost grow sharply.',
+            save: 'Save', cancel: 'Cancel',
+            toastOff: 'Multi-round reflection off: reasoning level no longer affects answer rounds',
+            toastOn: '⚠️ Multi-round reflection on: {0} rounds ({1} model requests)',
+            warnTitle: '⚠️ Strong warning: multi-round reflection',
+            warnBody: 'The model will produce a draft, then run {0} self-reflection rounds — {1} model requests in total. Time and cost will increase significantly. Please confirm you really need this.',
+            warnOk: 'I understand, enable it', warnCancel: 'Cancel',
+            toolNote: 'Tool mode never runs multi-round reflection.',
+            btnOff: 'Reflection: off', btnOn: 'Reflection: on ({0} rounds)'
+        },
+        ko: {
+            title: '다중 라운드 성찰', sub: '끄면 추론 레벨 1–999는 모두 바로 답변합니다. 켤 때만 여러 차례 자기 성찰을 수행합니다.',
+            stateOn: '켜짐', stateOff: '꺼짐', tagOn: '{0}회', tagOff: '꺼짐',
+            roundsLabel: '성찰 횟수(1–10)', rangeMin: '1 · 1회', rangeMax: '10 · 10회',
+            infoOff: '현재: 꺼짐 · 모델이 한 번만 직접 답변합니다',
+            infoOn: '현재: 켜짐 · {0}회 성찰 · 총 {1}회 모델 요청',
+            note: '1회 성찰 = 초안 + 1회 검토, 10회 = 총 11회 요청. 시간과 비용이 크게 늘어납니다.',
+            save: '저장', cancel: '취소',
+            toastOff: '다중 라운드 성찰을 껐습니다: 추론 레벨은 답변 횟수에 영향을 주지 않습니다',
+            toastOn: '⚠️ 다중 라운드 성찰을 켰습니다: {0}회(총 {1}회 요청)',
+            warnTitle: '⚠️ 강한 경고: 다중 라운드 성찰',
+            warnBody: '켜면 모델이 초안을 만든 뒤 {0}회의 자기 성찰을 수행하여 총 {1}회 요청합니다. 시간과 비용이 크게 증가하니 정말 필요한지 확인하세요.',
+            warnOk: '이해했습니다, 켜기', warnCancel: '취소',
+            toolNote: '도구 모드에서는 다중 라운드 성찰을 실행하지 않습니다.',
+            btnOff: '다중 성찰: 꺼짐', btnOn: '다중 성찰: 켜짐({0}회)'
+        },
+        ru: {
+            title: 'Многораундовая рефлексия', sub: 'Когда выключено, уровни рассуждений 1–999 отвечают сразу. Многораундовая рефлексия включается только вручную.',
+            stateOn: 'Вкл', stateOff: 'Выкл', tagOn: '{0} раунд(ов)', tagOff: 'Выкл',
+            roundsLabel: 'Раунды рефлексии (1–10)', rangeMin: '1 · 1 раунд', rangeMax: '10 · 10 раундов',
+            infoOff: 'Сейчас: выкл · модель отвечает сразу один раз',
+            infoOn: 'Сейчас: вкл · {0} раундов рефлексии · всего {1} запросов к модели',
+            note: '1 раунд = черновик + 1 проверка; 10 раундов = 11 запросов. Время и стоимость растут.',
+            save: 'Сохранить', cancel: 'Отмена',
+            toastOff: 'Многораундовая рефлексия выключена: уровень больше не влияет на число ответов',
+            toastOn: '⚠️ Многораундовая рефлексия включена: {0} раундов ({1} запросов)',
+            warnTitle: '⚠️ Важное предупреждение',
+            warnBody: 'Модель сначала создаст черновик, затем выполнит {0} раундов саморефлексии — всего {1} запросов. Время и стоимость заметно возрастут. Подтвердите необходимость.',
+            warnOk: 'Понятно, включить', warnCancel: 'Отмена',
+            toolNote: 'В режиме инструментов многораундовая рефлексия не выполняется.',
+            btnOff: 'Рефлексия: выкл', btnOn: 'Рефлексия: вкл ({0} раундов)'
+        },
+        fr: {
+            title: 'Réflexion multi-tours', sub: 'Désactivée, les niveaux de raisonnement 1–999 répondent directement. Activée, le modèle exécute plusieurs tours de réflexion.',
+            stateOn: 'Activée', stateOff: 'Désactivée', tagOn: '{0} tours', tagOff: 'Désactivée',
+            roundsLabel: 'Tours de réflexion (1–10)', rangeMin: '1 · 1 tour', rangeMax: '10 · 10 tours',
+            infoOff: 'Actuel : désactivée · le modèle répond directement une fois',
+            infoOn: 'Actuel : activée · {0} tours de réflexion · {1} requêtes au total',
+            note: '1 tour = brouillon + 1 relecture ; 10 tours = 11 requêtes. Temps et coût augmentent fortement.',
+            save: 'Enregistrer', cancel: 'Annuler',
+            toastOff: 'Réflexion multi-tours désactivée : le niveau ne détermine plus le nombre de réponses',
+            toastOn: '⚠️ Réflexion multi-tours activée : {0} tours ({1} requêtes)',
+            warnTitle: '⚠️ Avertissement important',
+            warnBody: 'Le modèle produira un brouillon puis {0} tours d’auto-réflexion — {1} requêtes au total. Le temps et le coût augmenteront nettement. Confirmez le besoin.',
+            warnOk: 'J’ai compris, activer', warnCancel: 'Annuler',
+            toolNote: 'Le mode outil n’exécute jamais de réflexion multi-tours.',
+            btnOff: 'Réflexion : désactivée', btnOn: 'Réflexion : activée ({0} tours)'
+        }
+    };
+    function dscReflectCopy() {
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
+        return DSC_REFLECT_COPY[lang] || DSC_REFLECT_COPY.zh;
+    }
+    function reflectionRoundsValue() {
+        var n = parseInt(state.reflectionRounds, 10);
+        if (isNaN(n) || n < 0) n = 0;
+        if (n > 10) n = 10;
+        return n;
+    }
+    function updateReflectUI() {
+        var n = reflectionRoundsValue();
+        var c = dscReflectCopy();
+        var btn = $('dscReflectBtn');
+        var num = $('dscReflectBtnNum');
+        if (num) num.textContent = n > 0 ? String(n) : '↻';
+        if (btn) {
+            btn.classList.toggle('active', n > 0);
+            btn.title = n > 0 ? dscLevelFmt(c.btnOn, n) : c.btnOff;
+            btn.setAttribute('aria-label', btn.title);
+            btn.setAttribute('data-rounds', String(n));
+        }
+    }
+    function persistReflection(n) {
+        var v = parseInt(n, 10);
+        if (isNaN(v) || v < 0) v = 0;
+        if (v > 10) v = 10;
+        state.reflectionRounds = v;
+        try { localStorage.setItem('dsc_reflection_rounds', String(v)); } catch (e) {}
+        updateReflectUI();
+    }
+    function closeReflectDialog() {
+        var ov = $('dscReflectOverlay');
+        if (ov) ov.remove();
+    }
+    function showReflectWarning(n, onOk) {
+        var c = dscReflectCopy();
+        var ov = document.createElement('div');
+        ov.className = 'dsc-modal-overlay dsc-warn-overlay';
+        ov.id = 'dscReflectWarn';
+        ov.innerHTML = '<div class="dsc-modal dsc-reflect-warn" role="alertdialog" aria-modal="true">' +
+            '<div class="dsc-modal-title">' + c.warnTitle + '</div>' +
+            '<div class="dsc-modal-sub" style="line-height:1.6;">' + dscLevelFmt(c.warnBody, n, n + 1) + '</div>' +
+            '<div class="dsc-modal-footer">' +
+            '<button type="button" class="dsc-btn ghost" id="dscReflectWarnCancel"></button>' +
+            '<button type="button" class="dsc-btn primary" id="dscReflectWarnOk"></button>' +
+            '</div></div>';
+        document.body.appendChild(ov);
+        $('dscReflectWarnCancel').textContent = c.warnCancel;
+        $('dscReflectWarnOk').textContent = c.warnOk;
+        function done() { ov.remove(); }
+        $('dscReflectWarnCancel').onclick = done;
+        $('dscReflectWarnOk').onclick = function () { done(); if (typeof onOk === 'function') onOk(); };
+        ov.addEventListener('click', function (e) { if (e.target === ov) done(); });
+        requestAnimationFrame(function () { ov.classList.add('open'); });
+    }
+    function openReflectDialog() {
+        var c = dscReflectCopy();
+        closeReflectDialog();
+        var enabled = reflectionRoundsValue() > 0;
+        var tempOn = enabled;
+        var tempRounds = enabled ? reflectionRoundsValue() : 1;
+        var ov = document.createElement('div');
+        ov.className = 'dsc-modal-overlay';
+        ov.id = 'dscReflectOverlay';
+        ov.innerHTML = '<div class="dsc-modal dsc-reflect-modal" role="dialog" aria-modal="true">' +
+            '<div class="dsc-modal-title">🔁 ' + c.title + '</div>' +
+            '<div class="dsc-modal-sub" style="line-height:1.6;">' + c.sub + '</div>' +
+            '<div class="dsc-reflect-row">' +
+            '<div class="dsc-reflect-row-label"><strong>' + c.title + '</strong><span id="dscReflectState"></span></div>' +
+            '<button type="button" class="dsc-reflect-switch" id="dscReflectToggle" aria-label="' + c.title + '"></button>' +
+            '</div>' +
+            '<div class="dsc-level-display"><div class="dsc-level-num" id="dscReflectNum">0</div><div class="dsc-level-tag" id="dscReflectTag"></div></div>' +
+            '<div class="dsc-level-slider-block"><div class="dsc-level-slider-head"><span>' + c.roundsLabel + '</span><span id="dscReflectRangeVal"></span></div>' +
+            '<input class="dsc-level-range" id="dscReflectRange" type="range" min="1" max="10" step="1" value="1">' +
+            '<div class="dsc-level-labels"><span>' + c.rangeMin + '</span><span>' + c.rangeMax + '</span></div></div>' +
+            '<div class="dsc-level-info" id="dscReflectInfo"></div>' +
+            '<div class="dsc-modal-footer">' +
+            '<button type="button" class="dsc-btn ghost" id="dscReflectCancel"></button>' +
+            '<button type="button" class="dsc-btn primary" id="dscReflectSave"></button>' +
+            '</div></div>';
+        document.body.appendChild(ov);
+        $('dscReflectCancel').textContent = c.cancel;
+        $('dscReflectSave').textContent = c.save;
+        var toggle = $('dscReflectToggle');
+        var range = $('dscReflectRange');
+        var num = $('dscReflectNum');
+        var tag = $('dscReflectTag');
+        var stateEl = $('dscReflectState');
+        var rangeVal = $('dscReflectRangeVal');
+        var info = $('dscReflectInfo');
+        function render() {
+            if (range) {
+                range.disabled = !tempOn;
+                range.value = String(tempRounds);
+            }
+            if (toggle) {
+                toggle.classList.toggle('on', tempOn);
+                toggle.setAttribute('aria-checked', tempOn ? 'true' : 'false');
+                toggle.textContent = tempOn ? c.stateOn : c.stateOff;
+            }
+            if (stateEl) stateEl.textContent = tempOn ? c.stateOn : c.stateOff;
+            if (num) num.textContent = tempOn ? String(tempRounds) : '0';
+            if (tag) tag.textContent = tempOn ? dscLevelFmt(c.tagOn, tempRounds) : c.tagOff;
+            if (rangeVal) rangeVal.textContent = tempOn ? dscLevelFmt(c.tagOn, tempRounds) : c.tagOff;
+            if (info) {
+                info.textContent = '';
+                var main = document.createElement('div');
+                main.textContent = tempOn ? dscLevelFmt(c.infoOn, tempRounds, tempRounds + 1) : c.infoOff;
+                var note = document.createElement('div');
+                note.style.cssText = 'margin-top:4px;font-size:0.7rem;opacity:0.78;line-height:1.5;';
+                note.textContent = c.note + (state.enableTools ? ' ' + c.toolNote : '');
+                info.appendChild(main);
+                info.appendChild(note);
+            }
+        }
+        toggle.onclick = function () { tempOn = !tempOn; render(); };
+        range.oninput = function () { tempRounds = parseInt(range.value, 10) || 1; render(); };
+        $('dscReflectCancel').onclick = closeReflectDialog;
+        $('dscReflectSave').onclick = function () {
+            if (!tempOn) {
+                persistReflection(0);
+                closeReflectDialog();
+                toast(c.toastOff);
+                return;
+            }
+            showReflectWarning(tempRounds, function () {
+                persistReflection(tempRounds);
+                closeReflectDialog();
+                toast(dscLevelFmt(c.toastOn, tempRounds, tempRounds + 1), 'success');
+            });
+        };
+        ov.addEventListener('click', function (e) { if (e.target === ov) closeReflectDialog(); });
+        render();
+        requestAnimationFrame(function () { ov.classList.add('open'); });
     }
 
     async function openSettings() {
@@ -5746,11 +6012,16 @@
             if (state.advancedMode) state.reasoningLevel = savedLv;
             else state.reasoningLevel = state.deepThink ? FORCED_LEVEL : DEFAULT_LEVEL;
             state.tempLevel = state.reasoningLevel;
+            var savedReflect = parseInt(localStorage.getItem('dsc_reflection_rounds') || '0', 10);
+            if (isNaN(savedReflect) || savedReflect < 0) savedReflect = 0;
+            if (savedReflect > 10) savedReflect = 10;
+            state.reflectionRounds = savedReflect;
         } catch (e) {
             state.advancedMode = false;
             state.advancedLevel = ADVANCED_DEFAULT_LEVEL;
             state.deepThink = false;
             state.reasoningLevel = DEFAULT_LEVEL;
+            state.reflectionRounds = 0;
             state.tempLevel = DEFAULT_LEVEL;
             state.longTextMode = false;
             state.longTextTargetChars = LONG_TEXT_DEFAULT_CHARS;
@@ -7125,26 +7396,124 @@
         bind('dscSettingsBtn', 'click', openSettings);
         bindCosplayEvents();
 
-        bind('dscBackupBtn', 'click', function () {
-            if (state.backupRunning) {
-                toast('⏳ バックアップ中です。お待ちください', 'info');
-                return;
-            }
-            state.backupRunning = true;
-            toast('📦 data と imgs をパッケージ化中です。お待ちください…', 'info');
-            var url = '/api/backup?type=data&_t=' + Date.now();
-            var a = document.createElement('a');
-            a.href = url;
-            a.download = '';
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            setTimeout(function () {
-                if (a.parentNode) { a.parentNode.removeChild(a); }
-                state.backupRunning = false;
-                toast('✅ バックアップを開始しました。ダウンロードフォルダをご確認ください', 'success');
-            }, 1500);
-        });
+    // ================= 数据备份：弹窗显示当前登录账号，严格按账号隔离 =================
+    var DSC_BACKUP_COPY = {
+        zh: { title: '数据备份', sub: '备份按当前登录账号隔离，不会包含其他账号的数据。',
+            accountLabel: '当前登录账号', scopeLabel: '备份范围',
+            scopeData: '当前账号的会话数据与附件（不含全局图片池）',
+            note: '文件按账号命名；切换账号后只能备份当前账号自己的数据，账号之间绝不串联。',
+            running: '正在打包当前账号的数据，请稍候…', started: '备份已开始，请查看下载目录',
+            cancel: '取消', start: '开始备份', noAccount: '未获取到登录账号，请重新登录后再备份',
+            unknown: '未知账号', scoped: '账号隔离备份' },
+        ja: { title: 'データバックアップ', sub: 'バックアップは現在ログイン中のアカウント単位で分離され、他のアカウントのデータは含まれません。',
+            accountLabel: '現在のログインアカウント', scopeLabel: 'バックアップ範囲',
+            scopeData: '現在のアカウントの会話データと添付（全体の画像プールは含みません）',
+            note: 'ファイル名はアカウント別。アカウントを切り替えると、そのアカウント自身のデータだけをバックアップできます。',
+            running: '現在のアカウントのデータをまとめています。しばらくお待ちください…', started: 'バックアップを開始しました。ダウンロード先を確認してください',
+            cancel: 'キャンセル', start: 'バックアップ開始', noAccount: 'ログインアカウントを取得できません。再ログインしてから実行してください',
+            unknown: '不明なアカウント', scoped: 'アカウント分離バックアップ' },
+        en: { title: 'Data backup', sub: 'Backups are scoped to the currently signed-in account and never include another account’s data.',
+            accountLabel: 'Signed-in account', scopeLabel: 'Backup scope',
+            scopeData: 'Conversations and attachments of this account (no global image pool)',
+            note: 'Files are named per account. After switching accounts you can only back up that account’s own data; accounts never mix.',
+            running: 'Packaging this account’s data, please wait…', started: 'Backup started. Check your downloads folder',
+            cancel: 'Cancel', start: 'Start backup', noAccount: 'No signed-in account found. Please sign in again before backing up',
+            unknown: 'Unknown account', scoped: 'Account-scoped backup' },
+        ko: { title: '데이터 백업', sub: '백업은 현재 로그인한 계정 단위로 분리되며 다른 계정의 데이터를 포함하지 않습니다.',
+            accountLabel: '현재 로그인 계정', scopeLabel: '백업 범위',
+            scopeData: '현재 계정의 대화 데이터와 첨부(전역 이미지 풀 제외)',
+            note: '파일 이름은 계정별로 지정됩니다. 계정을 전환하면 해당 계정의 데이터만 백업할 수 있으며 계정 간에 섞이지 않습니다.',
+            running: '현재 계정의 데이터를 패키징하는 중입니다. 잠시 기다려 주세요…', started: '백업이 시작되었습니다. 다운로드 폴더를 확인하세요',
+            cancel: '취소', start: '백업 시작', noAccount: '로그인 계정을 확인할 수 없습니다. 다시 로그인한 후 백업하세요',
+            unknown: '알 수 없는 계정', scoped: '계정 격리 백업' },
+        ru: { title: 'Резервная копия данных', sub: 'Копия создаётся только для текущей учётной записи и никогда не включает данные других учётных записей.',
+            accountLabel: 'Текущая учётная запись', scopeLabel: 'Объём копии',
+            scopeData: 'Диалоги и вложения этой учётной записи (без общего пула изображений)',
+            note: 'Файлы именуются по учётной записи. После переключения можно сохранить только данные текущей учётной записи — они не смешиваются.',
+            running: 'Упаковываем данные текущей учётной записи, подождите…', started: 'Копирование началось. Проверьте папку загрузок',
+            cancel: 'Отмена', start: 'Начать копирование', noAccount: 'Учётная запись не найдена. Войдите снова и повторите попытку',
+            unknown: 'Неизвестная учётная запись', scoped: 'Копия с разделением по учётным записям' },
+        fr: { title: 'Sauvegarde des données', sub: 'La sauvegarde est limitée au compte actuellement connecté et n’inclut jamais les données d’un autre compte.',
+            accountLabel: 'Compte connecté', scopeLabel: 'Périmètre de sauvegarde',
+            scopeData: 'Conversations et pièces jointes de ce compte (sans le pool d’images global)',
+            note: 'Les fichiers sont nommés par compte. Après changement de compte, seul ce compte peut être sauvegardé ; aucun mélange entre comptes.',
+            running: 'Compression des données du compte, veuillez patienter…', started: 'Sauvegarde lancée. Consultez votre dossier de téléchargements',
+            cancel: 'Annuler', start: 'Démarrer la sauvegarde', noAccount: 'Aucun compte connecté. Reconnectez-vous avant de sauvegarder',
+            unknown: 'Compte inconnu', scoped: 'Sauvegarde isolée par compte' }
+    };
+    function dscBackupCopy() {
+        var lang = 'zh';
+        try { lang = String((window.I18N && I18N.getLang && I18N.getLang()) || 'zh').slice(0, 2); } catch (e) { lang = 'zh'; }
+        return DSC_BACKUP_COPY[lang] || DSC_BACKUP_COPY.zh;
+    }
+    function currentKeweAccount() {
+        try {
+            if (window.KeweAuth && typeof KeweAuth.user === 'function') return KeweAuth.user();
+        } catch (e) {}
+        return null;
+    }
+    function closeBackupDialog() {
+        var ov = $('dscBackupOverlay');
+        if (ov) ov.remove();
+    }
+    function startAccountBackup(accountId, accountName) {
+        var c = dscBackupCopy();
+        if (!accountId) { toast(c.noAccount); return; }
+        if (state.backupRunning) { toast(c.running, 'info'); return; }
+        state.backupRunning = true;
+        closeBackupDialog();
+        toast(c.running, 'info');
+        var url = '/api/backup?type=data&account=' + encodeURIComponent(accountId) + '&_t=' + Date.now();
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'kewe-backup-' + String(accountName || accountId).replace(/[^\w.-]+/g, '_') + '.tar.gz';
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () {
+            if (a.parentNode) { a.parentNode.removeChild(a); }
+            state.backupRunning = false;
+            toast('✅ ' + c.started, 'success');
+        }, 1500);
+    }
+    function openBackupDialog() {
+        var c = dscBackupCopy();
+        closeBackupDialog();
+        var u = currentKeweAccount();
+        var name = '';
+        var id = '';
+        if (u) {
+            name = String(u.username || u.name || u.email || '').trim();
+            id = String(u.id || '').trim();
+        }
+        if (!name || !id) { toast(c.noAccount); return; }
+        var ov = document.createElement('div');
+        ov.className = 'dsc-modal-overlay';
+        ov.id = 'dscBackupOverlay';
+        ov.innerHTML = '<div class="dsc-modal dsc-backup-modal" role="dialog" aria-modal="true">' +
+            '<div class="dsc-modal-title">📦 ' + c.title + '</div>' +
+            '<div class="dsc-modal-sub" style="line-height:1.6;">' + c.sub + '</div>' +
+            '<div class="dsc-backup-account"><div class="dsc-backup-label">' + c.accountLabel + '</div>' +
+            '<div class="dsc-backup-name" id="dscBackupAccountName"></div><div class="dsc-backup-badge">' + c.scoped + '</div></div>' +
+            '<div class="dsc-backup-scope"><div class="dsc-backup-label">' + c.scopeLabel + '</div><div id="dscBackupScopeText"></div></div>' +
+            '<div class="dsc-backup-note" id="dscBackupNote"></div>' +
+            '<div class="dsc-modal-footer">' +
+            '<button type="button" class="dsc-btn ghost" id="dscBackupCancel"></button>' +
+            '<button type="button" class="dsc-btn primary" id="dscBackupStart"></button>' +
+            '</div></div>';
+        document.body.appendChild(ov);
+        $('dscBackupAccountName').textContent = '@' + name;
+        $('dscBackupScopeText').textContent = c.scopeData;
+        $('dscBackupNote').textContent = c.note;
+        $('dscBackupCancel').textContent = c.cancel;
+        $('dscBackupStart').textContent = c.start;
+        $('dscBackupCancel').onclick = closeBackupDialog;
+        $('dscBackupStart').onclick = function () { startAccountBackup(id, name); };
+        ov.addEventListener('click', function (e) { if (e.target === ov) closeBackupDialog(); });
+        requestAnimationFrame(function () { ov.classList.add('open'); });
+    }
+
+        bind('dscBackupBtn', 'click', openBackupDialog);
         bind('dscSidebarToggle', 'click', toggleSidebar);
         bind('dscSidebarOverlay', 'click', closeSidebar);
 
@@ -7168,6 +7537,7 @@
         });
 
         bind('dscLevelBtn', 'click', openLevelDialog);
+        bind('dscReflectBtn', 'click', openReflectDialog);
         bind('dscLevelCancel', 'click', closeLevelDialog);
         bind('dscLevelSave', 'click', saveLevelDialog);
         var lvRange = $('dscLevelRange');

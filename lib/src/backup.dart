@@ -10,6 +10,7 @@ import 'dart:typed_data';
 
 import 'globals.dart';
 import 'httpsrv.dart';
+import 'kewe_auth.dart';
 
 // ------------------------------------------------------------
 // tar 写入
@@ -152,6 +153,21 @@ Future<void> handleBackup(HttpRequest req) async {
   final timestamp = fmtFileStamp(DateTime.now());
   final type = qp(req, 'type');
 
+  // ★ 备份必须绑定当前登录账号：请求里的 account 只能是当前账号，
+  //   想备份别的账号会被直接拒绝，绝不串联。
+  final user = keweUserFromRequest(req);
+  final uid = (user?.id ?? currentUserId).trim();
+  if (uid.isEmpty) {
+    await errJson(res, 401, '请先登录后再备份');
+    return;
+  }
+  final requestedAccount = qp(req, 'account').trim();
+  if (requestedAccount.isNotEmpty && requestedAccount != uid) {
+    await errJson(res, 403, '只能备份当前登录账号的数据');
+    return;
+  }
+  final safeUser = (user?.username ?? uid).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+
   List<String> dirs;
   String namePrefix;
   switch (type) {
@@ -160,14 +176,16 @@ Future<void> handleBackup(HttpRequest req) async {
       namePrefix = 'config_backup';
       break;
     case 'data':
-      dirs = ['data', 'imgs'];
+      // ★ 只打包当前账号自己的数据目录；全局 imgs/ 不进入账号备份。
+      dirs = ['data'];
       namePrefix = 'data_backup';
       break;
     default:
-      dirs = ['data', 'imgs', 'models', 'whisper.cpp'];
+      // 完整备份同样不含全局 imgs/，避免把其他账号可见的图片池串进来。
+      dirs = ['data', 'models', 'whisper.cpp'];
       namePrefix = 'wordbook_backup';
   }
-  final filename = '${namePrefix}_$timestamp.tar.gz';
+  final filename = '${namePrefix}_${safeUser}_$timestamp.tar.gz';
 
   ensureDir(BACKUP_TMP_DIR);
   final tmpPath =
@@ -178,11 +196,13 @@ Future<void> handleBackup(HttpRequest req) async {
     final gz = gzip.encoder.startChunkedConversion(_FileSink(file));
     final tar = TarWriter(gz);
 
-    // ★ 账号隔离：登录用户只能备份自己的 DATA_DIR，绝不能把
-    //   data/auth 与 data/users 下其他账号的内容打进压缩包。
-    final scoped = currentUserId.isNotEmpty &&
-        DATA_DIR != '$BASE_DIR/data';
-    final dataRoot = scoped ? DATA_DIR : '$BASE_DIR/data';
+    // ★ 账号隔离：始终使用当前请求 Zone 注入的账号 DATA_DIR，
+    //   绝不再回退到全局 data，也不会打包 data/auth 或 data/users。
+    final dataRoot = user?.dataDir ?? DATA_DIR;
+    if (dataRoot.isEmpty || dataRoot == '$BASE_DIR/data') {
+      await errJson(res, 403, '账号数据目录无效，已拒绝备份');
+      return;
+    }
     for (final dirName in dirs) {
       final isData = dirName == 'data';
       final dirPath = isData ? dataRoot : '$BASE_DIR/$dirName';
@@ -307,6 +327,19 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
+  // ★ 恢复同样绑定当前登录账号：只清空/写入这个账号自己的目录。
+  final user = keweUserFromRequest(req);
+  final uid = (user?.id ?? currentUserId).trim();
+  if (uid.isEmpty) {
+    await errJson(res, 401, '请先登录后再恢复');
+    return;
+  }
+  final restoreDataRoot = user?.dataDir ?? DATA_DIR;
+  if (restoreDataRoot.isEmpty || restoreDataRoot == '$BASE_DIR/data') {
+    await errJson(res, 403, '账号数据目录无效，已拒绝恢复');
+    return;
+  }
+
   Uint8List body;
   try {
     body = Uint8List.fromList(await readBodyBytes(req, limit: MAX_UPLOAD_SIZE));
@@ -329,14 +362,20 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
-  // 清空当前账号的数据目录与共享 imgs/（绝不触碰其他账号）
-  final restoreDataRoot = currentUserId.isNotEmpty &&
-          DATA_DIR != '$BASE_DIR/data'
-      ? DATA_DIR
-      : '$BASE_DIR/data';
-  for (final d in [restoreDataRoot, '$BASE_DIR/imgs']) {
-    final dir = Directory(d);
-    if (!dir.existsSync()) continue;
+  // ★ 先校验归档，确认是合法 gzip/tar 后才清空当前账号目录；
+  //   无效文件绝不会导致现有数据被提前删除。
+  List<TarEntry> entries;
+  try {
+    final raw = gzip.decoder.convert(archive);
+    entries = parseTar(Uint8List.fromList(raw));
+  } catch (e) {
+    await errJson(res, 400, '无效的gzip文件: $e');
+    return;
+  }
+
+  // ★ 只清空当前账号自己的数据目录；不再触碰全局 imgs/，也不碰其他账号。
+  final dir = Directory(restoreDataRoot);
+  if (dir.existsSync()) {
     for (final e in dir.listSync()) {
       try {
         if (e is Directory) {
@@ -346,15 +385,6 @@ Future<void> handleRestore(HttpRequest req) async {
         }
       } catch (_) {}
     }
-  }
-
-  List<TarEntry> entries;
-  try {
-    final raw = gzip.decoder.convert(archive);
-    entries = parseTar(Uint8List.fromList(raw));
-  } catch (e) {
-    await errJson(res, 400, '无效的gzip文件: $e');
-    return;
   }
 
   var extracted = 0;
@@ -376,9 +406,15 @@ Future<void> handleRestore(HttpRequest req) async {
       continue;
     }
     name = parts.join('/');
-    final target = (name == 'data' || name.startsWith('data/'))
-        ? '$restoreDataRoot/${name.length > 5 ? name.substring(5) : ''}'
-        : '$BASE_DIR/$name';
+    // ★ 账号恢复只接受归档里的 data/ 段；imgs/、models/ 等共享路径一律跳过，
+    //   防止一个账号的备份污染其他账号或全局目录。
+    if (name != 'data' && !name.startsWith('data/')) {
+      logp('⚠️ 已跳过非账号数据条目: $name');
+      continue;
+    }
+    final target = name == 'data'
+        ? restoreDataRoot
+        : '$restoreDataRoot/${name.substring(5)}';
     try {
       if (e.typeflag == '5') {
         Directory(target).createSync(recursive: true);

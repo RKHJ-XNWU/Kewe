@@ -998,29 +998,19 @@ void migrateDsChatToPerSession() {
 class LevelParams {
   final int maxTokens;
   final double temperature;
-  final int rounds;
-  const LevelParams(this.maxTokens, this.temperature, this.rounds);
+  const LevelParams(this.maxTokens, this.temperature);
 }
 
 LevelParams levelToParams(int level) {
-  // ★ 推理等级上限已改为 999（见 db_limits.dart）：等级只影响温度与反思轮数，
-  //   不再决定最终 max_tokens —— 所有模型由 dbForcedMaxOutput() 统一强制覆盖。
+  // ★ 推理等级只影响采样温度与初始 max_tokens（最终仍由模型/全局档位上限覆盖）。
+  //   等级 1~999 一律单轮直接回答；多轮反思改由请求体 reflectionRounds 独立控制，
+  //   绝不从这里推导轮数。
   final l = dbClampReasoningLevel(level);
   const span = DB_REASONING_LEVEL_MAX - 1; // 999 → 998 个区间
   final maxTokens = DS_NORMAL_OUTPUT_TOKENS +
       (l - 1) * (DS_MAX_OUTPUT_TOKENS - DS_NORMAL_OUTPUT_TOKENS) ~/ span;
   final temperature = 1.0 - (l - 1) * 0.9 / span;
-  int rounds;
-  if (l <= 10) {
-    rounds = 1;
-  } else if (l <= 25) {
-    rounds = 2;
-  } else if (l <= 40) {
-    rounds = 3;
-  } else {
-    rounds = 4;
-  }
-  return LevelParams(maxTokens, temperature, rounds);
+  return LevelParams(maxTokens, temperature);
 }
 
 /// 续写合并：削掉重叠衔接部分

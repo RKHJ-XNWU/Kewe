@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" href="kewe.png">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%0A%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2250%25%22%20cy%3D%2245%25%22%20r%3D%2260%25%22%3E%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%238b5cf6%22%2F%3E%3Cstop%20offset%3D%2255%25%22%20stop-color%3D%22%234c1d95%22%2F%3E%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%231e1b4b%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%0A%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2248%22%20fill%3D%22url%28%23g%29%22%2F%3E%0A%3Cg%20fill%3D%22none%22%20stroke%3D%22%23c4b5fd%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2241%22%20ry%3D%2212%22%20transform%3D%22rotate%28-24%2050%2050%29%22%20opacity%3D%220.95%22%2F%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2241%22%20ry%3D%2212%22%20transform%3D%22rotate%2838%2050%2050%29%22%20opacity%3D%220.55%22%2F%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2227%22%20ry%3D%228%22%20transform%3D%22rotate%288%2050%2050%29%22%20opacity%3D%220.85%22%2F%3E%0A%3C%2Fg%3E%0A%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%223.2%22%20fill%3D%22%23fde68a%22%2F%3E%0A%3Cpath%20d%3D%22M50%2022%20L53.4%2041%20L72%2044%20L53.4%2047%20L50%2066%20L46.6%2047%20L28%2044%20L46.6%2041%20Z%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%3C%2Fsvg%3E" sizes="any">
     <title>聚维</title>
-    <link rel="stylesheet" href="deepseek-chat.css?v=20261124-dotblink">
+    <link rel="stylesheet" href="deepseek-chat.css?v=20261124-reflect1">
     <link rel="stylesheet" href="ds-files.css?v=5">
     <link rel="stylesheet" href="ds-devtools.css?v=3">
     <link rel="stylesheet" href="peakvalley.css?v=3">
@@ -43,7 +43,7 @@
         .dsc-model-tab.active { background: #ffffff; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
         .dsc-model-empty { padding: 18px 8px; text-align: center; font-size: 0.8rem; color: #9ca3af; }
     </style>
-    <link rel="stylesheet" href="kewe-ui.css?v=20261123-reason6">
+    <link rel="stylesheet" href="kewe-ui.css?v=20261124-reflect1">
     <link rel="stylesheet" href="kewe-empire.css?v=20261123-empire11">
     <script src="kewe-auth.js?v=20261124-auth6"></script>
 </head>
@@ -96,7 +96,7 @@
                     <button class="dsc-more-item" id="dscVocabBtn" title="日本語単語帳"><span class="ic">📚</span><span class="tx">日本語単語帳</span></button>
                     <button class="dsc-more-item" id="dscFilesToggle" title="ファイル管理"><span class="ic">📁</span><span class="tx">ファイル管理</span></button>
                     <button class="dsc-more-item" id="dscPeakValleyBtn" title="ピーク／オフピーク通知"><span class="ic">🏔️</span><span class="tx">ピーク／オフピーク通知</span></button>
-                    <button class="dsc-more-item" id="dscBackupBtn" title="データバックアップ（data + imgs）"><span class="ic">📦</span><span class="tx">データバックアップ</span></button>
+                    <button class="dsc-more-item" id="dscBackupBtn" title="データバックアップ（現在のアカウントのみ）"><span class="ic">📦</span><span class="tx">データバックアップ</span></button>
                     <button class="dsc-more-item" id="dscRestoreBtn" title="バックアップから復元"><span class="ic">♻️</span><span class="tx">データ復元</span></button>
                     <button class="dsc-more-item" id="dscSettingsBtn" title="設定"><span class="ic">⚙️</span><span class="tx">設定</span></button>
                     <button class="dsc-more-item" id="dscGlobalSearchBtn" title="セッション検索"><span class="ic">🔍</span><span class="tx">セッション検索</span></button>
@@ -161,6 +161,9 @@
                             <span class="ic">🧩</span>
                             <span class="lbl">推論</span>
                             <span class="lvl-num" id="dscLevelBtnNum">999</span>
+                        </button>
+                        <button class="dsc-level-btn dsc-reflect-btn" id="dscReflectBtn" title="多轮反思">
+                            <span class="lvl-num" id="dscReflectBtnNum">↻</span>
                         </button>
                         <div class="dsc-tools-extra" id="dscToolsExtra"></div>
                     </div>
@@ -373,8 +376,8 @@
         <!-- 推論レベル弹窗 -->
         <div class="dsc-modal-overlay" id="dscLevelOverlay">
             <div class="dsc-modal" style="max-width:400px;">
-                <div class="dsc-modal-title">🧩 推論レベル</div>
-                <div class="dsc-modal-sub" style="margin-bottom:10px;">レベルが高いほど自己反省の回数が増え、回答がより正確で完全になります</div>
+                <div class="dsc-modal-title" id="dscLevelTitle">🧩 推論レベル</div>
+                <div class="dsc-modal-sub" id="dscLevelSub" style="margin-bottom:10px;">レベルはサンプリング温度と出力上限だけに影響します。反省回数は別の「多輪反省」で設定します。</div>
                 <div id="dscLevelNotice" style="margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:0.76rem;line-height:1.5;text-align:left;"></div>
                 <div class="dsc-level-display">
                     <div class="dsc-level-num" id="dscLevelNum">999</div>
@@ -753,8 +756,8 @@
     <script src="i18n/ai-prompts.js?v=20261123-1"></script>
     <script src="ds-files.js?v=20261123-1"></script>
     <script src="ds-devtools.js?v=20261123-1"></script>
-    <script src="deepseek-chat.js?v=20261124-limit8"></script>
-    <script src="dsc-control-center.js?v=20261124-live1"></script>
+    <script src="deepseek-chat.js?v=20261124-reflect1"></script>
+    <script src="dsc-control-center.js?v=20261124-ctxmono"></script>
     <script src="peakvalley.js?v=20261104i18n14"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->
@@ -885,7 +888,7 @@
                 var _t = function (x) { return (window.I18N && window.I18N.t) ? window.I18N.t(x) : x; };
                 confirmDialog(
                     _t('♻️ バックアップから復元'),
-                    _t('アップロードした .tar.gz バックアップで、現在の data/ と imgs/ ディレクトリ全体を上書きします。') + '\n\n' +
+                    _t('アップロードした .tar.gz バックアップで、現在のアカウントのデータディレクトリを上書きします。') + '\n\n' +
                     _t('この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！') + '\n\n' +
                     _t('（推奨：先に「📦 データバックアップ」ボタンで現在のデータをダウンロードしてください）')
                 ).then(function (ok) {

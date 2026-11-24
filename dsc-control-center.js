@@ -23,7 +23,11 @@
         lastServerAt: 0,
         lastSnapKey: '',
         lastMsgCount: -1,
-        lastKickAt: 0
+        lastKickAt: 0,
+        // ★ 会话内上下文高水位：同一会话已占用只增不减，杜绝「倒着走」。
+        ctxHigh: 0,
+        ctxHighKey: '',
+        ctxHighMsgs: -1
     };
 
     var CONTEXT_POLL_MS = 1000;   // 常驻刷新间隔：面板关闭时也每秒同步一次
@@ -354,7 +358,17 @@
         var local = localEstimate(snap);
         var estimated = Math.max(local, server ? Number(server.estimatedTokens) || 0 : 0);
         var reported = server ? Number(server.reportedTokens) || 0 : 0;
-        var used = Math.max(estimated, reported);
+        var rawUsed = Math.max(estimated, reported);
+        // ★ 修复「上下文窗口倒着走」：同一会话内维护高水位，服务端快照/轮询
+        //   抖动或某次上报偏小都只会被高水位吸收，数值与圆环绝不回退。
+        //   仅当切换会话（key 变化）或消息条数减少（删除/清空）时才重置。
+        if (key !== state.ctxHighKey || msgCount < state.ctxHighMsgs) {
+            state.ctxHighKey = key;
+            state.ctxHigh = 0;
+        }
+        if (rawUsed > state.ctxHigh) state.ctxHigh = rawUsed;
+        var used = state.ctxHigh;
+        state.ctxHighMsgs = msgCount;
         var ratio = Math.min(1, used / CONTEXT_WINDOW);
         var percent = ratio * 100;
         var remaining = Math.max(0, CONTEXT_WINDOW - used);
@@ -362,7 +376,10 @@
         if ($('dscCtxRemaining')) $('dscCtxRemaining').textContent = formatCompact(remaining);
         if ($('dscCtxPercent')) $('dscCtxPercent').textContent = (percent < 0.1 && percent > 0 ? percent.toFixed(2) : percent.toFixed(1)) + '%';
         if ($('dscCtxRingProgress')) {
-            $('dscCtxRingProgress').style.strokeDashoffset = String(339.292 * (1 - ratio));
+            var ringC = 339.292;
+            // 显式 dasharray + 偏移，保证从 12 点位置顺时针正向增长。
+            $('dscCtxRingProgress').style.strokeDasharray = ringC + ' ' + ringC;
+            $('dscCtxRingProgress').style.strokeDashoffset = String(ringC * (1 - ratio));
             $('dscCtxRingProgress').classList.toggle('warning', ratio >= 0.75);
             $('dscCtxRingProgress').classList.toggle('danger', ratio >= 0.9);
         }

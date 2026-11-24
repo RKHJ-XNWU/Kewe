@@ -812,6 +812,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final webSearch = mBool(body, 'webSearch');
   final deepThink = mBool(body, 'deepThink');
   var level = intArgDefault(body, 'reasoningLevel', 1);
+  // ★ 多轮反思独立开关：0=关闭（默认），1~10=反思次数。
+  //   推理等级只影响温度/初始输出上限，任何等级都不再自动触发反思。
+  var reflectionRounds = intArgDefault(body, 'reflectionRounds', 0);
+  if (reflectionRounds < 0) reflectionRounds = 0;
+  if (reflectionRounds > 10) reflectionRounds = 10;
   final longTextMode = mBool(body, 'longTextMode');
   final targetChars = intArgDefault(body, 'targetChars', 0);
   final novelMode = mBool(body, 'novelMode');
@@ -954,12 +959,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     return;
   }
 
-  // ★ 推理等级：上限 999（前端 dscLevelRange 同步），等级不再决定 max_tokens。
+  // ★ 推理等级：上限 999（前端 dscLevelRange 同步），等级不再决定 max_tokens，
+  //   也不再决定反思轮数（1~999 全部单轮直接回答）。
   level = dbClampReasoningLevel(level);
   var params = levelToParams(level);
   var maxTokens = params.maxTokens;
   var temperature = params.temperature;
-  var rounds = params.rounds;
+  // rounds = 1 表示单轮直接回答；>1 表示初稿 + (rounds-1) 次反思。
+  var rounds = reflectionRounds > 0 ? reflectionRounds + 1 : 1;
 
   if (longTextMode) {
     maxTokens = DS_MAX_OUTPUT_TOKENS;
@@ -979,7 +986,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     }
     maxTokens = cappedOut;
   }
-  if (enableTools) temperature = 0.0;
+  if (enableTools) {
+    // 工具模式走独立 function-calling 分支，绝不叠加多轮反思。
+    temperature = 0.0;
+    rounds = 1;
+  }
   // Kimi 系列（kimi-k3 / kimi-k3.1-pro 等）强制温度 1.0；非 Kimi 模型完全沿用原有逻辑。
   if (dbIsKimiModel(model)) {
     if (temperature != DB_KIMI_TEMPERATURE) {
@@ -988,17 +999,17 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     temperature = DB_KIMI_TEMPERATURE;
   }
 
-  // ========== 豆包多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
-  // 1) 豆包维度全部对话模型按推理等级执行多轮反思（与 DeepSeek 同一套等级逻辑）；
+  // ========== 多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
+  // 1) 反思只由前端「多轮反思」开关的 reflectionRounds(1~10) 触发；
   //    工具模式独立走 function-calling 分支、不进入反思循环；长文模式保持单轮。
   // 2) 抖音百科（联网内容插件，仅 Responses API）生效期间强制关闭工具模式：
   //    否则 Chat Completions 的 function calling 与插件的 web_search 会在同一轮
   //    互相抢占，表现为「豆包模式搜索抖音百科时突然调用工具」的严重 bug。
-  if (useDoubao && !longTextMode) {
-    if (enableTools && rounds > 1) {
-      logp('🫘 豆包工具模式: 不执行多轮反思（等级 Lv.$level / rounds=$rounds 仅作为工具迭代预算）');
-    } else if (!enableTools && rounds > 1) {
-      logp('🫘 豆包模式: 启用多轮反思（rounds=$rounds · Lv.$level）');
+  if (!longTextMode) {
+    if (reflectionRounds > 0 && rounds > 1) {
+      logp('🔁 多轮反思已开启: $reflectionRounds 轮（rounds=$rounds, model=$model, Lv.$level 仅影响温度）');
+    } else {
+      logp('➡️ 单轮直接回答: model=$model, Lv.$level（等级不触发反思）');
     }
   }
   // 抖音百科生效（含前缀强制）时工具模式必须让路：

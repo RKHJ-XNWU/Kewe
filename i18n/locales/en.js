@@ -123,7 +123,7 @@ I18N.add('en',`
     新規セッション|New Session
     その他の機能|More Features
     フォーラム · 投稿広場へ|Go to Forum · Post Plaza
-    データバックアップ（data + imgs）|Data backup (data + imgs)
+    データバックアップ（現在のアカウントのみ）|Data backup (current account only)
     バックアップから復元|Restore from backup
     閉じる|Close
     セッションを検索...|Search sessions...
@@ -1060,7 +1060,7 @@ I18N.add('en',`
     お知らせの本文を入力|Enter announcement body
     タイトルを入力|Enter a title
     本文を入力|Enter body
-    アップロードした .tar.gz バックアップで、現在の data/ と imgs/ ディレクトリ全体を上書きします。|The uploaded .tar.gz backup will overwrite the entire current data/ and imgs/ directories.
+    アップロードした .tar.gz バックアップで、現在のアカウントのデータディレクトリを上書きします。|The uploaded .tar.gz backup will overwrite the current account's data directory.
     この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！|This operation cannot be undone. Make sure the current data has been backed up!
     .tar.gz バックアップファイルをアップロードしてください|Please upload a .tar.gz backup file
     プロンプト内容（送信メッセージの前に付加されます）|Prompt content (prepended to the outgoing message)
