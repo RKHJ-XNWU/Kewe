@@ -1,5 +1,5 @@
 /* ============================================================
- * kewe-auth.js —— 登录 / 注册 / 注销 / 404 门禁
+ * kewe-auth.js —— 登录 / 注册 / 退出登录 / 注销账号 / 404 门禁
  *
  * 安全模型：
  *   · 浏览器用 PBKDF2-SHA256 把密码派生为 verifier（30,000 次）；
@@ -65,9 +65,16 @@
       logoutBody: '削除すると、このアカウントのチャット・ファイル・データはサーバーから完全に削除されます。匿名化や復元はできません。',
       logoutCancel: 'キャンセル',
       logoutConfirm: '削除してログアウト',
-      logoutMenu: 'アカウント削除 / ログアウト',
+      logoutMenu: 'アカウント削除',
       logoutBusy: '削除中…',
       logoutFail: '削除に失敗しました。もう一度お試しください。',
+      signOutMenu: 'ログアウト',
+      signOutTitle: 'ログアウト',
+      signOutBody: 'この端末のログイン状態だけを終了します。アカウント・チャット・ナレッジ・ファイルはすべて保持され、次回ログインで続きを利用できます。',
+      signOutCancel: 'キャンセル',
+      signOutConfirm: 'ログアウト',
+      signOutBusy: 'ログアウト中…',
+      signOutFail: 'ログアウトに失敗しました。もう一度お試しください。',
       show: 'パスワードを表示',
       hide: 'パスワードを隠す',
       language: '言語'
@@ -115,9 +122,16 @@
       logoutBody: '注销后，此账号的全部聊天、文件与账号数据将从服务器彻底删除，不做匿名化，也无法恢复。',
       logoutCancel: '取消',
       logoutConfirm: '销毁并退出',
-      logoutMenu: '注销账号 / 退出登录',
+      logoutMenu: '注销账号',
       logoutBusy: '正在销毁…',
       logoutFail: '注销失败，请稍后重试。',
+      signOutMenu: '退出登录',
+      signOutTitle: '退出登录',
+      signOutBody: '只结束这台设备的登录状态；账号、聊天、知识库与文件全部保留，重新登录即可继续。',
+      signOutCancel: '取消',
+      signOutConfirm: '退出登录',
+      signOutBusy: '正在退出…',
+      signOutFail: '退出登录失败，请稍后重试。',
       show: '显示密码',
       hide: '隐藏密码',
       language: '语言'
@@ -165,9 +179,16 @@
       logoutBody: 'Deleting permanently destroys all chats, files and data for this account. Nothing is anonymized or recoverable.',
       logoutCancel: 'Cancel',
       logoutConfirm: 'Destroy & sign out',
-      logoutMenu: 'Delete account / Sign out',
+      logoutMenu: 'Delete account',
       logoutBusy: 'Destroying…',
       logoutFail: 'Deletion failed. Please try again.',
+      signOutMenu: 'Sign out',
+      signOutTitle: 'Sign out',
+      signOutBody: 'This only ends the session on this device. The account, chats, knowledge and files are all kept; sign in again to continue.',
+      signOutCancel: 'Cancel',
+      signOutConfirm: 'Sign out',
+      signOutBusy: 'Signing out…',
+      signOutFail: 'Sign-out failed. Please try again.',
       show: 'Show password',
       hide: 'Hide password',
       language: 'Language'
@@ -215,9 +236,16 @@
       logoutBody: '삭제하면 이 계정의 모든 대화·파일·데이터가 서버에서 완전히 삭제됩니다. 익명화나 복구는 없습니다.',
       logoutCancel: '취소',
       logoutConfirm: '삭제하고 로그아웃',
-      logoutMenu: '계정 삭제 / 로그아웃',
+      logoutMenu: '계정 삭제',
       logoutBusy: '삭제 중…',
       logoutFail: '삭제에 실패했습니다. 다시 시도해 주세요.',
+      signOutMenu: '로그아웃',
+      signOutTitle: '로그아웃',
+      signOutBody: '이 기기의 로그인 상태만 종료합니다. 계정, 대화, 지식, 파일은 모두 보존되며 다시 로그인하면 이어서 사용할 수 있습니다.',
+      signOutCancel: '취소',
+      signOutConfirm: '로그아웃',
+      signOutBusy: '로그아웃 중…',
+      signOutFail: '로그아웃에 실패했습니다. 다시 시도해 주세요.',
       show: '비밀번호 보기',
       hide: '비밀번호 숨기기',
       language: '언어'
@@ -265,9 +293,16 @@
       logoutBody: 'При удалении все чаты, файлы и данные этого аккаунта безвозвратно удаляются с сервера. Анонимизации и восстановления нет.',
       logoutCancel: 'Отмена',
       logoutConfirm: 'Удалить и выйти',
-      logoutMenu: 'Удалить аккаунт / Выйти',
+      logoutMenu: 'Удалить аккаунт',
       logoutBusy: 'Удаление…',
       logoutFail: 'Не удалось удалить. Попробуйте снова.',
+      signOutMenu: 'Выйти',
+      signOutTitle: 'Выйти из аккаунта',
+      signOutBody: 'Завершается только сеанс на этом устройстве. Аккаунт, чаты, база знаний и файлы сохраняются — войдите снова, чтобы продолжить.',
+      signOutCancel: 'Отмена',
+      signOutConfirm: 'Выйти',
+      signOutBusy: 'Выход…',
+      signOutFail: 'Не удалось выйти. Попробуйте снова.',
       show: 'Показать пароль',
       hide: 'Скрыть пароль',
       language: 'Язык'
@@ -315,9 +350,16 @@
       logoutBody: 'La suppression détruit définitivement toutes les discussions, fichiers et données de ce compte. Aucune anonymisation ni restauration.',
       logoutCancel: 'Annuler',
       logoutConfirm: 'Détruire et quitter',
-      logoutMenu: 'Supprimer le compte / Déconnexion',
+      logoutMenu: 'Supprimer le compte',
       logoutBusy: 'Suppression…',
       logoutFail: 'Échec de la suppression. Réessayez.',
+      signOutMenu: 'Déconnexion',
+      signOutTitle: 'Se déconnecter',
+      signOutBody: 'Seule la session sur cet appareil est fermée. Le compte, les discussions, la base de connaissances et les fichiers sont conservés ; reconnectez-vous pour continuer.',
+      signOutCancel: 'Annuler',
+      signOutConfirm: 'Se déconnecter',
+      signOutBusy: 'Déconnexion…',
+      signOutFail: 'Échec de la déconnexion. Réessayez.',
       show: 'Afficher le mot de passe',
       hide: 'Masquer le mot de passe',
       language: 'Langue'
@@ -945,73 +987,129 @@
   }
 
   // ------------------------------------------------------------
-  // 注销入口
-// ------------------------------------------------------------
-  function injectLogoutMenu() {
+  // 账号菜单：退出登录（保留数据） / 注销账号（销毁数据）
+  // ------------------------------------------------------------
+  function injectAccountMenu() {
     if (!state.authenticated) return;
     var menu = document.getElementById('dscMoreMenu');
-    if (!menu || document.getElementById('keweLogoutBtn')) return;
-    var btn = el('button', 'dsc-more-item kewe-logout-item');
-    btn.id = 'keweLogoutBtn';
-    btn.type = 'button';
-    btn.title = lm('logoutMenu');
-    btn.innerHTML = '<span class="ic">🚪</span><span class="tx"></span>';
-    btn.querySelector('.tx').textContent = lm('logoutMenu');
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      openLogoutConfirm();
-    });
-    menu.appendChild(btn);
+    if (!menu) return;
+
+    // 退出登录：只结束会话，账号与数据全部保留。
+    if (!document.getElementById('keweSignOutBtn')) {
+      var out = el('button', 'dsc-more-item kewe-signout-item');
+      out.id = 'keweSignOutBtn';
+      out.type = 'button';
+      out.title = lm('signOutMenu');
+      out.innerHTML = '<span class="ic">👤</span><span class="tx"></span>';
+      out.querySelector('.tx').textContent = lm('signOutMenu');
+      out.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openSignOutConfirm();
+      });
+      menu.appendChild(out);
+    }
+
+    // 注销账号：不可逆，走到下面红色的销毁确认。
+    if (!document.getElementById('keweLogoutBtn')) {
+      var del = el('button', 'dsc-more-item kewe-delete-item');
+      del.id = 'keweLogoutBtn';
+      del.type = 'button';
+      del.title = lm('logoutMenu');
+      del.innerHTML = '<span class="ic">⚠️</span><span class="tx"></span>';
+      del.querySelector('.tx').textContent = lm('logoutMenu');
+      del.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openDeleteConfirm();
+      });
+      menu.appendChild(del);
+    }
   }
 
-  function openLogoutConfirm() {
-    if (document.getElementById('keweLogoutOverlay')) return;
+  function clearLocalKeepLang() {
+    try {
+      var keepLang = localStorage.getItem(LANG_KEY);
+      localStorage.clear();
+      sessionStorage.clear();
+      if (keepLang) localStorage.setItem(LANG_KEY, keepLang);
+    } catch (e) {}
+  }
+
+  // 通用确认框：tone=safe 用于退出登录，tone=danger 用于注销账号。
+  function openConfirm(opts) {
+    if (document.getElementById(opts.id)) return;
     var overlay = el('div', 'kewe-logout-overlay');
-    overlay.id = 'keweLogoutOverlay';
-    var card = el('div', 'kewe-logout-card');
+    overlay.id = opts.id;
+    var card = el('div', 'kewe-logout-card' + (opts.tone === 'safe' ? ' kewe-confirm-safe' : ''));
     card.innerHTML =
-      '<div class="ico">⚠️</div>' +
+      '<div class="ico">' + opts.icon + '</div>' +
       '<h3></h3><p></p>' +
       '<div class="kewe-logout-actions">' +
       '<button type="button" class="kewe-logout-cancel"></button>' +
       '<button type="button" class="kewe-logout-confirm"></button>' +
       '</div>';
-    card.querySelector('h3').textContent = lm('logoutTitle');
-    var p = card.querySelector('p');
-    p.textContent = lm('logoutBody');
+    card.querySelector('h3').textContent = opts.title;
+    card.querySelector('p').textContent = opts.body;
     var cancel = card.querySelector('.kewe-logout-cancel');
-    cancel.textContent = lm('logoutCancel');
+    cancel.textContent = opts.cancel;
     var confirm = card.querySelector('.kewe-logout-confirm');
-    confirm.textContent = lm('logoutConfirm');
+    confirm.textContent = opts.confirm;
+    if (opts.tone === 'safe') confirm.classList.add('kewe-confirm-safe-btn');
     cancel.addEventListener('click', function () { overlay.remove(); });
     overlay.addEventListener('click', function (e) { if (e.target === overlay) overlay.remove(); });
     confirm.addEventListener('click', function () {
       cancel.disabled = true;
       confirm.disabled = true;
-      confirm.textContent = lm('logoutBusy');
-      api('/api/auth/logout', {}).then(function (r) {
+      confirm.textContent = opts.busy;
+      api(opts.endpoint, {}).then(function (r) {
         if (r.status >= 200 && r.status < 300) {
-          try {
-            var keepLang = localStorage.getItem(LANG_KEY);
-            localStorage.clear();
-            sessionStorage.clear();
-            if (keepLang) localStorage.setItem(LANG_KEY, keepLang);
-          } catch (e) {}
+          // 服务端已清 Cookie；这里只清本机缓存，不触碰任何账号数据。
+          clearLocalKeepLang();
           global.location.reload();
         } else {
           overlay.remove();
-          if (global.dscToast) global.dscToast(lm('logoutFail'), 'error');
-          else global.alert(lm('logoutFail'));
+          if (global.dscToast) global.dscToast(opts.fail, 'error');
+          else global.alert(opts.fail);
         }
       }).catch(function () {
         overlay.remove();
-        if (global.dscToast) global.dscToast(lm('logoutFail'), 'error');
-        else global.alert(lm('logoutFail'));
+        if (global.dscToast) global.dscToast(opts.fail, 'error');
+        else global.alert(opts.fail);
       });
     });
     overlay.appendChild(card);
     document.body.appendChild(overlay);
+  }
+
+  function openSignOutConfirm() {
+    openConfirm({
+      id: 'keweSignOutOverlay',
+      tone: 'safe',
+      icon: '👤',
+      endpoint: '/api/auth/logout',
+      title: lm('signOutTitle'),
+      body: lm('signOutBody'),
+      cancel: lm('signOutCancel'),
+      confirm: lm('signOutConfirm'),
+      busy: lm('signOutBusy'),
+      fail: lm('signOutFail')
+    });
+  }
+
+  function openDeleteConfirm() {
+    openConfirm({
+      id: 'keweLogoutOverlay',
+      tone: 'danger',
+      icon: '⚠️',
+      endpoint: '/api/auth/delete',
+      title: lm('logoutTitle'),
+      body: lm('logoutBody'),
+      cancel: lm('logoutCancel'),
+      confirm: lm('logoutConfirm'),
+      busy: lm('logoutBusy'),
+      fail: lm('logoutFail')
+    });
   }
 
   // ------------------------------------------------------------
@@ -1025,8 +1123,8 @@
             state.authenticated = true;
             state.user = data.user || null;
             hideGate();
-            setTimeout(injectLogoutMenu, 50);
-            setTimeout(injectLogoutMenu, 900);
+            setTimeout(injectAccountMenu, 50);
+            setTimeout(injectAccountMenu, 900);
           } else {
             showGate();
           }
@@ -1051,14 +1149,15 @@
         if (!state.gate) buildGate();
         showGate();
       }
-      injectLogoutMenu();
+      injectAccountMenu();
     });
   }
 
   global.KeweAuth = {
     isAuthenticated: function () { return state.authenticated; },
     user: function () { return state.user; },
-    logout: openLogoutConfirm,
+    logout: openSignOutConfirm,
+    deleteAccount: openDeleteConfirm,
     showGate: showGate,
     lang: function () { return state.lang; }
   };

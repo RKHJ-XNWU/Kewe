@@ -443,10 +443,34 @@ Future<void> handleKeweAuthApi(HttpRequest req) async {
     return;
   }
 
+  // 退出登录：只结束当前设备的会话（清除 Cookie + 删除该 token），
+  // 账号记录、聊天、知识库、文件等数据全部保留，重新登录即可恢复。
   if (path == '/api/auth/logout' && method == 'POST') {
     final user = keweUserFromRequest(req);
     final token = _cookieValue(req, KEWE_AUTH_COOKIE);
     _clearAuthCookie(req.response);
+    req.response.headers.set('Cache-Control', 'no-store');
+    if (token != null) {
+      final store = _loadStore();
+      store.sessions.remove(token);
+      _saveStore(store.users, store.sessions);
+    }
+    logp('👋 退出登录（数据保留）: ${user?.username ?? '-'} (${user?.id ?? '-'})');
+    await jsonResponse(req.response, 200, {
+      'ok': true,
+      'loggedOut': true,
+      'purged': false,
+      'dataKept': true,
+    });
+    return;
+  }
+
+  // 注销账号：销毁该账号的数据目录与账号记录，不可恢复。
+  if (path == '/api/auth/delete' && method == 'POST') {
+    final user = keweUserFromRequest(req);
+    final token = _cookieValue(req, KEWE_AUTH_COOKIE);
+    _clearAuthCookie(req.response);
+    req.response.headers.set('Cache-Control', 'no-store');
     if (user == null) {
       await jsonResponse(req.response, 200, {'ok': true, 'loggedOut': true});
       return;

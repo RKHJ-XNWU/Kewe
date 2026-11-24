@@ -612,6 +612,26 @@ html.kewe-auth-locked #keweEmpireFx {
 }
 .kewe-logout-cancel[disabled], .kewe-logout-confirm[disabled] { opacity: .55; pointer-events: none; }
 
+/* ---------- 账号菜单：退出登录（保留数据） / 注销账号（销毁数据） ---------- */
+.kewe-signout-item .ic { color: #22d3ee; }
+.kewe-delete-item .ic,
+.kewe-delete-item .tx { color: #fca5a5; }
+
+/* 退出登录使用中性青色，不显示成危险操作 */
+.kewe-logout-card.kewe-confirm-safe {
+  border-color: rgba(34, 211, 238, .26);
+}
+.kewe-logout-card.kewe-confirm-safe .ico {
+  background: rgba(34, 211, 238, .12);
+  border-color: rgba(34, 211, 238, .28);
+  color: #67e8f9;
+}
+.kewe-confirm-safe-btn {
+  border: 1px solid rgba(34, 211, 238, .5);
+  background: linear-gradient(145deg, #0891b2, #155e75);
+  color: #fff;
+}
+
 @media (max-width: 768px), (prefers-reduced-motion: reduce) {
   .kewe-auth-gate::before { animation: none; opacity: .26; transform: none; }
   .kewe-auth-aurora {
