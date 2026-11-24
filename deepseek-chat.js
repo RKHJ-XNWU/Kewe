@@ -3487,6 +3487,8 @@
                                     (obj.percent || 0), dscFmtBytes(obj.sent), dscFmtBytes(obj.total));
                             } else if (mpStage === 'upload_retry') {
                                 mpLine = dscT('🔁 前処理モデルを切り替えて再試行中…');
+                            } else if (mpStage === 'fallback') {
+                                mpLine = dscT('⚠️ 方舟の前処理に失敗したため、ローカル分割で続行します');
                             } else if (mpStage === 'tos_reference' || mpStage === 'tos_upload_done') {
                                 mpLine = dscT('☁️ TOS 上の動画を参照登録中（{0}）', dscFmtBytes(obj.size));
                             } else if (mpStage === 'preprocess_wait' || mpStage === 'preprocess') {

@@ -20,7 +20,11 @@ String get DSFilesBlobDir => '$DSFilesDir/blob';
 String get DSFilesChunksDir => '$DSFilesDir/chunks';
 
 const int DS_MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
-const int DS_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB (OOM fix)
+const int DS_MAX_VIDEO_SIZE = 2 * 1024 * 1024 * 1024; // 2GB（视频硬上限）
+// ★ 8MB 而不是 64MB：手机上行带宽下，64MB 单块很容易超过 HttpServer 的
+//   idleTimeout，表现为「传到一半就失败、视频永远上传不完」。8MB/块还能
+//   降低服务端单次读入内存的峰值。
+const int DS_CHUNK_SIZE = 8 * 1024 * 1024; // 8MB
 const Duration DS_UPLOAD_SESSION_TTL = Duration(hours: 1);
 const Duration DS_ORPHAN_GRACE_PERIOD = Duration(minutes: 30);
 
@@ -58,6 +62,22 @@ void cleanupStaleUploadSessions() {
     } catch (_) {}
   }
   if (cleaned > 0) logp('🧹 已清理 $cleaned 个过期的上传会话');
+}
+
+/// 视频扩展名白名单：mimeType 可能为空（部分 Android 文件选择器会给
+/// application/octet-stream），所以必须同时看扩展名，不能漏掉 2GB 校验。
+const Set<String> _dsVideoExts = <String>{
+  'mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'flv', 'wmv', 'mpeg', 'mpg', 'ts',
+  'm2ts', '3gp', 'ogv', 'rm', 'rmvb', 'asf', 'vob'
+};
+
+bool dsIsVideoUpload(String mimeType, String fileName) {
+  final m = mimeType.trim().toLowerCase();
+  if (m.startsWith('video/')) return true;
+  final n = fileName.trim().toLowerCase();
+  final dot = n.lastIndexOf('.');
+  if (dot < 0 || dot == n.length - 1) return false;
+  return _dsVideoExts.contains(n.substring(dot + 1));
 }
 
 String sanitizeFileName(String name) {
@@ -352,6 +372,14 @@ Future<void> handleDsFileUploadStart(HttpRequest req) async {
         '文件超过 5GB 上限（当前 ${(fileSize / (1 << 30)).toStringAsFixed(2)} GB）');
     return;
   }
+  if (dsIsVideoUpload(mimeType, fileName) && fileSize > DS_MAX_VIDEO_SIZE) {
+    await errJson(
+        req.response,
+        413,
+        '视频文件超过 2GB 上限（当前 '
+        '${(fileSize / (1 << 30)).toStringAsFixed(2)} GB）');
+    return;
+  }
 
   final uploadID = 'up_${fmtStamp14(DateTime.now())}_${randomHex(6)}';
   var totalChunks = (fileSize + DS_CHUNK_SIZE - 1) ~/ DS_CHUNK_SIZE;
@@ -445,6 +473,12 @@ Future<void> handleDsFileUploadChunk(HttpRequest req) async {
   final chunkPath = '$chunkDir/${chunkIdx.toString().padLeft(6, '0')}.part';
   try {
     File(chunkPath).writeAsBytesSync(chunkData);
+    // ★ 2GB 视频在慢速网络下可能上传超过 1 小时；清理器按会话 JSON 的
+    //   mtime 判断过期，必须每收到一块就刷新，否则传到最后会话被删掉，
+    //   表现为「视频永远传不完」。
+    try {
+      File(sessPath).setLastModifiedSync(DateTime.now());
+    } catch (_) {}
   } catch (_) {
     await errJson(req.response, 500, '分块写入失败');
     return;

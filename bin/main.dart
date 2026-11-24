@@ -409,7 +409,9 @@ Future<void> _serveMain(List<String> args) async {
   // 之后「一直思考、思考链不推进、始终不出回答」。
   // HTTP 层不压缩不影响前端功能，只牺牲一点传输体积。
   server.autoCompress = false;
-  server.idleTimeout = const Duration(seconds: 120);
+  // ★ 视频分片上传可能在手机弱网下单块耗时数分钟；120 秒会直接掐断。
+  //   SSE 有 15 秒心跳，长连接不会被这段超时影响；这里只放宽上传容忍度。
+  server.idleTimeout = const Duration(seconds: 300);
 
   logp('✅ サーバーが起動しました。http://localhost:$PORT/ でアクセスできます');
 

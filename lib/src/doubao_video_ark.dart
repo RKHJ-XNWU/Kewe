@@ -610,7 +610,7 @@ Future<_DbJsonResp> _dbPostVideoBase64({
       if (chunk.isEmpty) break;
       done += chunk.length;
       req.add(utf8.encode(base64Encode(chunk)));
-      await req.flush();
+      await req.flush().timeout(const Duration(seconds: 120));
     }
   } catch (e) {
     try {
@@ -706,23 +706,39 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       'fileName': meta.name,
     };
 
-    // ---------- 强制 TOS:所有视频都走 TOS 引用(不回退) ----------
+    // ---------- Files API / TOS 只是一个加速通道，绝不能成为单点死路 ----------
+    //   实测方舟会在预处理阶段返回：
+    //   InvalidArgumentError('Timeout occurred while processing video...')
+    //   用户看到「视频预处理失败」，整条消息也发不出去。
+    //   因此这里失败后必须回退到本项目的本地切片 + 分段理解，
+    //   视频照样能被完整看完，而不是把上传/理解直接判死刑。
     if (cfg.useFilesApi && cfg.tosBucket.trim().isNotEmpty) {
-      onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-      final part = await dbArkVideoPartForLocalFile(
-        absPath: absPath,
-        fileName: meta.name,
-        model: model,
-        apiKey: apiKey,
-        onProgress: (info) => onProgress?.call({...tag, ...info}),
-      );
-      parts.add(part);
-      logp('🎬 经由 TOS 发送: ${meta.name}');
-      index++;
-      if (decryptedTempDir != null) {
-        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+      try {
+        onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
+        final part = await dbArkVideoPartForLocalFile(
+          absPath: absPath,
+          fileName: meta.name,
+          model: model,
+          apiKey: apiKey,
+          onProgress: (info) => onProgress?.call({...tag, ...info}),
+        );
+        parts.add(part);
+        logp('🎬 经由 TOS 发送: ${meta.name}');
+        index++;
+        if (decryptedTempDir != null) {
+          try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+        }
+        continue;
+      } catch (e) {
+        logp('⚠️ Files API/TOS 通道失败，回退本地分段理解: $e');
+        onProgress?.call({
+          ...tag,
+          'stage': 'fallback',
+          'reason': '$e',
+          'size': size,
+        });
+        // 不 continue：继续走下面的 _dbDescribeLargeVideo。
       }
-      continue;
     }
     logp('🎬 分割理解大容量视频: ${meta.name} (${dbFmtSize(size)})');
     final desc = await _dbDescribeLargeVideo(
@@ -988,7 +1004,9 @@ Future<String> _dbArkUploadLocalFile({
       final chunk = await raf.read(_dbArkUploadBlock);
       if (chunk.isEmpty) break;
       req.add(chunk);
-      await req.flush();
+      // 单块 4MB 超过 2 分钟没有任何进展，说明上行已经卡死。
+      // 超时会 abort 请求并由上层回退到本地分段，不能让 UI 无限转圈。
+      await req.flush().timeout(const Duration(seconds: 120));
       sent += chunk.length;
       onProgress?.call(sent, total);
     }

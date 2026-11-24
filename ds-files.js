@@ -240,9 +240,53 @@
         }
     }
 
+    function dsIsVideoFile(file) {
+        var mime = String((file && file.type) || '').toLowerCase();
+        if (mime.indexOf('video/') === 0) return true;
+        var name = String((file && file.name) || '').toLowerCase();
+        var dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        return ['mp4','mov','m4v','mkv','webm','avi','flv','wmv','mpeg','mpg','ts','m2ts','3gp','ogv','rm','rmvb','asf','vob'].indexOf(name.slice(dot + 1)) >= 0;
+    }
+
+    // 单块失败自动重试；手机上行弱网下，一次 TCP 抖动不应该让 2GB 视频
+    // 整条上传作废。4xx（例如会话不存在）重试也没意义，直接抛出。
+    async function dsUploadChunkWithRetry(uploadId, index, blob, pct, end, totalSize, statEl) {
+        var lastErr = null;
+        for (var attempt = 1; attempt <= 4; attempt++) {
+            var fatal = false;
+            try {
+                var chunkRes = await fetch(
+                    '/api/ds-files/upload/chunk?uploadId=' + encodeURIComponent(uploadId) + '&chunkIndex=' + index,
+                    { method: 'POST', body: blob }
+                );
+                if (chunkRes.ok) return;
+                var errObj = await chunkRes.json().catch(function () { return {}; });
+                var errMsg = errObj.error || ('分割 ' + index + ' のアップロードに失敗');
+                if (chunkRes.status >= 400 && chunkRes.status < 500) {
+                    fatal = true;
+                    throw new Error(errMsg);
+                }
+                lastErr = new Error(errMsg);
+            } catch (e) {
+                lastErr = e || new Error('network error');
+                if (fatal) throw lastErr;
+            }
+            if (attempt < 4) {
+                if (statEl) statEl.innerHTML = '<span>再試行 ' + attempt + '/3</span><span>' + fmtSize(end) + ' / ' + fmtSize(totalSize) + '</span>';
+                await new Promise(function (resolve) { setTimeout(resolve, 1200 * attempt); });
+            }
+        }
+        throw lastErr || new Error('分割 ' + index + ' のアップロードに失敗');
+    }
+
     async function doUploadFile(file) {
         if (file.size > 5 * 1024 * 1024 * 1024) {
             dsToast('ファイルが 5GB の上限を超えています', 'error');
+            return;
+        }
+        if (dsIsVideoFile(file) && file.size > 2 * 1024 * 1024 * 1024) {
+            dsToast('動画は最大 2GB までアップロードできます', 'error');
             return;
         }
         var prog = $('dscUploadProgress');
@@ -277,15 +321,8 @@
                 var start = i * chunkSize;
                 var end = Math.min(start + chunkSize, file.size);
                 var blob = file.slice(start, end);
-                var chunkRes = await fetch(
-                    '/api/ds-files/upload/chunk?uploadId=' + encodeURIComponent(uploadId) + '&chunkIndex=' + i,
-                    { method: 'POST', body: blob }
-                );
-                if (!chunkRes.ok) {
-                    var err = await chunkRes.json().catch(function () { return {}; });
-                    throw new Error(err.error || ('分割 ' + i + ' のアップロードに失敗'));
-                }
                 var pct = Math.round(((i + 1) / totalChunks) * 100);
+                await dsUploadChunkWithRetry(uploadId, i, blob, pct, end, file.size, statEl);
                 if (fill) fill.style.width = pct + '%';
                 if (statEl) statEl.innerHTML = '<span>' + pct + '%</span><span>' + fmtSize(end) + ' / ' + fmtSize(file.size) + '</span>';
             }
