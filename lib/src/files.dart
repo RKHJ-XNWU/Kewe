@@ -24,37 +24,6 @@ const int DS_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB (OOM fix)
 const Duration DS_UPLOAD_SESSION_TTL = Duration(hours: 1);
 const Duration DS_ORPHAN_GRACE_PERIOD = Duration(minutes: 30);
 
-// ★ 本进程内的明文缓存：刚生成的文件下载/预览直接命中，不再走 AES-GCM。
-// 只放内存，不落盘，进程退出即消失；按上限淘汰最旧条目。
-const int _DS_PLAIN_CACHE_MAX_BYTES = 64 * 1024 * 1024;
-final Map<String, Uint8List> _dsPlainCache = <String, Uint8List>{};
-int _dsPlainCacheBytes = 0;
-
-void cacheDsFilePlaintext(String id, List<int> bytes) {
-  if (bytes.isEmpty || bytes.length > _DS_PLAIN_CACHE_MAX_BYTES) return;
-  final copy = Uint8List.fromList(bytes);
-  final old = _dsPlainCache.remove(id);
-  if (old != null) _dsPlainCacheBytes -= old.length;
-  while (_dsPlainCache.isNotEmpty &&
-      _dsPlainCacheBytes + copy.length > _DS_PLAIN_CACHE_MAX_BYTES) {
-    final oldest = _dsPlainCache.keys.first;
-    final dropped = _dsPlainCache.remove(oldest)!;
-    _dsPlainCacheBytes -= dropped.length;
-  }
-  _dsPlainCache[id] = copy;
-  _dsPlainCacheBytes += copy.length;
-}
-
-void removeDsFilePlaintextCache(String id) {
-  final old = _dsPlainCache.remove(id);
-  if (old != null) _dsPlainCacheBytes -= old.length;
-}
-
-void clearDsFilePlaintextCache() {
-  _dsPlainCache.clear();
-  _dsPlainCacheBytes = 0;
-}
-
 Timer? _uploadCleaner;
 
 void initDsFilesDir() {
@@ -255,7 +224,6 @@ DsFileMeta? getDsFileMeta(String id) {
 /// 删除元数据 + 物理文件 + 递归清理空目录
 void deleteDsFileMeta(String id) {
   if (id.isEmpty) return;
-  removeDsFilePlaintextCache(id);
   List<FileSystemEntity> files;
   try {
     files = Directory(DSFilesMetaDir).listSync();
@@ -624,13 +592,7 @@ Future<void> handleDsFileUploadComplete(HttpRequest req) async {
     return;
   }
 
-  // 合并校验通过后立即加密落盘；原始路径从此只存密文。
-  if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
-    cleanup();
-    await errJson(req.response, 500, '文件加密失败');
-    return;
-  }
-
+  // 合并校验通过后直接明文落盘；旧版已加密的 KEWEFILE1 文件仍可兼容读取。
   final category = categorizeFile(mimeType, fileName);
   final meta = DsFileMeta(
     id: fileID,
@@ -743,7 +705,6 @@ Future<void> handleDsFileClearAll(HttpRequest req) async {
   }
   initDsFilesDir();
   invalidateDsFileMetaCache();
-  clearDsFilePlaintextCache();
   final afterFiles = getAllDsFiles().length;
   logp('✅ 清空完成：删除 $removedDirs 个目録、$beforeFiles → $afterFiles 个文件、耗时 ${sw.elapsedMilliseconds}ms');
   await jsonResponse(req.response, 200, {
@@ -754,10 +715,10 @@ Future<void> handleDsFileClearAll(HttpRequest req) async {
 }
 
 // ------------------------------------------------------------
-// 落盘加密（KEWEFILE1 分块容器）
-//   · 每个分块使用当前账号的 AES-256-GCM 密钥独立封装；
-//   · 原始 blob 文件本身只保存密文行，文件管理器直接打开必然是乱码；
-//   · 下载/视觉读取/转写时再按账号密钥还原明文，前端拿到的仍是原始内容。
+// 旧版落盘加密兼容（KEWEFILE1 分块容器）
+//   · 新生成的 ds_files 直接明文落盘，不再加密；
+//   · 旧版 blob 仍可能是密文分块，读取/下载时按账号密钥还原；
+//   · 旧文件无需迁移，下载、预览、转写仍兼容。
 // ------------------------------------------------------------
 const String KEWE_FILE_MAGIC = 'KEWEFILE1';
 const int KEWE_FILE_CHUNK = 512 * 1024;
@@ -778,47 +739,6 @@ bool dsIsEncryptedFile(String absPath) {
     try {
       raf?.closeSync();
     } catch (_) {}
-  }
-}
-
-bool encryptDsFileAtRest(String absPath) {
-  if (currentUserId.isEmpty) return false;
-  final src = File(absPath);
-  if (!src.existsSync()) return false;
-  if (dsIsEncryptedFile(absPath)) return true;
-  final tmpPath = '$absPath.kewe-tmp';
-  final out = File(tmpPath).openSync(mode: FileMode.write);
-  RandomAccessFile? input;
-  try {
-    out.writeStringSync('$KEWE_FILE_MAGIC\n');
-    input = src.openSync();
-    while (true) {
-      final chunk = input.readSync(KEWE_FILE_CHUNK);
-      if (chunk.isEmpty) break;
-      final sealed = keweEncryptBytesForUser(currentUserId, chunk);
-      out.writeStringSync('${base64.encode(sealed)}\n');
-    }
-    out.flushSync();
-  } catch (e) {
-    logp('❌ 文件加密失败: $absPath ($e)');
-    return false;
-  } finally {
-    try {
-      input?.closeSync();
-    } catch (_) {}
-    try {
-      out.closeSync();
-    } catch (_) {}
-  }
-  try {
-    File(tmpPath).renameSync(absPath);
-    return true;
-  } catch (e) {
-    try {
-      File(tmpPath).deleteSync();
-    } catch (_) {}
-    logp('❌ 加密文件替换失败: $absPath ($e)');
-    return false;
   }
 }
 
@@ -970,24 +890,6 @@ Future<void> serveEncryptedDsFile(
 
   if (req.method == 'HEAD' || total == 0) {
     await res.close();
-    return;
-  }
-
-  // ★ 刚生成的文件命中内存明文缓存：直接发字节，不再解密。
-  final cachedPlain = _dsPlainCache[meta.id];
-  if (cachedPlain != null && cachedPlain.length == total) {
-    try {
-      res.add(start == 0 && end == total - 1
-          ? cachedPlain
-          : Uint8List.sublistView(cachedPlain, start, end + 1));
-      await res.flush();
-    } catch (e) {
-      logp('❌ 明文缓存发送失败: ${meta.id} ($e)');
-    } finally {
-      try {
-        await res.close();
-      } catch (_) {}
-    }
     return;
   }
 

@@ -914,13 +914,9 @@ DsFileMeta? saveDbBlob(
     final relPath = '$relDir/$fileName';
     final absPath = '$DSFilesBlobDir/$relPath';
     ensureDir('$DSFilesBlobDir/$relDir');
+    // ★ 按用户要求：生成物直接明文写入 ds_files，磁盘上可直接打开/下载。
+    //   不再做文件级 AES-GCM 加密；旧版已加密的 KEWEFILE1 文件仍可读取。
     File(absPath).writeAsBytesSync(bytes);
-    if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
-      try {
-        File(absPath).deleteSync();
-      } catch (_) {}
-      throw StateError('数据文件加密失败');
-    }
     final meta = DsFileMeta(
       id: fileID,
       name: fileName,
@@ -938,9 +934,7 @@ DsFileMeta? saveDbBlob(
       } catch (_) {}
       return null;
     }
-    // 刚生成的文件把明文留在本进程内存里：文件管理器点下载/预览时
-    // 直接命中，不再为「本地文件」重新走一遍解密。
-    cacheDsFilePlaintext(fileID, bytes);
+    // 文件已经明文落盘，下载/预览直接走磁盘，不需要再做内存明文缓存。
     logp('💾 已保存豆包生成物: $relPath (${bytes.length} bytes, $mime)');
     return meta;
   } catch (e) {

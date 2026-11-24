@@ -6,7 +6,8 @@
 //      密码 verifier，服务器永远见不到明文密码。
 //   2. 账号主密钥独立保存在 data/auth/，不随某位用户的数据迁移或删除而丢失。
 //   3. 每位用户的数据密钥 = HMAC(authMasterKey, userId)，AES-256-GCM 加密
-//      聊天正文与文件；注销时连同密钥与密文一起销毁。
+//      聊天正文；ds_files 生成物按用户要求直接明文落盘，旧版 KEWEFILE1
+//      密文仍可兼容读取。注销时销毁账号目录与密钥。
 // ============================================================
 
 import 'dart:convert';
@@ -140,10 +141,12 @@ AesGcm _gcmForUser(String userId) {
   return _userGcmCache.putIfAbsent(key, () => AesGcm(keweUserDataKey(key)));
 }
 
-Uint8List keweEncryptBytesForUser(String userId, List<int> plain) {
-  final nonce = keweRandomBytes(12);
-  final sealed = _gcmForUser(userId).encrypt(nonce, plain);
-  return Uint8List.fromList([...nonce, ...sealed]);
+/// 整库恢复后调用：备份里的 `data/auth/master.key` 已替换当前密钥，
+/// 必须丢掉旧的内存缓存，否则会用旧 key 去解新 users.sts/sessions.sts，
+/// 直接导致登录失效。
+void resetKeweSecretCaches() {
+  _authKeyCache = null;
+  _userGcmCache.clear();
 }
 
 Uint8List keweDecryptBytesForUser(String userId, List<int> blob) {

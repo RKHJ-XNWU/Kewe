@@ -11,6 +11,10 @@ import 'dart:typed_data';
 import 'globals.dart';
 import 'httpsrv.dart';
 import 'kewe_auth.dart';
+import 'kewe_secrets.dart';
+import 'files.dart';
+import 'sessions.dart';
+import 'search.dart';
 
 // ------------------------------------------------------------
 // tar 写入
@@ -144,6 +148,19 @@ List<TarEntry> parseTar(Uint8List buf) {
 // ------------------------------------------------------------
 // 备份
 // ------------------------------------------------------------
+
+/// 归一化 tar 路径；拒绝绝对路径、`..` 与空路径。
+List<String>? _safeTarParts(String raw) {
+  if (raw.isEmpty || raw.startsWith('/') || raw.startsWith('\\')) return null;
+  final parts = <String>[];
+  for (final seg in raw.split('/')) {
+    if (seg.isEmpty || seg == '.') continue;
+    if (seg == '..') return null;
+    parts.add(seg);
+  }
+  return parts.isEmpty ? null : parts;
+}
+
 Future<void> handleBackup(HttpRequest req) async {
   final res = req.response;
   if (req.method != 'GET') {
@@ -153,8 +170,7 @@ Future<void> handleBackup(HttpRequest req) async {
   final timestamp = fmtFileStamp(DateTime.now());
   final type = qp(req, 'type');
 
-  // ★ 备份必须绑定当前登录账号：请求里的 account 只能是当前账号，
-  //   想备份别的账号会被直接拒绝，绝不串联。
+  // 备份仍然要求登录，避免未登录者直接拉走整个 data。
   final user = keweUserFromRequest(req);
   final uid = (user?.id ?? currentUserId).trim();
   if (uid.isEmpty) {
@@ -163,29 +179,35 @@ Future<void> handleBackup(HttpRequest req) async {
   }
   final requestedAccount = qp(req, 'account').trim();
   if (requestedAccount.isNotEmpty && requestedAccount != uid) {
-    await errJson(res, 403, '只能备份当前登录账号的数据');
+    await errJson(res, 403, '只能由当前登录账号发起备份');
     return;
   }
   final safeUser = (user?.username ?? uid).replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
 
-  List<String> dirs;
+  List<String> roots;
   String namePrefix;
   switch (type) {
     case 'config':
-      dirs = ['models', 'whisper.cpp'];
+      roots = ['models', 'whisper.cpp'];
       namePrefix = 'config_backup';
       break;
     case 'data':
-      // ★ 只打包当前账号自己的数据目录；全局 imgs/ 不进入账号备份。
-      dirs = ['data'];
+      // ★ 核心修复：备份整个 data/，不是当前账号的 data/users/<userId>/。
+      //   data/auth/users.sts、sessions.sts、master.key 必须一起备份，
+      //   否则恢复后用户表缺失，会出现找不到用户名/密码、登录失效。
+      roots = ['data'];
       namePrefix = 'data_backup';
       break;
     default:
-      // 完整备份同样不含全局 imgs/，避免把其他账号可见的图片池串进来。
-      dirs = ['data', 'models', 'whisper.cpp'];
+      roots = ['data', 'models', 'whisper.cpp'];
       namePrefix = 'wordbook_backup';
   }
   final filename = '${namePrefix}_${safeUser}_$timestamp.tar.gz';
+
+  if (roots.contains('data') && !Directory('$BASE_DIR/data').existsSync()) {
+    await errJson(res, 500, 'data 目录不存在，无法备份');
+    return;
+  }
 
   ensureDir(BACKUP_TMP_DIR);
   final tmpPath =
@@ -196,24 +218,18 @@ Future<void> handleBackup(HttpRequest req) async {
     final gz = gzip.encoder.startChunkedConversion(_FileSink(file));
     final tar = TarWriter(gz);
 
-    // ★ 账号隔离：始终使用当前请求 Zone 注入的账号 DATA_DIR，
-    //   绝不再回退到全局 data，也不会打包 data/auth 或 data/users。
-    final dataRoot = user?.dataDir ?? DATA_DIR;
-    if (dataRoot.isEmpty || dataRoot == '$BASE_DIR/data') {
-      await errJson(res, 403, '账号数据目录无效，已拒绝备份');
-      return;
-    }
-    for (final dirName in dirs) {
-      final isData = dirName == 'data';
-      final dirPath = isData ? dataRoot : '$BASE_DIR/$dirName';
-      if (!Directory(dirPath).existsSync()) continue;
-      final entries = Directory(dirPath).listSync(recursive: true);
+    final dataRoot = '$BASE_DIR/data';
+    for (final rootName in roots) {
+      final isData = rootName == 'data';
+      final rootPath = isData ? dataRoot : '$BASE_DIR/$rootName';
+      final dir = Directory(rootPath);
+      if (!dir.existsSync()) continue;
+      final rootPrefix = rootPath.endsWith('/') ? rootPath : '$rootPath/';
+      final entries = dir.listSync(recursive: true);
       // 先父后子，保证解压顺序合理
       entries.sort((a, b) => a.path.compareTo(b.path));
       for (final e in entries) {
-        final rel = isData
-            ? 'data/${e.path.substring(dataRoot.length + 1)}'
-            : e.path.substring(BASE_DIR.length + 1);
+        final rel = '$rootName/${e.path.substring(rootPrefix.length)}';
         final stat = FileStat.statSync(e.path);
         if (e is Directory) {
           await tar.addDir(rel, stat.modified);
@@ -327,16 +343,10 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
-  // ★ 恢复同样绑定当前登录账号：只清空/写入这个账号自己的目录。
   final user = keweUserFromRequest(req);
   final uid = (user?.id ?? currentUserId).trim();
   if (uid.isEmpty) {
     await errJson(res, 401, '请先登录后再恢复');
-    return;
-  }
-  final restoreDataRoot = user?.dataDir ?? DATA_DIR;
-  if (restoreDataRoot.isEmpty || restoreDataRoot == '$BASE_DIR/data') {
-    await errJson(res, 403, '账号数据目录无效，已拒绝恢复');
     return;
   }
 
@@ -362,8 +372,7 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
-  // ★ 先校验归档，确认是合法 gzip/tar 后才清空当前账号目录；
-  //   无效文件绝不会导致现有数据被提前删除。
+  // 先校验归档，确认是合法 gzip/tar 后才动现有数据。
   List<TarEntry> entries;
   try {
     final raw = gzip.decoder.convert(archive);
@@ -373,49 +382,59 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
-  // ★ 只清空当前账号自己的数据目录；不再触碰全局 imgs/，也不碰其他账号。
-  final dir = Directory(restoreDataRoot);
-  if (dir.existsSync()) {
-    for (final e in dir.listSync()) {
-      try {
-        if (e is Directory) {
-          e.deleteSync(recursive: true);
-        } else {
-          e.deleteSync();
-        }
-      } catch (_) {}
+  // 判断是「整库备份」还是「旧版单账号备份」。
+  // 整库备份必须带 data/auth/users.sts + data/auth/master.key；只恢复单账号的
+  // 旧备份不能拿来覆盖整个 data，否则会把其他账号的登录数据清空。
+  var hasAuthUsers = false;
+  var hasAuthKey = false;
+  var hasAuthRoot = false;
+  var hasUsersRoot = false;
+  for (final e in entries) {
+    final parts = _safeTarParts(e.name);
+    if (parts == null || parts.isEmpty || parts[0] != 'data') continue;
+    if (parts.length >= 3 && parts[1] == 'auth' && parts[2] == 'users.sts') {
+      hasAuthUsers = true;
     }
+    if (parts.length >= 3 && parts[1] == 'auth' && parts[2] == 'master.key') {
+      hasAuthKey = true;
+    }
+    if (parts.length >= 2 && parts[1] == 'auth') hasAuthRoot = true;
+    if (parts.length >= 2 && parts[1] == 'users') hasUsersRoot = true;
+  }
+  final isFullBackup = hasAuthUsers && hasAuthKey;
+  if (!isFullBackup && (hasAuthRoot || hasUsersRoot)) {
+    await errJson(res, 400,
+        '这是旧版/不完整的单账号备份，缺少 data/auth/users.sts 或 master.key；'
+        '为避免清空其他账号，拒绝按整库恢复');
+    return;
   }
 
+  final stamp = DateTime.now().microsecondsSinceEpoch;
+  final stagingRoot = Directory('$BACKUP_TMP_DIR/restore_$stamp');
+  final stagingData = Directory('${stagingRoot.path}/data');
   var extracted = 0;
-  for (final e in entries) {
-    var name = e.name;
-    if (name.startsWith('/')) continue;
-    final parts = <String>[];
-    var bad = false;
-    for (final seg in name.split('/')) {
-      if (seg.isEmpty || seg == '.') continue;
-      if (seg == '..') {
-        bad = true;
-        break;
+  var oldPath = '';
+  try {
+    if (stagingRoot.existsSync()) stagingRoot.deleteSync(recursive: true);
+    stagingData.createSync(recursive: true);
+
+    // 先完整解压到 staging，任何写入失败都不会提前删除现有 data。
+    for (final e in entries) {
+      final parts = _safeTarParts(e.name);
+      if (parts == null) {
+        logp('⚠️ 已跳过非法路径: ${e.name}');
+        continue;
       }
-      parts.add(seg);
-    }
-    if (bad || parts.isEmpty) {
-      logp('⚠️ 已跳过非法路径: $name');
-      continue;
-    }
-    name = parts.join('/');
-    // ★ 账号恢复只接受归档里的 data/ 段；imgs/、models/ 等共享路径一律跳过，
-    //   防止一个账号的备份污染其他账号或全局目录。
-    if (name != 'data' && !name.startsWith('data/')) {
-      logp('⚠️ 已跳过非账号数据条目: $name');
-      continue;
-    }
-    final target = name == 'data'
-        ? restoreDataRoot
-        : '$restoreDataRoot/${name.substring(5)}';
-    try {
+      if (parts[0] != 'data') {
+        logp('⚠️ 已跳过非 data 条目: ${e.name}');
+        continue;
+      }
+      if (parts.length == 1) {
+        if (e.typeflag == '5') stagingData.createSync(recursive: true);
+        continue;
+      }
+      final rel = parts.sublist(1).join('/');
+      final target = '${stagingData.path}/$rel';
       if (e.typeflag == '5') {
         Directory(target).createSync(recursive: true);
       } else if (e.typeflag == '0' || e.typeflag == '') {
@@ -424,16 +443,83 @@ Future<void> handleRestore(HttpRequest req) async {
         File(target).writeAsBytesSync(e.data);
         extracted++;
       }
-    } catch (err) {
-      await errJson(res, 500, '文件写入失败: $err');
-      return;
     }
-  }
 
-  logp('✅ 恢复完成: 已展开 $extracted 个文件');
-  await dsJSONOk(res, 200, {
-    'success': true,
-    'message': '恢复成功',
-    'extracted': extracted,
-  });
+    if (isFullBackup) {
+      final usersFile = File('${stagingData.path}/auth/users.sts');
+      final keyFile = File('${stagingData.path}/auth/master.key');
+      if (!usersFile.existsSync() || usersFile.lengthSync() == 0) {
+        throw const FormatException('备份缺少 data/auth/users.sts，恢复后会登录失败，已拒绝');
+      }
+      if (!keyFile.existsSync() || keyFile.lengthSync() != 32) {
+        throw const FormatException('备份缺少有效的 32 字节 data/auth/master.key，已拒绝');
+      }
+    } else {
+      if (extracted == 0) {
+        throw const FormatException('备份中没有可恢复的 data/ 内容');
+      }
+      final legacyRoot = user?.dataDir ?? '';
+      if (legacyRoot.isEmpty || legacyRoot == '$BASE_DIR/data') {
+        throw const FormatException('当前账号数据目录无效');
+      }
+    }
+
+    final String targetRoot;
+    if (isFullBackup) {
+      targetRoot = '$BASE_DIR/data';
+    } else {
+      targetRoot = user?.dataDir ?? '';
+    }
+
+    // 关键：先改名保留旧数据，再换新目录；失败回滚，不做不可逆删除。
+    oldPath = '$targetRoot.restore-old-$stamp';
+    final current = Directory(targetRoot);
+    try {
+      if (current.existsSync()) current.renameSync(oldPath);
+      stagingData.renameSync(targetRoot);
+    } catch (e) {
+      if (!Directory(targetRoot).existsSync() && Directory(oldPath).existsSync()) {
+        try {
+          Directory(oldPath).renameSync(targetRoot);
+          logp('⚠️ 恢复失败，已回滚旧数据: $targetRoot');
+        } catch (rollbackErr) {
+          logp('❌ 恢复失败且回滚失败: $targetRoot ($rollbackErr)；旧数据保留在 $oldPath');
+        }
+      }
+      rethrow;
+    }
+
+    if (isFullBackup) {
+      // 备份里的 master.key 已经替换 data/auth/master.key；必须丢掉旧 key 缓存。
+      resetKeweSecretCaches();
+      final token = keweSessionTokenFromRequest(req);
+      if (token != null && token.isNotEmpty) {
+        try {
+          kewePreserveSessionForUser(token, uid);
+        } catch (e) {
+          logp('⚠️ 恢复后保留当前登录 token 失败: $e');
+        }
+      }
+    }
+    invalidateDsFileMetaCache();
+    invalidateAllDsSessionCaches();
+    invalidateDsSearchCache();
+
+    logp('✅ ${isFullBackup ? '整库' : '单账号'}恢复完成: 已展开 $extracted 个文件；旧数据保留在 $oldPath');
+    await dsJSONOk(res, 200, {
+      'success': true,
+      'message': isFullBackup ? '整库恢复成功' : '当前账号恢复成功',
+      'mode': isFullBackup ? 'full' : 'account',
+      'extracted': extracted,
+      'oldDataDir': oldPath,
+    });
+  } on FormatException catch (e) {
+    await errJson(res, 400, e.message);
+  } catch (e) {
+    await errJson(res, 500, '恢复失败: $e');
+  } finally {
+    try {
+      if (stagingRoot.existsSync()) stagingRoot.deleteSync(recursive: true);
+    } catch (_) {}
+  }
 }

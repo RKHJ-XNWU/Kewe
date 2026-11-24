@@ -122,7 +122,7 @@ I18N.add('en',`
     新規セッション|New Session
     その他の機能|More Features
     フォーラム · 投稿広場へ|Go to Forum · Post Plaza
-    データバックアップ（現在のアカウントのみ）|Data backup (current account only)
+    データバックアップ（Kewe 全体データ）|Data backup (entire Kewe data)
     バックアップから復元|Restore from backup
     閉じる|Close
     セッションを検索...|Search sessions...
@@ -1054,7 +1054,8 @@ I18N.add('en',`
     お知らせの本文を入力|Enter announcement body
     タイトルを入力|Enter a title
     本文を入力|Enter body
-    アップロードした .tar.gz バックアップで、現在のアカウントのデータディレクトリを上書きします。|The uploaded .tar.gz backup will overwrite the current account's data directory.
+    アップロードした .tar.gz バックアップで、Kewe の data ディレクトリ全体（全アカウント・ログインデータを含む）を置換します。|The uploaded .tar.gz backup replaces the entire Kewe data directory (including all accounts and login data).
+    現在の data は自動的に data.restore-old-* に退避され、復元後にログイン状態を保持します。|Current data is moved automatically to data.restore-old-*, and your login is preserved after restore.
     この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！|This operation cannot be undone. Make sure the current data has been backed up!
     .tar.gz バックアップファイルをアップロードしてください|Please upload a .tar.gz backup file
     プロンプト内容（送信メッセージの前に付加されます）|Prompt content (prepended to the outgoing message)

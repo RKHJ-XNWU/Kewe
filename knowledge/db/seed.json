@@ -220,7 +220,7 @@
         "data",
         "plaintext"
       ],
-      "content": "账号根目录：data/users/<userId>/。\n聊天：deepseek_chat/sessions/*.sts；标题、用户消息、AI 回复、思考链明文保存。\n知识：knowledge/db.json + knowledge/entries/<id>.md。\n附件：文件附件仍使用 KEWEFILE1 加密；聊天正文不加密。\n前端不提供聊天/思维链编辑；允许后端直接编辑数据文件。"
+      "content": "账号根目录：data/users/<userId>/。\n聊天：deepseek_chat/sessions/*.sts；标题、用户消息、AI 回复、思考链明文保存。\n知识：knowledge/db.json + knowledge/entries/<id>.md。\n附件：新文件直接明文落盘到 ds_files；旧版 KEWEFILE1 密文仍兼容读取；聊天正文不加密。\n前端不提供聊天/思维链编辑；允许后端直接编辑数据文件。"
     },
     {
       "id": "site-knowledge-schema",
@@ -264,7 +264,7 @@
         "backup",
         "recovery"
       ],
-      "content": "备份前停止写入或确认没有正在生成的会话。\n备份 data/users/<userId>/ 与 knowledge 种子；不要把测试数据合并到正式账号。\n恢复时保留 token 与账号目录，不要跨账号覆盖。\n删除或覆盖前先移动/改名旧文件，不做不可逆清理。"
+      "content": "备份前停止写入或确认没有正在生成的会话、上传或解密任务。\n备份整个 Kewe data 目录（整个 kewe/data/），不要只备份 data/users/<userId>/。必须包含 data/auth/users.sts、data/auth/master.key、data/auth/sessions.sts 和所有账号目录，否则恢复后会找不到用户名或密码，导致登录失效。\n备份包必须保留 data/ 顶层结构；恢复时先校验归档并完整解压到暂存目录，再把现有 data/ 整体改名保留，最后替换为备份的 data/；任何一步失败都要回滚，不做不可逆删除。\n恢复后保留当前登录 token 与账号目录，确保恢复完成仍可登录；不要把测试数据合并到正式账号。\n删除或覆盖前先移动/改名旧文件，不做不可逆清理。"
     },
     {
       "id": "knowledge-rules",

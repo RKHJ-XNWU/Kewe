@@ -185,6 +185,26 @@ String? _cookieValue(HttpRequest req, String name) {
   return null;
 }
 
+/// 当前请求携带的会话 token（整库恢复后用于保留登录态）。
+String? keweSessionTokenFromRequest(HttpRequest req) =>
+    _cookieValue(req, KEWE_AUTH_COOKIE);
+
+/// 整库恢复完成后，把当前请求的 token 写回恢复后的 sessions.sts。
+/// 仅当恢复后的用户表仍包含当前用户时才写入，避免把 token 绑到不存在的账号。
+void kewePreserveSessionForUser(String token, String userId) {
+  if (token.isEmpty || userId.isEmpty) return;
+  final store = _loadStore();
+  if (!store.users.any((u) => u.id == userId)) {
+    logp('⚠️ 恢复后的用户表不包含当前账号，保留 token 跳过');
+    return;
+  }
+  store.sessions[token] = <String, dynamic>{
+    'userId': userId,
+    'expiresAt': DateTime.now().millisecondsSinceEpoch + KEWE_SESSION_TTL_MS,
+  };
+  _saveStore(store.users, store.sessions);
+}
+
 void _setAuthCookie(HttpResponse res, String token) {
   res.headers.set(
     'Set-Cookie',

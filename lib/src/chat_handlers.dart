@@ -597,11 +597,8 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
   final absPath = '$DSFilesBlobDir/$relPath';
   ensureDir('$DSFilesBlobDir/generated');
   try {
+    // 生成图直接明文落盘到 ds_files；旧版加密文件仍由下载/读取层兼容。
     File(absPath).writeAsBytesSync(imgData);
-    if (currentUserId.isNotEmpty && !encryptDsFileAtRest(absPath)) {
-      await dsJSONErr(res, 500, '图片加密保存失败');
-      return;
-    }
   } catch (_) {
     await dsJSONErr(res, 500, '保存失败');
     return;

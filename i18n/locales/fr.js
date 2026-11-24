@@ -122,7 +122,7 @@ I18N.add('fr',`
     新規セッション|Nouvelle session
     その他の機能|Autres fonctions
     フォーラム · 投稿広場へ|Aller au forum · Place des publications
-    データバックアップ（現在のアカウントのみ）|Sauvegarde des données (compte actuel uniquement)
+    データバックアップ（Kewe 全体データ）|Sauvegarde des données (toutes les données Kewe)
     バックアップから復元|Restaurer depuis une sauvegarde
     閉じる|Fermer
     セッションを検索...|Rechercher des sessions...
@@ -1054,7 +1054,8 @@ I18N.add('fr',`
     お知らせの本文を入力|Saisir le corps de l'annonce
     タイトルを入力|Saisir un titre
     本文を入力|Saisir le corps
-    アップロードした .tar.gz バックアップで、現在のアカウントのデータディレクトリを上書きします。|La sauvegarde .tar.gz téléversée écrasera le répertoire de données du compte actuel.
+    アップロードした .tar.gz バックアップで、Kewe の data ディレクトリ全体（全アカウント・ログインデータを含む）を置換します。|La sauvegarde .tar.gz téléversée remplace tout le répertoire Kewe data (tous les comptes et données de connexion inclus).
+    現在の data は自動的に data.restore-old-* に退避され、復元後にログイン状態を保持します。|Les données actuelles sont déplacées automatiquement vers data.restore-old-* et la connexion est conservée après la restauration.
     この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！|Cette opération est irréversible. Vérifiez que les données actuelles ont bien été sauvegardées !
     .tar.gz バックアップファイルをアップロードしてください|Veuillez téléverser un fichier de sauvegarde .tar.gz
     プロンプト内容（送信メッセージの前に付加されます）|Contenu du prompt (ajouté avant le message envoyé)
