@@ -379,7 +379,10 @@
 .dsc-switch-btn .lbl, .dsc-switch-btn .st, .dsc-advanced-btn .lbl, .dsc-advanced-btn .st, .dsc-longtext-btn .lbl, .dsc-longtext-btn .st, .dsc-level-btn .lbl { display: none !important; }
 .dsc-switch-btn .ic, .dsc-advanced-btn .ic, .dsc-longtext-btn .ic, .dsc-level-btn .ic, .dsc-novel-btn .ic { font-size: 1.1rem; line-height: 1; filter: grayscale(1) brightness(0.85); opacity: 0.9; transition: all 0.2s; display: block; pointer-events: none; }
 .dsc-level-btn .lvl-num { display: inline-block; font-size: 0.78rem; font-weight: 700; color: #db2777; letter-spacing: 0.02em; pointer-events: none; }
-.dsc-switch-btn.active::before, .dsc-advanced-btn.active::before, .dsc-longtext-btn.active::before, .dsc-level-btn.active::before, .dsc-novel-btn.active::before { content: ''; position: absolute; top: -3px; right: -3px; width: 10px; height: 10px; border-radius: 50%; background: #10b981; border: 2px solid #ffffff; box-shadow: 0 0 8px #10b981; z-index: 2; }
+.dsc-switch-btn.active::before, .dsc-advanced-btn.active::before, .dsc-longtext-btn.active::before, .dsc-level-btn.active::before, .dsc-novel-btn.active::before { content: ''; position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #10b981; border: 1.5px solid #ffffff; box-shadow: 0 0 8px #10b981; z-index: 2; box-sizing: content-box; animation: dscDotBlink 1.1s ease-in-out infinite; }
+/* 状态圆点闪烁：整颗圆点明暗呼吸，不再被滚动容器裁成半圆 */
+@keyframes dscDotBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.18; } }
+@media (prefers-reduced-motion: reduce) { .dsc-switch-btn.active::before, .dsc-advanced-btn.active::before, .dsc-longtext-btn.active::before, .dsc-level-btn.active::before, .dsc-novel-btn.active::before { animation: none; } }
 @keyframes dscDotPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.2); opacity: 0.85; } }
 .dsc-switch-btn.active .ic, .dsc-advanced-btn.active .ic, .dsc-longtext-btn.active .ic, .dsc-level-btn.active .ic, .dsc-novel-btn.active .ic { filter: none; opacity: 1; }
 
