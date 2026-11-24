@@ -52,9 +52,9 @@ const List<String> dbRealtimeVoices = <String>[
   'zh_male_taocheng_uranus_bigtts', // 小天 2.0
 ];
 
-/// 计费：实时语音 0.2 元/分钟，实时视频 0.4 元/分钟。
-const double dbVoiceYuanPerMinute = 0.2;
-const double dbVideoYuanPerMinute = 0.4;
+/// 计费：实时音频 0.007 元/分钟（7 厘），实时视频 0.252 元/分钟（2 毛 5 分 2 厘）。
+const double dbVoiceYuanPerMinute = 0.007;
+const double dbVideoYuanPerMinute = 0.252;
 
 /// RTC OpenAPI 配置
 const String dbRtcHost = 'rtc.volcengineapi.com';

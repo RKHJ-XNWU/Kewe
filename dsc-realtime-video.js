@@ -4,8 +4,7 @@
  *
  *   · 浏览器 ⇄ 本地 Dart 服务 WebSocket 代理 ⇄ 火山引擎 /api/v3/realtime
  *   · 20ms PCM16/16k 上行、24k PCM 下行；摄像头 JPEG 2 FPS 上行
- *   · 摄像头上/下/前后切换、静音、打断、文字输入由豆包语音回答
- *   · 文字输入走同一实时会话，仅计实时音视频分钟额度；不回退文本/TTS 额度
+ *   · 摄像头上/下/前后切换、静音、打断；音频/视频按摄像头状态分别计价
  *   · 通话结束（挂断/退出）才把五段格式 .sts 记录写入当前账号 data/jilmtshx
  *   · 六语 UI（zh/ja/en/ko/ru/fr），不新增页面，保持单页应用
  * ============================================================ */
@@ -19,8 +18,8 @@
     var VIDEO_W = 720;
     var VIDEO_H = 1280;
     var VIDEO_FPS_MS = 500;          // 官方上限 2 FPS
-    var RATE_VIDEO = 0.4;            // 元/分钟
-    var RATE_VOICE = 0.2;            // 元/分钟
+    var RATE_VIDEO = 0.252;          // 元/分钟（视频，2 毛 5 分 2 厘）
+    var RATE_VOICE = 0.007;          // 元/分钟（音频，7 厘）
     var VOICES = [
         { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi 2.0', names: { zh:'Vivi 2.0', ja:'Vivi 2.0', en:'Vivi 2.0', ko:'Vivi 2.0', ru:'Vivi 2.0', fr:'Vivi 2.0' }, gender: 'female', def: true },
         { id: 'zh_female_xiaohe_uranus_bigtts', name: '小何 2.0', names: { zh:'小何 2.0', ja:'シャオホー 2.0', en:'Xiaohe 2.0', ko:'샤오허 2.0', ru:'Сяохэ 2.0', fr:'Xiaohe 2.0' }, gender: 'female', def: false },
@@ -43,6 +42,7 @@
         seq: 0,
         durationSec: 0,
         costFen: 0,
+        costYuan: 0,
         startedAt: 0,
         timer: null,
         micStream: null,
@@ -80,9 +80,6 @@
         audioTextSeen: false,
         textFinal: '',
         lastAssistantText: '',
-        nativeTimer: null,
-        responseSeen: false,
-        textToken: 0,
         histOpen: false,
         histRecords: [],
         histSelected: {},
@@ -99,7 +96,7 @@
         zh: {
             title: '豆包实时视频通话', subtitle: '端到端实时音视频 · 全屏 · 四种官方 2.0 音色',
             voiceTitle: '选择音色', female: '女声', male: '男声', defaultTag: '默认',
-            rate: '视频 ¥0.40/分钟 · 语音 ¥0.20/分钟', start: '开始视频通话',
+            rate: '视频 ¥0.252/分钟 · 音频 ¥0.007/分钟', start: '开始视频通话',
             history: '通话记录', close: '关闭', connecting: '正在连接…', connected: '已连接',
             listening: '正在聆听…', speaking: '豆包正在说话…', muted: '已静音',
             mic: '静音', unmute: '取消静音', camera: '摄像头', cameraOff: '摄像头已关闭',
@@ -124,7 +121,7 @@
         ja: {
             title: '豆包リアルタイム映像通話', subtitle: '端末間リアルタイム映像音声 · 全画面 · 公式 2.0 音色 4 種',
             voiceTitle: '音色を選択', female: '女性', male: '男性', defaultTag: '既定',
-            rate: '映像 ¥0.40/分 · 音声 ¥0.20/分', start: '映像通話を開始',
+            rate: '映像 ¥0.252/分 · 音声 ¥0.007/分', start: '映像通話を開始',
             history: '通話履歴', close: '閉じる', connecting: '接続中…', connected: '接続済み',
             listening: '聞き取り中…', speaking: '豆包が話しています…', muted: 'ミュート中',
             mic: 'ミュート', unmute: 'ミュート解除', camera: 'カメラ', cameraOff: 'カメラはオフです',
@@ -149,7 +146,7 @@
         en: {
             title: 'Doubao realtime video call', subtitle: 'End-to-end realtime audio & video · Full screen · Four official 2.0 voices',
             voiceTitle: 'Choose a voice', female: 'Female', male: 'Male', defaultTag: 'Default',
-            rate: 'Video ¥0.40/min · Voice ¥0.20/min', start: 'Start video call',
+            rate: 'Video ¥0.252/min · Audio ¥0.007/min', start: 'Start video call',
             history: 'Call history', close: 'Close', connecting: 'Connecting…', connected: 'Connected',
             listening: 'Listening…', speaking: 'Doubao is speaking…', muted: 'Muted',
             mic: 'Mute', unmute: 'Unmute', camera: 'Camera', cameraOff: 'Camera is off',
@@ -174,7 +171,7 @@
         ko: {
             title: '豆包 실시간 영상 통화', subtitle: '종단 간 실시간 영상·음성 · 전체 화면 · 공식 2.0 음색 4종',
             voiceTitle: '음색 선택', female: '여성', male: '남성', defaultTag: '기본',
-            rate: '영상 ¥0.40/분 · 음성 ¥0.20/분', start: '영상 통화 시작',
+            rate: '영상 ¥0.252/분 · 음성 ¥0.007/분', start: '영상 통화 시작',
             history: '통화 기록', close: '닫기', connecting: '연결 중…', connected: '연결됨',
             listening: '듣는 중…', speaking: '豆包가 말하고 있습니다…', muted: '음소거됨',
             mic: '음소거', unmute: '음소거 해제', camera: '카메라', cameraOff: '카메라가 꺼져 있습니다',
@@ -199,7 +196,7 @@
         ru: {
             title: 'Видеозвонок Doubao в реальном времени', subtitle: 'Сквозной обмен видео и аудио · Полный экран · Четыре официальных голоса 2.0',
             voiceTitle: 'Выберите голос', female: 'Женский', male: 'Мужской', defaultTag: 'По умолчанию',
-            rate: 'Видео ¥0.40/мин · Голос ¥0.20/мин', start: 'Начать видеозвонок',
+            rate: 'Видео ¥0.252/мин · Аудио ¥0.007/мин', start: 'Начать видеозвонок',
             history: 'История звонков', close: 'Закрыть', connecting: 'Подключение…', connected: 'Подключено',
             listening: 'Слушаю…', speaking: 'Doubao говорит…', muted: 'Микрофон выключен',
             mic: 'Без звука', unmute: 'Вкл. звук', camera: 'Камера', cameraOff: 'Камера выключена',
@@ -224,7 +221,7 @@
         fr: {
             title: 'Appel vidéo Doubao en temps réel', subtitle: 'Audio et vidéo de bout en bout · Plein écran · Quatre voix officielles 2.0',
             voiceTitle: 'Choisir une voix', female: 'Féminine', male: 'Masculine', defaultTag: 'Par défaut',
-            rate: 'Vidéo ¥0.40/min · Voix ¥0.20/min', start: 'Démarrer l’appel vidéo',
+            rate: 'Vidéo ¥0.252/min · Audio ¥0.007/min', start: 'Démarrer l’appel vidéo',
             history: 'Historique des appels', close: 'Fermer', connecting: 'Connexion…', connected: 'Connecté',
             listening: 'Écoute…', speaking: 'Doubao parle…', muted: 'Micro coupé',
             mic: 'Micro', unmute: 'Micro', camera: 'Caméra', cameraOff: 'Caméra désactivée',
@@ -325,7 +322,7 @@
             '    <button class="dsc-vc-round" id="dscVcBack" type="button" title="关闭">‹</button>',
             '    <div class="dsc-vc-titlewrap">',
             '      <div class="dsc-vc-name">豆包</div>',
-            '      <div class="dsc-vc-meter"><span id="dscVcTime">00:00</span><span class="dot">·</span><span id="dscVcCost">¥0.00</span></div>',
+            '      <div class="dsc-vc-meter"><span id="dscVcTime">00:00</span><span class="dot">·</span><span id="dscVcCost">¥0.000</span></div>',
             '    </div>',
             '    <div class="dsc-vc-topright">',
             '      <button class="dsc-vc-round" id="dscVcHistIcon" type="button" title="通话记录">🕘</button>',
@@ -334,15 +331,10 @@
             '  </header>',
             '  <div class="dsc-vc-centerstatus" id="dscVcCenterStatus">正在连接…</div>',
             '  <div class="dsc-vc-subs" id="dscVcSubs"></div>',
-            '  <div class="dsc-vc-textpanel" id="dscVcTextPanel">',
-            '    <input id="dscVcTextInput" type="text" autocomplete="off" placeholder="输入文字…">',
-            '    <button id="dscVcTextSend" type="button">发送</button>',
-            '  </div>',
             '  <div class="dsc-vc-controls" id="dscVcControls">',
             '    <button class="dsc-vc-ctrl" id="dscVcCamBtn" type="button"><span class="ico">📷</span><span class="lbl" data-vt="camera">摄像头</span></button>',
             '    <button class="dsc-vc-ctrl" id="dscVcSwitchBtn" type="button"><span class="ico">🔄</span><span class="lbl" data-vt="switchShort">切换</span></button>',
             '    <button class="dsc-vc-ctrl" id="dscVcMuteBtn" type="button"><span class="ico">🎙️</span><span class="lbl" data-vt="mic">静音</span></button>',
-            '    <button class="dsc-vc-ctrl" id="dscVcKbBtn" type="button"><span class="ico">⌨️</span><span class="lbl" data-vt="textMode">文字</span></button>',
             '    <button class="dsc-vc-ctrl" id="dscVcIntBtn" type="button"><span class="ico">⏹</span><span class="lbl" data-vt="interrupt">打断</span></button>',
             '    <button class="dsc-vc-hang" id="dscVcHangBtn" type="button"><span class="ico">📞</span><span class="lbl" data-vt="hangup">挂断</span></button>',
             '  </div>',
@@ -398,10 +390,6 @@
         }
         var ri = $('dscVcRate');
         if (ri) ri.textContent = tr('rate');
-        var ti = $('dscVcTextInput');
-        if (ti) ti.placeholder = tr('textPlaceholder');
-        var ts = $('dscVcTextSend');
-        if (ts) ts.textContent = tr('send');
         var ht = $('dscVcHistTitle');
         if (ht) ht.textContent = V.histDetail ? tr('detail') : tr('history');
         var hs = $('dscVcHistSub');
@@ -490,6 +478,7 @@
         V.seq = 0;
         V.durationSec = 0;
         V.costFen = 0;
+        V.costYuan = 0;
         V.histDetail = null;
         V.histSelected = {};
         var ov = $('dscVideoCallOverlay');
@@ -502,7 +491,7 @@
         $('dscVcStartBtn').disabled = true;
         $('dscVcStartBtn').textContent = tr('loading');
         $('dscVcTime').textContent = '00:00';
-        $('dscVcCost').textContent = '¥0.00';
+        $('dscVcCost').textContent = '¥0.000';
         loadSavedVoice();
         renderVoices();
         applyLang();
@@ -516,7 +505,6 @@
     function closeOverlay() {
         var ov = $('dscVideoCallOverlay');
         if (ov) ov.classList.remove('show');
-        $('dscVcTextInput').blur();
         document.documentElement.classList.remove('dsc-vc-lock');
         V.open = false;
         V.histOpen = false;
@@ -592,8 +580,6 @@
         V.audioFinal = '';
         V.audioTextSeen = false;
         V.textFinal = '';
-        V.responseSeen = false;
-        V.textToken++;
         V.speaking = false;
         V.savePromise = null;
     }
@@ -610,10 +596,11 @@
         V.seq = 0;
         V.durationSec = 0;
         V.costFen = 0;
+        V.costYuan = 0;
         $('dscVcStart').style.display = 'none';
         $('dscVcCall').style.display = 'flex';
         $('dscVcTime').textContent = '00:00';
-        $('dscVcCost').textContent = '¥0.00';
+        $('dscVcCost').textContent = '¥0.000';
         $('dscVcSubs').innerHTML = '';
         setCenterStatus(tr('connecting'));
 
@@ -1012,12 +999,10 @@
             // 上一轮豆包若因网络/取消没有收到 done，先把残留的实时气泡收口。
             if (V.liveAiTurn) closeLiveTurn('liveAiTurn');
             V.speaking = true;
-            V.responseSeen = true;
             V.audioText = '';
             V.audioFinal = '';
             V.audioTextSeen = false;
             V.textFinal = '';
-            if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
             setCallStatusUi('speaking');
             return;
         }
@@ -1488,21 +1473,6 @@
         setCenterStatus('');
     }
 
-    function toggleKeyboard() {
-        var p = $('dscVcTextPanel');
-        if (!p) return;
-        var open = p.classList.toggle('show');
-        var ov = $('dscVideoCallOverlay');
-        if (ov) ov.classList.toggle('kb', open);
-        if (open) {
-            adjustViewport();
-            setTimeout(function () { $('dscVcTextInput').focus(); }, 80);
-        } else {
-            $('dscVcTextInput').blur();
-            adjustViewport();
-        }
-    }
-
     function startTimer() {
         if (V.timer) clearInterval(V.timer);
         updateMeter();
@@ -1512,12 +1482,19 @@
     function updateMeter() {
         if (!V.startedAt) return;
         var sec = Math.max(0, Math.floor((Date.now() - V.startedAt) / 1000));
+        var prevSec = V.durationSec || 0;
+        var delta = Math.max(0, sec - prevSec);
+        // ★ 按当前实际媒体形态分段累计：摄像头开着按视频价，关掉即转音频价。
+        //   分段累计可避免中途开关摄像头导致整段通话被反向重算。
+        var rate = V.camOn ? RATE_VIDEO : RATE_VOICE;
+        V.costYuan = (V.costYuan || 0) + delta * rate / 60;
         V.durationSec = sec;
-        V.costFen = Math.round(sec * RATE_VIDEO * 100 / 60);
+        // 旧记录字段仍是整数分（不改余额/历史存储语义），展示用更精确的元。
+        V.costFen = Math.round(V.costYuan * 100);
         var tm = $('dscVcTime');
         var cm = $('dscVcCost');
         if (tm) tm.textContent = fmtDuration(sec);
-        if (cm) cm.textContent = '¥' + (V.costFen / 100).toFixed(2);
+        if (cm) cm.textContent = '¥' + V.costYuan.toFixed(3);
     }
 
     function fmtDuration(sec) {
@@ -1526,48 +1503,6 @@
         var s = sec % 60;
         function p(n) { return n < 10 ? '0' + n : '' + n; }
         return (h > 0 ? p(h) + ':' : '') + p(m) + ':' + p(s);
-    }
-
-    // ------------------------------------------------------------
-    // 文字输入：直接注入实时会话（input_text），由实时音视频模型生成语音回答。
-    // 不再回退到普通文本模型 / 独立 TTS：这样只消耗实时音视频分钟额度，
-    // 不消耗文本 token 额度，也不消耗语音通话 token 额度。
-    // ------------------------------------------------------------
-    function sendTyped() {
-        var input = $('dscVcTextInput');
-        if (!input) return;
-        var text = String(input.value || '').trim();
-        if (!text) return;
-        input.value = '';
-        addTurn('user', text);
-        V.responseSeen = false;
-        V.curText = '';
-        V.textToken++;
-        var token = V.textToken;
-
-        // 火山实时音视频标准协议：conversation.item.create 使用单数 item，
-        // content.type = input_text 表示“文本提问”，服务端会按语音对话回答。
-        // interrupt_mode=1：用户打字发送时立即打断当前播报并处理新问题。
-        sendWs({
-            type: 'conversation.item.create',
-            event_id: newId(),
-            item: {
-                type: 'message',
-                role: 'user',
-                content: [{ type: 'input_text', text: text }],
-                interrupt_mode: 1
-            }
-        });
-
-        // server_vad 模式通常会自动创建 response；若服务端没有自动触发，
-        // 短暂等待后显式 response.create，仍走同一条实时音视频链路。
-        if (V.nativeTimer) clearTimeout(V.nativeTimer);
-        V.nativeTimer = setTimeout(function () {
-            V.nativeTimer = null;
-            if (token !== V.textToken || V.responseSeen || !V.active) return;
-            sendWs({ type: 'response.create', event_id: newId() });
-        }, 650);
-        setCenterStatus('');
     }
 
     // ------------------------------------------------------------
@@ -1592,8 +1527,6 @@
         stopPlayback();
         cleanupAudio();
         stopCamera();
-        if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
-        V.textToken++;
         // 挂断时收口最后一个流式气泡，避免空行写入通话记录。
         flushLiveTurns();
 
@@ -1908,11 +1841,6 @@
         $('dscVcSwitchTop').addEventListener('click', switchCamera);
         $('dscVcMuteBtn').addEventListener('click', function () { setMic(!V.micOn); });
         $('dscVcIntBtn').addEventListener('click', interrupt);
-        $('dscVcKbBtn').addEventListener('click', toggleKeyboard);
-        $('dscVcTextSend').addEventListener('click', sendTyped);
-        $('dscVcTextInput').addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') { e.preventDefault(); sendTyped(); }
-        });
         $('dscVcHistBtn').addEventListener('click', openHistory);
         $('dscVcHistIcon').addEventListener('click', openHistory);
         $('dscVcHistClose').addEventListener('click', closeHistory);

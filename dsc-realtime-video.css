@@ -184,10 +184,6 @@ html.dsc-vc-lock body {
     scrollbar-width: none;
 }
 .dsc-vc-subs::-webkit-scrollbar { display: none; }
-.dsc-vc-overlay.kb .dsc-vc-subs {
-    bottom: calc(166px + env(safe-area-inset-bottom));
-    max-height: 24vh;
-}
 .dsc-vc-intro {
     margin: 8px 0 0;
     max-width: 340px;
@@ -239,51 +235,6 @@ html.dsc-vc-lock body {
     animation: dscVcCaret 1s steps(2, start) infinite;
 }
 @keyframes dscVcCaret { 0%, 45% { opacity: .8; } 46%, 100% { opacity: 0; } }
-
-.dsc-vc-textpanel {
-    position: absolute;
-    z-index: 9;
-    left: 12px;
-    right: 12px;
-    bottom: calc(104px + env(safe-area-inset-bottom));
-    display: none;
-    gap: 7px;
-    padding: 8px;
-    border-radius: 16px;
-    background: rgba(16, 18, 28, .86);
-    border: 1px solid rgba(255,255,255,.12);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
-    box-shadow: 0 12px 40px rgba(0,0,0,.45);
-}
-.dsc-vc-textpanel.show { display: flex; }
-.dsc-vc-textpanel input {
-    flex: 1 1 auto;
-    min-width: 0;
-    height: 38px;
-    padding: 0 11px;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,.14);
-    background: rgba(255,255,255,.08);
-    color: #fff;
-    font-size: 13px;
-    outline: none;
-    font-family: inherit;
-}
-.dsc-vc-textpanel input::placeholder { color: rgba(255,255,255,.42); }
-.dsc-vc-textpanel input:focus { border-color: rgba(129,140,248,.72); }
-.dsc-vc-textpanel button {
-    flex: 0 0 auto;
-    height: 38px;
-    padding: 0 14px;
-    border-radius: 10px;
-    border: 0;
-    background: linear-gradient(135deg, #6366f1, #4f46e5);
-    color: #fff;
-    font-weight: 650;
-    font-size: 13px;
-    font-family: inherit;
-}
 
 .dsc-vc-controls {
     position: absolute;

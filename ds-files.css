@@ -137,7 +137,7 @@
 }
 .dsc-filter-chip:hover { border-color: #4f46e5; }
 
-/* 搜索：输入框与正则开关同一行，避免开关单独占一行挤压文件列表 */
+/* 搜索：输入框占满整行，右侧不再有正则开关控件 */
 .dsc-files-search {
     padding: 8px 12px;
     border-bottom: 1px solid #ffffff;
@@ -193,52 +193,6 @@
     justify-content: center;
 }
 .dsc-files-search .s-clear.visible { display: flex; }
-
-.dsc-files-regex {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    font-size: 0.68rem;
-    color: #6b7280;
-    cursor: pointer;
-    padding: 0 8px;
-    height: 32px;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-    background: #ffffff;
-    flex: 0 0 auto;
-    width: auto;
-    max-width: 98px;
-    white-space: nowrap;
-    user-select: none;
-    box-sizing: border-box;
-}
-.dsc-files-search .dsc-files-regex input[type="checkbox"] {
-    accent-color: #4f46e5;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: none;
-    box-sizing: border-box;
-    width: 13px;
-    min-width: 13px;
-    max-width: 13px;
-    height: 13px;
-    min-height: 13px;
-    max-height: 13px;
-    flex: 0 0 13px;
-}
-.dsc-files-regex span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.dsc-files-regex.active {
-    color: #4f46e5;
-    border-color: #a7f3d0;
-    background: #eef2ff;
-}
 
 /* 文件列表 */
 .dsc-files-list {
@@ -467,19 +421,6 @@
     }
     .dsc-upload-zone { padding: 14px 10px; }
     .dsc-upload-zone .icon { font-size: 1.5rem; }
-    /* 手机上正则按钮收成 .* 图标，避免挤占文件列表的可视区域 */
-    .dsc-files-regex {
-        max-width: none;
-        padding: 0 9px;
-        gap: 4px;
-    }
-    .dsc-files-regex span { display: none; }
-    .dsc-files-regex::after {
-        content: ".*";
-        font-size: 12px;
-        font-weight: 700;
-        color: #4f46e5;
-    }
 }
 /* 修复文件管理头部布局，让清空按钮紧贴标题，关闭按钮靠最右 */
 .dsc-files-header {

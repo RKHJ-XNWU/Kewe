@@ -2360,7 +2360,7 @@ var EDGE_VOICE_POOL = {
         md.appendChild(info);
         var meter = el('div', 'dsc-db-call-meter');
         meter.id = 'dscDbCallMeter';
-        meter.textContent = '00:00 · ¥0.00';
+        meter.textContent = '00:00';
         md.appendChild(meter);
 
         var stage = el('div', 'dsc-db-call-stage');
@@ -2799,7 +2799,9 @@ var EDGE_VOICE_POOL = {
     }
 
 
-    // 实时语音计费：0.2 元/分钟（视频通话 0.4 元/分钟由 dsc-realtime-video.js 计时）
+    // 豆包语音通话额度按 tokens 计费，当前无法换算单价：
+    // 这里只显示实时时长，不在前端估算或展示费用。
+    // 音视频通话的音频/视频分钟价另由 dsc-realtime-video.js 计时。
     function startCallMeter() {
         var c = S.call;
         if (!c) return;
@@ -2812,9 +2814,8 @@ var EDGE_VOICE_POOL = {
             mm = mm % 60;
             var t = (hh > 0 ? (hh < 10 ? '0' + hh : hh) + ':' : '') +
                 (mm < 10 ? '0' + mm : mm) + ':' + (ss < 10 ? '0' + ss : ss);
-            var fen = Math.round(sec * 0.2 * 100 / 60);
             var elM = $('dscDbCallMeter');
-            if (elM) elM.textContent = t + ' · ¥' + (fen / 100).toFixed(2);
+            if (elM) elM.textContent = t;
         };
         tick();
         c.meterTimer = setInterval(tick, 1000);

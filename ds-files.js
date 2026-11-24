@@ -10,7 +10,6 @@
 
     var dsFiles = [];
     var dsSearchQ = '';
-    var dsUseRegex = false;
     var dsFilterCat = 'all';
     var attachedFileIds = [];
 
@@ -82,14 +81,6 @@
 
     function getFilteredDsFiles() {
         if (!dsSearchQ) return dsFiles;
-        if (dsUseRegex) {
-            var re;
-            try { re = new RegExp(dsSearchQ, 'i'); }
-            catch (e) { return []; }
-            return dsFiles.filter(function (f) {
-                return re.test(f.name || '') || re.test(f.prompt || '') || re.test(f.category || '');
-            });
-        }
         var q = dsSearchQ.toLowerCase();
         return dsFiles.filter(function (f) {
             return (f.name || '').toLowerCase().indexOf(q) !== -1 ||
@@ -383,13 +374,9 @@
 
         var searchInput = $('dscFilesSearch');
         var searchClear = $('dscFilesSearchClear');
-        var regexCb = $('dscFilesRegexCheckbox');
-        var regexToggle = $('dscFilesRegexToggle');
         if (searchInput) {
             searchInput.addEventListener('input', function () {
                 dsSearchQ = searchInput.value.trim();
-                dsUseRegex = regexCb ? regexCb.checked : false;
-                if (regexToggle) regexToggle.classList.toggle('active', dsUseRegex);
                 if (searchClear) searchClear.classList.toggle('visible', dsSearchQ.length > 0);
                 renderDsFiles();
             });
@@ -399,13 +386,6 @@
                 if (searchInput) searchInput.value = '';
                 dsSearchQ = '';
                 searchClear.classList.remove('visible');
-                renderDsFiles();
-            });
-        }
-        if (regexCb) {
-            regexCb.addEventListener('change', function () {
-                dsUseRegex = regexCb.checked;
-                if (regexToggle) regexToggle.classList.toggle('active', dsUseRegex);
                 renderDsFiles();
             });
         }
