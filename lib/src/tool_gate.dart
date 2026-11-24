@@ -97,6 +97,43 @@ class DsToolGate {
   /// 只要工具模式开启即可调用（豆包模式同样复用 DeepSeek 官方 fetch）。
   static const Set<String> _searchTools = <String>{'web_search'};
 
+  /// ------------------------------------------------------------
+  /// 【知识类工具 · 始终可用】不受工具模式开关约束。
+  ///
+  /// 语义依据：工具模式开关的本意是「是否允许模型操作设备」，
+  /// 而不是「是否允许模型读取账号自己的数据」。知识检索是账号数据的
+  /// 基本读取权，误用代价只是多读一段文本，不产生不可逆副作用。
+  ///
+  /// 放行位置极重要：必须放在 [hasActiveRequest] 之后、[modeOf] 判定之前。
+  ///   · 放在 hasActiveRequest 之前 = 允许在「没有正在处理的请求」时读库，
+  ///     等于给了一条脱离对话上下文的读库通道，是隐私边界的破口。
+  ///   · 放在 modeOf 之后 = 开关关闭时依旧被拒，解耦等于没做。
+  ///
+  /// 写入类（save / delete）同样放行，但**不豁免用户确认**：
+  /// knowledge_delete 必须 confirm=true 才执行，校验留在 executeDsTool 里，
+  /// 本次改造一行都不改，开关状态永远不能替代用户当轮确认。
+  static const Set<String> knowledgeReadTools = <String>{
+    'knowledge_status',
+    'knowledge_search',
+    'knowledge_read',
+  };
+
+  static const Set<String> knowledgeWriteTools = <String>{
+    'knowledge_save',
+    'knowledge_delete',
+  };
+
+  static final Set<String> knowledgeTools = <String>{
+    ...knowledgeReadTools,
+    ...knowledgeWriteTools,
+  };
+
+  /// 是否为知识类工具（纯数据读写，不操作设备）。
+  static bool isKnowledgeTool(String name) => knowledgeTools.contains(name);
+
+  /// 是否为知识写入类工具（放行但必须用户确认）。
+  static bool isKnowledgeWrite(String name) => knowledgeWriteTools.contains(name);
+
   /// 启动一个请求租约。返回序号，可用于 [endRequest] 精确结束。
   static int beginRequest(String sessionId, bool toolsOn,
       {int ttlMs = _defaultLeaseMs, bool searchOn = false}) {
@@ -238,6 +275,16 @@ class DsToolGate {
           ? sessionId!
           : (_activeSession.isNotEmpty ? _activeSession : _boundSession);
 
+      // ★ 知识类工具：只读账号自己的数据，不操作设备，始终放行。
+      //   位置刻意夹在「请求租约校验」之后、「工具模式判定」之前：
+      //   有请求上下文才允许读库（隐私边界），但开关关闭不再阻挡。
+      if (knowledgeTools.contains(toolName)) {
+        _markPass(sid, toolName);
+        logp('📚 [TOOL-GATE] 知识类工具放行（不受工具模式约束）: '
+            '$toolName${knowledgeWriteTools.contains(toolName) ? " [写入类·仍需用户确认]" : ""}');
+        return true;
+      }
+
       // ★ web_search 独立授权：没有「本次请求允许联网」的租约标记就拒绝，
       //   哪怕工具模式开着；避免模型绕过搜索按钮消耗搜索额度。
       //   fetch 属于工具模式自带抓取能力，不要求搜索按钮开启。
@@ -322,6 +369,9 @@ class DsToolGate {
                   'expireAt': g.expireAt.toIso8601String(),
                 })
             .toList(),
+        'totalTools': knowledgeTools.length,
+        'knowledgeTools': knowledgeTools.toList(),
+        'knowledgeWriteTools': knowledgeWriteTools.toList(),
         'deniedCount': deniedCount,
         'lastDenied': lastDenied,
         'lastDeniedReason': lastDeniedReason,

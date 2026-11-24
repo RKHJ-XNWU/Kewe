@@ -1063,7 +1063,8 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     '你正在接着写同一个回答的剩余部分。请承接上一条 assistant 消息的最后一个字符继续输出。禁止重复、改写已有内容，禁止输出说明、标题、总结。'
   ];
   if (deepThink) sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
-  sysParts.add(knowledgeSystemPromptForChat(uiLang));
+  // 继续写路径不携带任何设备工具 schema，必须按 false 传入。
+  sysParts.add(knowledgeSystemPromptForChat(uiLang, false));
 
   final apiMessages = <Map<String, dynamic>>[
     {'role': 'system', 'content': sysParts.join('\n')},

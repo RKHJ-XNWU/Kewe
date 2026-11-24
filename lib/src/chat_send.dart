@@ -1414,8 +1414,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final uiLang = dsRequestLang(req, body);
   final sysParts = <String>[];
   sysParts.add(dsLangSystemPrompt(uiLang));
-  sysParts.add(knowledgeSystemPromptForChat(uiLang));
-  final autoKnowledge = knowledgeContextForQuery(content);
+  // 设备工具与知识工具分开：只有本次真的下发了设备工具，
+  // 才在提示词里宣称它们可用，否则会诱导模型输出无效的函数调用文本。
+  sysParts.add(knowledgeSystemPromptForChat(uiLang, useTools));
+  final autoKnowledge = knowledgeContextForQuery(content, lang: uiLang);
   if (autoKnowledge.isNotEmpty) sysParts.add(autoKnowledge);
   // ★ 前缀被剥离后，必须把「用户确实用了抖音百科前缀」告诉模型。
   //   否则模型只看到 body 里的「QQ」，就会回答“你只发了 QQ 两个字”，
