@@ -141,6 +141,10 @@ int _dsEstimateTextTokens(String text) {
   return cjk + ((other + 3) ~/ 4);
 }
 
+/// 上下文快照缓存：只要「消息条数 / 末条 id / 末条内容长度 / usage」没变，
+/// 就直接返回上一次统计结果，避免 1 秒轮询反复遍历全部正文。
+final Map<String, Map<String, dynamic>> _dsCtxSnapshotCache = <String, Map<String, dynamic>>{};
+
 Future<void> handleDsChatContext(HttpRequest req) async {
   final res = req.response;
   if (req.method != 'GET') {
@@ -162,6 +166,18 @@ Future<void> handleDsChatContext(HttpRequest req) async {
   }
   final dim = dsDimFromReq(req);
   final messages = getDsMessages(sessionID, dim: dim);
+  final sig = '${messages.length}|'
+      '${messages.isEmpty ? '' : messages.last.id}|'
+      '${messages.isEmpty ? 0 : messages.last.content.length}|'
+      '${messages.isEmpty ? 0 : (messages.last.usage?.totalTokens ?? 0)}';
+  final cacheKey = '$dim|$sessionID';
+  final cached = _dsCtxSnapshotCache[cacheKey];
+  if (cached != null && cached['sig'] == sig) {
+    final hit = Map<String, dynamic>.from(cached['data'] as Map);
+    hit.addAll(dbOutputLimitInfo());
+    await dsJSONOk(res, 200, hit);
+    return;
+  }
   var characters = 0;
   var estimated = 0;
   var billed = 0;
@@ -181,7 +197,7 @@ Future<void> handleDsChatContext(HttpRequest req) async {
     }
   }
   if (estimated > DB_FORCED_CTX_TOKENS) estimated = DB_FORCED_CTX_TOKENS;
-  await dsJSONOk(res, 200, <String, dynamic>{
+  final payload = <String, dynamic>{
     'sessionId': sessionID,
     'dimension': dim,
     'messages': messages.length,
@@ -193,7 +209,14 @@ Future<void> handleDsChatContext(HttpRequest req) async {
     'billedTokens': billed,
     'updatedAt': rfc3339(DateTime.now()),
     ...dbOutputLimitInfo(),
-  });
+  };
+  _dsCtxSnapshotCache[cacheKey] = <String, dynamic>{'sig': sig, 'data': payload};
+  // 只保留最近 64 个会话快照，防止长期运行后内存膨胀。
+  if (_dsCtxSnapshotCache.length > 64) {
+    final firstKey = _dsCtxSnapshotCache.keys.first;
+    _dsCtxSnapshotCache.remove(firstKey);
+  }
+  await dsJSONOk(res, 200, payload);
 }
 
 // ------------------------------------------------------------

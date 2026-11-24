@@ -18,8 +18,16 @@
         contextOpen: false,
         saving: false,
         contextLoading: false,
-        lastFocus: null
+        lastFocus: null,
+        // ★ 真·实时上下文：服务端统计常驻轮询，不再等用户点开面板。
+        lastServerAt: 0,
+        lastSnapKey: '',
+        lastMsgCount: -1,
+        lastKickAt: 0
     };
+
+    var CONTEXT_POLL_MS = 1000;   // 常驻刷新间隔：面板关闭时也每秒同步一次
+    var CONTEXT_KICK_MS = 700;    // 会话/消息变化时立即补拉的节流窗口
 
     var COPY = {
         zh: {
@@ -336,6 +344,13 @@
         var snap = liveSnapshot();
         var key = String(snap.sessionId || '') + '|' + String(snap.dimension || 'ds');
         var server = state.server && state.serverKey === key ? state.server : null;
+        // ★ 会话切换 / 消息条数变化：不等 1 秒轮询，立即补拉一次。
+        var msgCount = (snap.messages || []).length;
+        if (snap.sessionId && (key !== state.lastSnapKey || msgCount !== state.lastMsgCount)) {
+            state.lastSnapKey = key;
+            state.lastMsgCount = msgCount;
+            kickContextRefresh();
+        }
         var local = localEstimate(snap);
         var estimated = Math.max(local, server ? Number(server.estimatedTokens) || 0 : 0);
         var reported = server ? Number(server.reportedTokens) || 0 : 0;
@@ -358,8 +373,13 @@
         if ($('dscCtxBilled')) $('dscCtxBilled').textContent = server && server.billedTokens ? formatInt(server.billedTokens) + ' ' + tr('tokens') : '—';
         if ($('dscCtxProviderNote')) $('dscCtxProviderNote').textContent = reported ? '' : tr('noProviderData');
         if ($('dscCtxUpdated')) {
-            var time = new Date();
-            $('dscCtxUpdated').textContent = tr('lastUpdated', time.toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+            // 只显示「真正拿到服务端数据」的时间，避免本地刷新伪装成实时。
+            if (state.lastServerAt) {
+                var time = new Date(state.lastServerAt);
+                $('dscCtxUpdated').textContent = tr('lastUpdated', time.toLocaleTimeString(lang(), { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+            } else {
+                $('dscCtxUpdated').textContent = tr('syncing');
+            }
         }
         var compact = $('dscContextCompactValue');
         if (compact) compact.textContent = formatCompact(used);
@@ -375,23 +395,48 @@
         return { used: used, remaining: remaining, percent: percent, reported: reported, estimated: estimated, model: snap.model };
     }
 
+    // 立即补拉：会话切换、消息变化、发送完成后调用；带节流，避免风暴。
+    function kickContextRefresh() {
+        var now = Date.now();
+        if (now - state.lastKickAt < CONTEXT_KICK_MS) return;
+        state.lastKickAt = now;
+        refreshContext();
+    }
+
     async function refreshContext() {
         var snap = liveSnapshot();
-        if (!snap.sessionId || state.contextLoading) { updateContext(); return; }
+        if (!snap.sessionId) {
+            state.server = null;
+            state.serverKey = '';
+            state.lastServerAt = 0;
+            updateContext();
+            return;
+        }
+        if (state.contextLoading) return;
         var key = String(snap.sessionId) + '|' + String(snap.dimension || 'ds');
         state.contextLoading = true;
+        var abortTimer = null;
         try {
             var url = '/api/ds-chat/context?sessionId=' + encodeURIComponent(snap.sessionId) +
                 '&dim=' + encodeURIComponent(snap.dimension || 'ds') + '&model=' + encodeURIComponent(snap.model || '');
-            var res = await fetch(url, { cache: 'no-store' });
+            // 8 秒超时：避免一次卡死的请求把「实时」轮询永久锁住。
+            var ctrl = (typeof window.AbortController === 'function') ? new window.AbortController() : null;
+            abortTimer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 8000);
+            var res = await fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             var data = await res.json();
             state.server = data;
             state.serverKey = key;
-            if (data.maxOutput) applyOutput(data.maxOutput, false);
+            state.lastServerAt = Date.now();
+            // 档位只在真正变化时写盘，避免每秒重复渲染。
+            if (data.maxOutput && Number(data.maxOutput) !== Number(state.output)) {
+                applyOutput(data.maxOutput, false);
+            }
         } catch (e) {
+            // 会话还没落盘或网络抖动时保留上一次数据，不用空值覆盖。
             if (state.serverKey !== key) { state.server = null; state.serverKey = key; }
         } finally {
+            if (abortTimer) clearTimeout(abortTimer);
             state.contextLoading = false;
             updateContext();
         }
@@ -469,7 +514,11 @@
         updateContext();
         refreshContext();
         setInterval(updateContext, 500);
-        setInterval(function () { if (state.contextOpen && !document.hidden) refreshContext(); }, 2500);
+        // ★ 真·实时：面板关闭时也持续同步服务端统计（隐藏标签页时暂停）。
+        setInterval(function () {
+            if (document.hidden) return;
+            refreshContext();
+        }, CONTEXT_POLL_MS);
     }
 
     window.DscControlCenter = {
