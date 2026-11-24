@@ -87,16 +87,66 @@ List<int> get _INV_SBOX {
 }
 
 const List<int> _RCON = [
-  0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1B, 0x36,
+  0x01,
+  0x02,
+  0x04,
+  0x08,
+  0x10,
+  0x20,
+  0x40,
+  0x80,
+  0x1B,
+  0x36,
 ];
+
+// AES 加密的 T 表：把 SubBytes + MixColumns 合并成 4 次查表。
+// 纯 Dart 逐字节实现每块要 14 轮 × 16 字节运算；文件下载按 512KB 分块，
+// 8MB 文件会调用几十万次，T 表能把 AES 部分再提速数倍。
+List<int>? _te0Cache, _te1Cache, _te2Cache, _te3Cache;
+
+void _initTeTables() {
+  if (_te0Cache != null) return;
+  final sbox = _SBOX;
+  final t0 = List<int>.filled(256, 0);
+  final t1 = List<int>.filled(256, 0);
+  final t2 = List<int>.filled(256, 0);
+  final t3 = List<int>.filled(256, 0);
+  for (var x = 0; x < 256; x++) {
+    final s = sbox[x];
+    final s2 = _xtime(s);
+    final s3 = s2 ^ s;
+    t0[x] = (s2 << 24) | (s << 16) | (s << 8) | s3;
+    t1[x] = (s3 << 24) | (s2 << 16) | (s << 8) | s;
+    t2[x] = (s << 24) | (s3 << 16) | (s2 << 8) | s;
+    t3[x] = (s << 24) | (s << 16) | (s3 << 8) | s2;
+  }
+  _te0Cache = t0;
+  _te1Cache = t1;
+  _te2Cache = t2;
+  _te3Cache = t3;
+}
 
 // ------------------------------------------------------------
 // AES-256（只做单块加/解密，GCM 用 CTR 模式自行串联）
 // ------------------------------------------------------------
 class Aes256 {
   final List<int> _rk; // 60 words * 4 bytes
+  late final List<int> _rk32;
+  late final List<int> _te0 = _te0Cache!;
+  late final List<int> _te1 = _te1Cache!;
+  late final List<int> _te2 = _te2Cache!;
+  late final List<int> _te3 = _te3Cache!;
 
-  Aes256(List<int> key) : _rk = _expandKey(key);
+  Aes256(List<int> key) : _rk = _expandKey(key) {
+    _initTeTables();
+    _rk32 = List<int>.generate(60, (i) {
+      final o = i * 4;
+      return (_rk[o] << 24) |
+          (_rk[o + 1] << 16) |
+          (_rk[o + 2] << 8) |
+          _rk[o + 3];
+    });
+  }
 
   static List<int> _expandKey(List<int> key) {
     if (key.length != 32) {
@@ -142,40 +192,11 @@ class Aes256 {
     }
   }
 
-  void _subBytes(Uint8List s) {
-    final sbox = _SBOX;
-    for (var i = 0; i < 16; i++) {
-      s[i] = sbox[s[i]];
-    }
-  }
-
   void _invSubBytes(Uint8List s) {
     final inv = _INV_SBOX;
     for (var i = 0; i < 16; i++) {
       s[i] = inv[s[i]];
     }
-  }
-
-  // state 为列主序：s[c*4 + r]
-  void _shiftRows(Uint8List s) {
-    var t = s[1];
-    s[1] = s[5];
-    s[5] = s[9];
-    s[9] = s[13];
-    s[13] = t;
-
-    t = s[2];
-    s[2] = s[10];
-    s[10] = t;
-    t = s[6];
-    s[6] = s[14];
-    s[14] = t;
-
-    t = s[15];
-    s[15] = s[11];
-    s[11] = s[7];
-    s[7] = s[3];
-    s[3] = t;
   }
 
   void _invShiftRows(Uint8List s) {
@@ -197,18 +218,6 @@ class Aes256 {
     s[7] = s[11];
     s[11] = s[15];
     s[15] = t;
-  }
-
-  void _mixColumns(Uint8List s) {
-    for (var c = 0; c < 4; c++) {
-      final i = c * 4;
-      final a0 = s[i], a1 = s[i + 1], a2 = s[i + 2], a3 = s[i + 3];
-      final t = a0 ^ a1 ^ a2 ^ a3;
-      s[i] = a0 ^ t ^ _xtime(a0 ^ a1);
-      s[i + 1] = a1 ^ t ^ _xtime(a1 ^ a2);
-      s[i + 2] = a2 ^ t ^ _xtime(a2 ^ a3);
-      s[i + 3] = a3 ^ t ^ _xtime(a3 ^ a0);
-    }
   }
 
   void _invMixColumns(Uint8List s) {
@@ -235,18 +244,89 @@ class Aes256 {
   }
 
   Uint8List encryptBlock(List<int> input) {
-    final s = Uint8List.fromList(input.sublist(0, 16));
-    _addRoundKey(s, 0);
+    var s0 =
+        ((input[0] << 24) | (input[1] << 16) | (input[2] << 8) | input[3]) ^
+            _rk32[0];
+    var s1 =
+        ((input[4] << 24) | (input[5] << 16) | (input[6] << 8) | input[7]) ^
+            _rk32[1];
+    var s2 =
+        ((input[8] << 24) | (input[9] << 16) | (input[10] << 8) | input[11]) ^
+            _rk32[2];
+    var s3 =
+        ((input[12] << 24) | (input[13] << 16) | (input[14] << 8) | input[15]) ^
+            _rk32[3];
+
+    var rk = 4;
     for (var round = 1; round < 14; round++) {
-      _subBytes(s);
-      _shiftRows(s);
-      _mixColumns(s);
-      _addRoundKey(s, round);
+      final t0 = _te0[s0 >> 24] ^
+          _te1[(s1 >> 16) & 0xFF] ^
+          _te2[(s2 >> 8) & 0xFF] ^
+          _te3[s3 & 0xFF] ^
+          _rk32[rk++];
+      final t1 = _te0[s1 >> 24] ^
+          _te1[(s2 >> 16) & 0xFF] ^
+          _te2[(s3 >> 8) & 0xFF] ^
+          _te3[s0 & 0xFF] ^
+          _rk32[rk++];
+      final t2 = _te0[s2 >> 24] ^
+          _te1[(s3 >> 16) & 0xFF] ^
+          _te2[(s0 >> 8) & 0xFF] ^
+          _te3[s1 & 0xFF] ^
+          _rk32[rk++];
+      final t3 = _te0[s3 >> 24] ^
+          _te1[(s0 >> 16) & 0xFF] ^
+          _te2[(s1 >> 8) & 0xFF] ^
+          _te3[s2 & 0xFF] ^
+          _rk32[rk++];
+      s0 = t0;
+      s1 = t1;
+      s2 = t2;
+      s3 = t3;
     }
-    _subBytes(s);
-    _shiftRows(s);
-    _addRoundKey(s, 14);
-    return s;
+    return _finalRound(s0, s1, s2, s3, rk);
+  }
+
+  Uint8List _finalRound(int s0, int s1, int s2, int s3, int rk) {
+    final sbox = _SBOX;
+    final t0 = ((sbox[s0 >> 24] << 24) |
+            (sbox[(s1 >> 16) & 0xFF] << 16) |
+            (sbox[(s2 >> 8) & 0xFF] << 8) |
+            sbox[s3 & 0xFF]) ^
+        _rk32[rk];
+    final t1 = ((sbox[s1 >> 24] << 24) |
+            (sbox[(s2 >> 16) & 0xFF] << 16) |
+            (sbox[(s3 >> 8) & 0xFF] << 8) |
+            sbox[s0 & 0xFF]) ^
+        _rk32[rk + 1];
+    final t2 = ((sbox[s2 >> 24] << 24) |
+            (sbox[(s3 >> 16) & 0xFF] << 16) |
+            (sbox[(s0 >> 8) & 0xFF] << 8) |
+            sbox[s1 & 0xFF]) ^
+        _rk32[rk + 2];
+    final t3 = ((sbox[s3 >> 24] << 24) |
+            (sbox[(s0 >> 16) & 0xFF] << 16) |
+            (sbox[(s1 >> 8) & 0xFF] << 8) |
+            sbox[s2 & 0xFF]) ^
+        _rk32[rk + 3];
+    return Uint8List.fromList(<int>[
+      (t0 >> 24) & 0xFF,
+      (t0 >> 16) & 0xFF,
+      (t0 >> 8) & 0xFF,
+      t0 & 0xFF,
+      (t1 >> 24) & 0xFF,
+      (t1 >> 16) & 0xFF,
+      (t1 >> 8) & 0xFF,
+      t1 & 0xFF,
+      (t2 >> 24) & 0xFF,
+      (t2 >> 16) & 0xFF,
+      (t2 >> 8) & 0xFF,
+      t2 & 0xFF,
+      (t3 >> 24) & 0xFF,
+      (t3 >> 16) & 0xFF,
+      (t3 >> 8) & 0xFF,
+      t3 & 0xFF,
+    ]);
   }
 
   Uint8List decryptBlock(List<int> input) {
@@ -303,7 +383,56 @@ BigInt _gfMul(BigInt x, BigInt y) {
   return z;
 }
 
-BigInt _ghash(BigInt h, List<int> aad, List<int> ct) {
+/// BigInt ⇄ 128-bit (4×Uint32) 互转。
+/// GHASH 是逐块 128-bit 运算，纯 BigInt 每块都要做 128 次大整数移位；
+/// 下载大文件时这是唯一的性能瓶颈。这里换成 32-bit 字运算 + 查表。
+BigInt _wordsToBig(int w0, int w1, int w2, int w3) {
+  var v = BigInt.from(w0 & 0xFFFFFFFF);
+  v = (v << 32) | BigInt.from(w1 & 0xFFFFFFFF);
+  v = (v << 32) | BigInt.from(w2 & 0xFFFFFFFF);
+  v = (v << 32) | BigInt.from(w3 & 0xFFFFFFFF);
+  return v;
+}
+
+List<int> _bigToWords(BigInt v) {
+  final out = List<int>.filled(4, 0);
+  var x = v;
+  for (var i = 3; i >= 0; i--) {
+    out[i] = (x & BigInt.from(0xFFFFFFFF)).toInt();
+    x = x >> 32;
+  }
+  return out;
+}
+
+/// GHASH 的 16×256 位置查表。
+///
+/// GCM 的 GF(2^128) 乘法对输入是线性的：一个 128-bit 块 X 乘 H，
+/// 等于 X 的每一个字节按其所在位置贡献的异或。这里预计算
+/// `U[p][b] = (b << (8*(15-p))) * H`，每个块只需 16 次查表异或，
+/// 不再逐位循环 128 次 BigInt 移位。结果与 [_gfMul] 逐位定义完全一致。
+class _GHashTables {
+  final List<int> u0 = List<int>.filled(4096, 0);
+  final List<int> u1 = List<int>.filled(4096, 0);
+  final List<int> u2 = List<int>.filled(4096, 0);
+  final List<int> u3 = List<int>.filled(4096, 0);
+
+  _GHashTables(BigInt h) {
+    for (var p = 0; p < 16; p++) {
+      final shift = 8 * (15 - p);
+      for (var b = 0; b < 256; b++) {
+        final v = _bigToWords(_gfMul(BigInt.from(b) << shift, h));
+        final idx = p * 256 + b;
+        u0[idx] = v[0];
+        u1[idx] = v[1];
+        u2[idx] = v[2];
+        u3[idx] = v[3];
+      }
+    }
+  }
+}
+
+/// 快速 GHASH；输入按 GCM 规范补齐 AAD、密文与长度块。
+BigInt _ghashFast(_GHashTables tab, List<int> aad, List<int> ct) {
   final data = <int>[];
   data.addAll(aad);
   final padA = (16 - (aad.length % 16)) % 16;
@@ -312,27 +441,46 @@ BigInt _ghash(BigInt h, List<int> aad, List<int> ct) {
   final padC = (16 - (ct.length % 16)) % 16;
   data.addAll(List<int>.filled(padC, 0));
   // 长度块：AAD 位数(64) || 密文位数(64)
-  final lenBlock = <int>[
-    ..._bigToBytes(BigInt.from(aad.length * 8), 8),
-    ..._bigToBytes(BigInt.from(ct.length * 8), 8),
-  ];
-  data.addAll(lenBlock);
+  data.addAll(_bigToBytes(BigInt.from(aad.length * 8), 8));
+  data.addAll(_bigToBytes(BigInt.from(ct.length * 8), 8));
 
-  var y = BigInt.zero;
+  var y0 = 0, y1 = 0, y2 = 0, y3 = 0;
   for (var i = 0; i < data.length; i += 16) {
-    final block = _bytesToBig(data.sublist(i, i + 16));
-    y = _gfMul(y ^ block, h);
+    var z0 = 0, z1 = 0, z2 = 0, z3 = 0;
+    for (var p = 0; p < 16; p++) {
+      final word = p < 4 ? y0 : (p < 8 ? y1 : (p < 12 ? y2 : y3));
+      final shift = 24 - (p % 4) * 8;
+      final xb = data[i + p] ^ ((word >> shift) & 0xFF);
+      final idx = p * 256 + xb;
+      z0 ^= tab.u0[idx];
+      z1 ^= tab.u1[idx];
+      z2 ^= tab.u2[idx];
+      z3 ^= tab.u3[idx];
+    }
+    y0 = z0 & 0xFFFFFFFF;
+    y1 = z1 & 0xFFFFFFFF;
+    y2 = z2 & 0xFFFFFFFF;
+    y3 = z3 & 0xFFFFFFFF;
   }
-  return y;
+  return _wordsToBig(y0, y1, y2, y3);
 }
 
 class AesGcm {
   final Aes256 _aes;
   late final Uint8List _hashKey;
+  _GHashTables? _ghashTablesCache;
 
   AesGcm(List<int> key) : _aes = Aes256(key) {
     // H = E(K, 0^128)
     _hashKey = _aes.encryptBlock(List<int>.filled(16, 0));
+  }
+
+  _GHashTables get _tables {
+    final cached = _ghashTablesCache;
+    if (cached != null) return cached;
+    final tables = _GHashTables(_bytesToBig(_hashKey));
+    _ghashTablesCache = tables;
+    return tables;
   }
 
   /// 递增 32-bit 计数器（J0 的最后 4 字节）
@@ -364,10 +512,11 @@ class AesGcm {
   }
 
   /// 加密：返回 ciphertext || tag(16)
-  Uint8List encrypt(List<int> nonce, List<int> plain, {List<int> aad = const []}) {
+  Uint8List encrypt(List<int> nonce, List<int> plain,
+      {List<int> aad = const []}) {
     final j0 = <int>[...nonce, 0, 0, 0, 1];
     final ct = _ctr(j0, plain, _aes);
-    final s = _ghash(_bytesToBig(_hashKey), aad, ct);
+    final s = _ghashFast(_tables, aad, ct);
     final ek = _bytesToBig(_aes.encryptBlock(j0));
     final tag = _bigToBytes(ek ^ s, 16);
     return Uint8List.fromList([...ct, ...tag]);
@@ -382,7 +531,7 @@ class AesGcm {
     final ct = cipherWithTag.sublist(0, cipherWithTag.length - 16);
     final tag = cipherWithTag.sublist(cipherWithTag.length - 16);
     final j0 = <int>[...nonce, 0, 0, 0, 1];
-    final s = _ghash(_bytesToBig(_hashKey), aad, ct);
+    final s = _ghashFast(_tables, aad, ct);
     final ek = _bytesToBig(_aes.encryptBlock(j0));
     final expect = _bigToBytes(ek ^ s, 16);
     for (var i = 0; i < 16; i++) {
@@ -402,8 +551,22 @@ bool aesSelfTest() {
   final key = List<int>.generate(32, (i) => i);
   final pt = List<int>.generate(16, (i) => i * 0x11);
   final expect = [
-    0x8e, 0xa2, 0xb7, 0xca, 0x51, 0x67, 0x45, 0xbf,
-    0xea, 0xfc, 0x49, 0x90, 0x4b, 0x49, 0x60, 0x89,
+    0x8e,
+    0xa2,
+    0xb7,
+    0xca,
+    0x51,
+    0x67,
+    0x45,
+    0xbf,
+    0xea,
+    0xfc,
+    0x49,
+    0x90,
+    0x4b,
+    0x49,
+    0x60,
+    0x89,
   ];
   final aes = Aes256(key);
   final ct = aes.encryptBlock(pt);

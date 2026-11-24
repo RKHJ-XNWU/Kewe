@@ -24,6 +24,37 @@ const int DS_CHUNK_SIZE = 64 * 1024 * 1024; // 64MB (OOM fix)
 const Duration DS_UPLOAD_SESSION_TTL = Duration(hours: 1);
 const Duration DS_ORPHAN_GRACE_PERIOD = Duration(minutes: 30);
 
+// ★ 本进程内的明文缓存：刚生成的文件下载/预览直接命中，不再走 AES-GCM。
+// 只放内存，不落盘，进程退出即消失；按上限淘汰最旧条目。
+const int _DS_PLAIN_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+final Map<String, Uint8List> _dsPlainCache = <String, Uint8List>{};
+int _dsPlainCacheBytes = 0;
+
+void cacheDsFilePlaintext(String id, List<int> bytes) {
+  if (bytes.isEmpty || bytes.length > _DS_PLAIN_CACHE_MAX_BYTES) return;
+  final copy = Uint8List.fromList(bytes);
+  final old = _dsPlainCache.remove(id);
+  if (old != null) _dsPlainCacheBytes -= old.length;
+  while (_dsPlainCache.isNotEmpty &&
+      _dsPlainCacheBytes + copy.length > _DS_PLAIN_CACHE_MAX_BYTES) {
+    final oldest = _dsPlainCache.keys.first;
+    final dropped = _dsPlainCache.remove(oldest)!;
+    _dsPlainCacheBytes -= dropped.length;
+  }
+  _dsPlainCache[id] = copy;
+  _dsPlainCacheBytes += copy.length;
+}
+
+void removeDsFilePlaintextCache(String id) {
+  final old = _dsPlainCache.remove(id);
+  if (old != null) _dsPlainCacheBytes -= old.length;
+}
+
+void clearDsFilePlaintextCache() {
+  _dsPlainCache.clear();
+  _dsPlainCacheBytes = 0;
+}
+
 Timer? _uploadCleaner;
 
 void initDsFilesDir() {
@@ -224,6 +255,7 @@ DsFileMeta? getDsFileMeta(String id) {
 /// 删除元数据 + 物理文件 + 递归清理空目录
 void deleteDsFileMeta(String id) {
   if (id.isEmpty) return;
+  removeDsFilePlaintextCache(id);
   List<FileSystemEntity> files;
   try {
     files = Directory(DSFilesMetaDir).listSync();
@@ -711,6 +743,7 @@ Future<void> handleDsFileClearAll(HttpRequest req) async {
   }
   initDsFilesDir();
   invalidateDsFileMetaCache();
+  clearDsFilePlaintextCache();
   final afterFiles = getAllDsFiles().length;
   logp('✅ 清空完成：删除 $removedDirs 个目録、$beforeFiles → $afterFiles 个文件、耗时 ${sw.elapsedMilliseconds}ms');
   await jsonResponse(req.response, 200, {
@@ -940,8 +973,31 @@ Future<void> serveEncryptedDsFile(
     return;
   }
 
+  // ★ 刚生成的文件命中内存明文缓存：直接发字节，不再解密。
+  final cachedPlain = _dsPlainCache[meta.id];
+  if (cachedPlain != null && cachedPlain.length == total) {
+    try {
+      res.add(start == 0 && end == total - 1
+          ? cachedPlain
+          : Uint8List.sublistView(cachedPlain, start, end + 1));
+      await res.flush();
+    } catch (e) {
+      logp('❌ 明文缓存发送失败: ${meta.id} ($e)');
+    } finally {
+      try {
+        await res.close();
+      } catch (_) {}
+    }
+    return;
+  }
+
   final want = end - start + 1;
-  var pos = 0;
+  // ★ Range 续传不再从文件头逐块解密。
+  //   加密容器是固定 512KB 分块（除最后一块），因此 start 落在第几个块
+  //   可以直接算出来；跳过前面的密文行，不必为一次尾部 Range 把整文件解密一遍。
+  final startChunk = start ~/ KEWE_FILE_CHUNK;
+  var pos = startChunk * KEWE_FILE_CHUNK;
+  var skipChunks = startChunk;
   var sent = 0;
   var firstLine = true;
   try {
@@ -957,6 +1013,10 @@ Future<void> serveEncryptedDsFile(
         if (line.startsWith(KEWE_FILE_MAGIC)) continue;
       }
       if (line.isEmpty) continue;
+      if (skipChunks > 0) {
+        skipChunks--;
+        continue;
+      }
       Uint8List plain;
       try {
         plain = keweDecryptBytesForUser(currentUserId, base64.decode(line));
@@ -972,6 +1032,9 @@ Future<void> serveEncryptedDsFile(
       if (from < to) {
         res.add(Uint8List.sublistView(plain, from, to));
         sent += to - from;
+        // 每解密完一块就 flush，让浏览器/下载管理器立刻看到进度，
+        // 而不是等整文件解密结束才一次性收到（那会表现为「一直 0 B/s」）。
+        await res.flush();
       }
       if (sent >= want) break;
     }

@@ -112,7 +112,7 @@ String keweAuthDecrypt(String stored) {
 // ------------------------------------------------------------
 String keweEncryptTextForUser(String userId, String plain) {
   final nonce = keweRandomBytes(12);
-  final sealed = AesGcm(keweUserDataKey(userId)).encrypt(nonce, utf8.encode(plain));
+  final sealed = _gcmForUser(userId).encrypt(nonce, utf8.encode(plain));
   return '$KEWE_TEXT_ENC_PREFIX${base64.encode([...nonce, ...sealed])}';
 }
 
@@ -122,15 +122,27 @@ String keweDecryptTextForUser(String userId, String stored) {
   if (raw.length < 28) throw const FormatException('聊天密文损坏');
   final nonce = raw.sublist(0, 12);
   final sealed = raw.sublist(12);
-  return utf8.decode(AesGcm(keweUserDataKey(userId)).decrypt(nonce, sealed));
+  return utf8.decode(_gcmForUser(userId).decrypt(nonce, sealed));
 }
 
 bool keweIsEncryptedText(String value) =>
     value.startsWith(KEWE_TEXT_ENC_PREFIX);
 
+/// 每位用户复用同一个 AesGcm 实例。
+///
+/// AES-GCM 的 GHASH 查表要在构造时预计算 4096 个位置贡献；
+/// 下载 8MB 文件会按 512KB 分 16 块调用，如果每块都重新建实例，
+/// 预计算本身就会把下载拖慢。缓存后只算一次。
+final Map<String, AesGcm> _userGcmCache = <String, AesGcm>{};
+
+AesGcm _gcmForUser(String userId) {
+  final key = userId.trim();
+  return _userGcmCache.putIfAbsent(key, () => AesGcm(keweUserDataKey(key)));
+}
+
 Uint8List keweEncryptBytesForUser(String userId, List<int> plain) {
   final nonce = keweRandomBytes(12);
-  final sealed = AesGcm(keweUserDataKey(userId)).encrypt(nonce, plain);
+  final sealed = _gcmForUser(userId).encrypt(nonce, plain);
   return Uint8List.fromList([...nonce, ...sealed]);
 }
 
@@ -138,7 +150,7 @@ Uint8List keweDecryptBytesForUser(String userId, List<int> blob) {
   if (blob.length < 12 + 16) throw const FormatException('文件密文损坏');
   final nonce = blob.sublist(0, 12);
   final sealed = blob.sublist(12);
-  return AesGcm(keweUserDataKey(userId)).decrypt(nonce, sealed);
+  return _gcmForUser(userId).decrypt(nonce, sealed);
 }
 
 // ------------------------------------------------------------

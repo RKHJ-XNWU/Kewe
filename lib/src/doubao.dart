@@ -938,6 +938,9 @@ DsFileMeta? saveDbBlob(
       } catch (_) {}
       return null;
     }
+    // 刚生成的文件把明文留在本进程内存里：文件管理器点下载/预览时
+    // 直接命中，不再为「本地文件」重新走一遍解密。
+    cacheDsFilePlaintext(fileID, bytes);
     logp('💾 已保存豆包生成物: $relPath (${bytes.length} bytes, $mime)');
     return meta;
   } catch (e) {
