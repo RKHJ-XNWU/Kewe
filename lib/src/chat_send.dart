@@ -55,12 +55,17 @@ List<String> dbEffectiveSources(List<String> forcedSources) {
   return out;
 }
 
-String dbToolSystemPromptFor(String model, String apiUrl, String lang) {
+String dbToolSystemPromptFor(String model, String apiUrl, String lang,
+    {String intentRule = ''}) {
+  final String base;
   if (apiUrl != DS_API_URL) {
     final p = dbToolAgentPrompt(model, lang);
-    if (p.trim().isNotEmpty) return p;
+    base = p.trim().isNotEmpty ? p : dsToolAgentPrompt(lang, DS_TOOL_AGENT_SYSTEM_PROMPT);
+  } else {
+    base = dsToolAgentPrompt(lang, DS_TOOL_AGENT_SYSTEM_PROMPT);
   }
-  return dsToolAgentPrompt(lang, DS_TOOL_AGENT_SYSTEM_PROMPT);
+  final rule = intentRule.trim();
+  return rule.isEmpty ? base : '$base\n\n$rule';
 }
 
 /// ★ 维度解析：优先用显式的 dim。没有则按模型归属判定。
@@ -132,6 +137,10 @@ Future<void> handleDsChatSendStream(
   /// 原始用户输入（保留「抖音百科：」等前缀）。仅用于气泡/标题/落库，
   /// 不参与 apiMessages；为空时回退到 [content]。
   String displayContent = '',
+
+  /// 前缀强制的系统规则。工具模式有自己的系统提示词，必须把这条规则并进去，
+  /// 否则前缀被剥离后模型只看到正文，会误判「没有前缀、不需要检索」。
+  String intentRule = '',
 }) async {
   final sse = Sse(req.response);
   // 气泡/标题/落库使用原始输入；插件与模型仍使用剥掉前缀的 content。
@@ -220,9 +229,39 @@ Future<void> handleDsChatSendStream(
     await sse.send('tool_mode_start', {'start': true});
 
     final agentMsgs = <Map<String, dynamic>>[
-      {'role': 'system', 'content': dbToolSystemPromptFor(model, apiUrl, lang)},
+      {
+        'role': 'system',
+        'content': dbToolSystemPromptFor(
+          model,
+          apiUrl,
+          lang,
+          intentRule: intentRule,
+        )
+      },
       ...apiMessages,
     ];
+
+    // ★ 非豆包通道 + 抖音百科前缀：DeepSeek 无法调用方舟联网内容插件，
+    //   但绝不能把前缀吞掉只让模型凭记忆回答。这里先服务端强制检索一次，
+    //   把结果作为 system 上下文交给模型；工具模式仍然保留，
+    //   模型可以继续调用其他 function tools。
+    if (forcedSources.isNotEmpty && apiUrl == DS_API_URL) {
+      try {
+        final prefixCtx = await buildWebSearchContext(content);
+        if (prefixCtx.trim().isNotEmpty) {
+          logp('🌐 非豆包前缀：已先执行联网检索，结果注入工具模式上下文');
+          agentMsgs.add({
+            'role': 'system',
+            'content': '【强制联网检索结果（当前通道，不是抖音百科插件）】\n'
+                '$prefixCtx'
+          });
+        } else {
+          logp('⚠️ 非豆包前缀：联网检索无结果，将要求模型如实说明');
+        }
+      } catch (e) {
+        logp('⚠️ 非豆包前缀：预检索失败，交给工具模式继续尝试: $e');
+      }
+    }
     final maxIter = dbToolMaxIterFor(model, apiUrl, rounds);
     if (apiUrl != DS_API_URL) {
       logp('🫘 豆包专用工具模式: ${dbToolProfileOf(model)} '
@@ -261,7 +300,9 @@ Future<void> handleDsChatSendStream(
             reasoningPump.push(s);
           },
           usageAcc,
+          baseUrl: dbBaseUrl(null),
           mediaParts: mediaParts,
+          forceWikiSearch: forcedSources.isNotEmpty,
           onSources: (list) {
             sse.send('sources', {'items': list, 'channel': 'wiki'});
           },
@@ -903,9 +944,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   豆包维度只走豆包搜索，DeepSeek 维度只走 DeepSeek 搜索；
   //   若前端维度与模型路由不一致，直接拒绝，避免把搜索额度花到错误通道。
   if (dimOverride == DS_DIM_DB && !useDoubao) {
-    await dsJSONErr(
-        res, 400, dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDb'));
-    return;
+    // ★ 2026-11-24 用户明确要求：
+    //   即使当前处在「豆包维度」，只要选的是 DeepSeek / 非豆包模型，
+    //   也不能 400 拒绝；应保留该模型走它自己的通道，同时让前缀强制检索生效。
+    //   豆包联网内容插件属于方舟 Responses API，DeepSeek 通道无法直接调用，
+    //   此时由 buildWebSearchContext / 工具模式 web_search 完成强制检索，
+    //   并在系统提示中如实标注「不是抖音百科插件」。
+    logp('⚠️ 豆包维度 + 非豆包模型：保留所选模型，前缀改走当前通道联网检索');
   }
   if (dimOverride == DS_DIM_DS && useDoubao) {
     await dsJSONErr(
@@ -1474,6 +1519,15 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     apiMessages.add({'role': 'user', 'content': userPrompt});
   }
 
+  // 工具模式与普通模式共用同一条前缀强制规则：
+  // 前缀已从正文剥离，必须在工具模式的系统提示词里明确告诉模型，
+  // 否则会出现「用户发了『抖音百科：』，模型却回答没有前缀」的严重误判。
+  final toolIntentRule = dbIntent.forced
+      ? (useDoubao
+          ? dbIntentSystemRule(dbIntent, uiLang)
+          : dbIntentFallbackSearchRule(dbIntent, uiLang))
+      : '';
+
   // ============ 流式分支 ============
   if (stream && !longTextMode) {
     await handleDsChatSendStream(req, callKey, model, apiMessages, maxTokens,
@@ -1487,6 +1541,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         forcedSources: forcedSources,
         displayContent: displayContent,
         userPrompt: deferVideoPrepare ? userPrompt : '',
+        intentRule: toolIntentRule,
         mediaParts: dbMediaParts,
         pendingVideoIds:
             deferVideoPrepare ? fileCtx.videoFileIds : const <String>[]);
@@ -1500,10 +1555,33 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     final agentMsgs = <Map<String, dynamic>>[
       {
         'role': 'system',
-        'content': dbToolSystemPromptFor(model, callUrl, uiLang)
+        'content': dbToolSystemPromptFor(
+          model,
+          callUrl,
+          uiLang,
+          intentRule: toolIntentRule,
+        )
       },
       ...apiMessages,
     ];
+    // 非流式工具模式同样不能吞掉非豆包前缀：先检索，再交给模型。
+    if (forcedSources.isNotEmpty && callUrl == DS_API_URL) {
+      try {
+        final prefixCtx = await buildWebSearchContext(content);
+        if (prefixCtx.trim().isNotEmpty) {
+          logp('🌐 非豆包前缀（非流式）：已先执行联网检索，结果注入工具模式上下文');
+          agentMsgs.add({
+            'role': 'system',
+            'content': '【强制联网检索结果（当前通道，不是抖音百科插件）】\n'
+                '$prefixCtx'
+          });
+        } else {
+          logp('⚠️ 非豆包前缀（非流式）：联网检索无结果，将要求模型如实说明');
+        }
+      } catch (e) {
+        logp('⚠️ 非豆包前缀（非流式）：预检索失败，交给工具模式继续尝试: $e');
+      }
+    }
     ToolStreamOutcome outcome;
     try {
       outcome = await callDsWithTools(callKey, model, agentMsgs, maxTokens,

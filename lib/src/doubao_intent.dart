@@ -173,6 +173,43 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. Never ask the user for links or ask the user to search manually.',
     ].join('\n');
   }
+  if (c == 'ko') {
+    return <String>[
+      '[강제 검색 규칙]',
+      '사용자 메시지에 「抖音百科」 출처 접두사(${intent.hits.join(', ')})가 있습니다. '
+          '이번 요청은 반드시 다음을 지켜야 합니다:',
+      '1. 답변 전에 웹 콘텐츠 플러그인을 먼저 호출해 검색한다. 기억만으로 답변하는 것은 금지.',
+      '2. 답변에 정보 출처를 표시한다.',
+      '3. 검색 결과가 없거나 실패하면 실제 원인과 함께 「검색 결과 없음/실패」를 명확히 밝힌다. '
+          '「검색할 수 없다」고 말하지 않는다.',
+      '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
+    ].join('\n');
+  }
+  if (c == 'fr') {
+    return <String>[
+      '[RÈGLE DE RECHERCHE OBLIGATOIRE]',
+      'Le message utilisateur contient le préfixe source « Douyin Wiki » '
+          '(${intent.hits.join(', ')}). Pour cette requête, vous DEVEZ :',
+      '1. Appeler le plugin de contenu web AVANT de répondre ; '
+          'répondre de mémoire est interdit.',
+      '2. Indiquer la source des informations dans la réponse.',
+      '3. Si la recherche ne renvoie rien ou échoue, signaler le résultat vide '
+          'ou l’échec avec sa cause réelle. Ne jamais dire que vous ne pouvez pas rechercher.',
+      '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
+    ].join('\n');
+  }
+  if (c == 'ru') {
+    return <String>[
+      '[ОБЯЗАТЕЛЬНОЕ ПРАВИЛО ПОИСКА]',
+      'В сообщении пользователя есть префикс источника «Douyin Wiki» '
+          '(${intent.hits.join(', ')}). Для этого запроса вы ОБЯЗАНЫ:',
+      '1. Вызвать плагин веб-контента ДО ответа; отвечать по памяти запрещено.',
+      '2. Указать источник информации в ответе.',
+      '3. Если поиск ничего не вернул или завершился ошибкой, сообщить об этом '
+          'и указать фактическую причину. Нельзя утверждать, что вы не можете искать.',
+      '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
+    ].join('\n');
+  }
   return zh;
 }
 
@@ -209,6 +246,50 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '3. If retrieval returns nothing or fails, report the empty result or '
           'failure with its actual cause.',
       '4. Never ask the user for links or ask the user to search manually.',
+    ].join('\n');
+  }
+  if (c == 'ko') {
+    return <String>[
+      '[강제 검색 규칙]',
+      '사용자 메시지에 「抖音百科」 출처 접두사(${intent.hits.join(', ')})가 있지만, '
+          '현재 채널은 Doubao/Ark가 아니므로 抖音百科 웹 콘텐츠 플러그인을 사용할 수 없습니다.',
+      '이번 요청은 반드시 다음을 지켜야 합니다:',
+      '1. 답변 전에 현재 채널에서 사용 가능한 웹 검색을 먼저 실행한다. 기억만으로 답변하는 것은 금지.',
+      '2. 실제 검색 출처를 표시하고, 이번 검색이 抖音百科 플러그인이 아님을 분명히 밝힌다.',
+      '3. 검색 결과가 없거나 실패하면 실제 원인과 함께 「검색 결과 없음/실패」를 명확히 밝힌다.',
+      '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
+    ].join('\n');
+  }
+  if (c == 'fr') {
+    return <String>[
+      '[RÈGLE DE RECHERCHE OBLIGATOIRE]',
+      'Le message utilisateur contient le préfixe source « Douyin Wiki » '
+          '(${intent.hits.join(', ')}), mais ce canal n’est pas Doubao/Ark : '
+          'le plugin de contenu web Douyin Wiki est indisponible.',
+      'Pour cette requête, vous DEVEZ :',
+      '1. Utiliser la recherche web disponible sur le canal actuel AVANT de répondre ; '
+          'répondre de mémoire est interdit.',
+      '2. Indiquer la source réelle et préciser clairement que ce n’est pas '
+          'le plugin Douyin Wiki.',
+      '3. Si la recherche ne renvoie rien ou échoue, signaler le résultat vide '
+          'ou l’échec avec sa cause réelle.',
+      '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
+    ].join('\n');
+  }
+  if (c == 'ru') {
+    return <String>[
+      '[ОБЯЗАТЕЛЬНОЕ ПРАВИЛО ПОИСКА]',
+      'В сообщении пользователя есть префикс источника «Douyin Wiki» '
+          '(${intent.hits.join(', ')}), но текущий канал — не Doubao/Ark, '
+          'поэтому плагин веб-контента Douyin Wiki недоступен.',
+      'Для этого запроса вы ОБЯЗАНЫ:',
+      '1. Использовать доступный веб-поиск текущего канала ДО ответа; '
+          'отвечать по памяти запрещено.',
+      '2. Указать фактический источник поиска и ясно сказать, что это не '
+          'плагин Douyin Wiki.',
+      '3. Если поиск ничего не вернул или завершился ошибкой, сообщить об этом '
+          'и указать фактическую причину.',
+      '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
     ].join('\n');
   }
   return zh;

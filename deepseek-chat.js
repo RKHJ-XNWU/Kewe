@@ -4335,6 +4335,9 @@
                         //   必须同时为真才下发 tools 定义，否则执行层直接拒绝。
                         toolModeUI: state.enableTools,
                         explicitPlugin: __pluginOnce,
+                        // ★ 非流式同样上报维度：豆包维度 + DeepSeek 模型时，
+                        //   后端不能把前缀吞掉，必须按 db 维度落库并强制检索。
+                        dim: dscDimKey(),
                         stream: false,
                         injectedPrompts: __dscJaOnlyMerge((typeof window.__dsDevToolsGetInjectedContents === 'function')
                             ? window.__dsDevToolsGetInjectedContents() : [])

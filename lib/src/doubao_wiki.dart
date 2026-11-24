@@ -643,6 +643,7 @@ Future<DbWikiRound> _dbWikiStreamRound({
   DsUsageAcc? usageAcc,
   String baseUrl = '',
   void Function(List<Map<String, dynamic>> sources)? onSources,
+  bool forceSearch = false,
 }) async {
   var mt = maxTokens;
   if (mt <= 0) mt = 8192;
@@ -656,32 +657,57 @@ Future<DbWikiRound> _dbWikiStreamRound({
     'max_output_tokens': mt,
   };
   if (instructions.isNotEmpty) body['instructions'] = instructions;
+  if (forceSearch) {
+    body['tool_choice'] = 'required';
+    body['max_tool_calls'] = 1;
+    logp('🎯 工具混用 · 前缀强制检索：tool_choice=required（首轮只挂 web_search）');
+  }
 
   final url = dbWikiEndpoint(baseUrl);
   final client = globalHTTPClient;
-  final req = await client.postUrl(Uri.parse(url));
-  req.headers.set('Content-Type', 'application/json');
-  req.headers.set('Authorization', 'Bearer $apiKey');
-  req.headers.set('Accept', 'text/event-stream');
-  // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
-  req.headers.set('Accept-Encoding', 'identity');
-  req.add(utf8.encode(jsonEncode(body)));
+  Future<HttpClientResponse> sendRound() async {
+    final req = await client.postUrl(Uri.parse(url));
+    req.headers.set('Content-Type', 'application/json');
+    req.headers.set('Authorization', 'Bearer $apiKey');
+    req.headers.set('Accept', 'text/event-stream');
+    // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
+    req.headers.set('Accept-Encoding', 'identity');
+    req.add(utf8.encode(jsonEncode(body)));
+    return req.close();
+  }
 
-  final resp = await req.close();
+  var resp = await sendRound();
   if (resp.statusCode != 200) {
     final txt = utf8.decode(
         await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
     logp('❌ Responses API（工具混用）HTTP ${resp.statusCode}: $txt');
-    String msg = txt;
-    try {
-      final j = jsonDecode(txt);
-      if (j is Map && j['error'] is Map) {
-        final m = '${(j['error'] as Map)['message'] ?? ''}';
-        if (m.isNotEmpty) msg = m;
-      }
-    } catch (_) {}
-    throw Exception('豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：$msg');
+    // 兼容性兜底：部分模型/网关不支持 tool_choice 或 max_tool_calls。
+    final unsupported = forceSearch &&
+        resp.statusCode == 400 &&
+        (txt.contains('tool_choice') || txt.contains('max_tool_calls'));
+    if (unsupported) {
+      logp('⚠️ 当前模型不支持强制工具选择，回退为普通工具混用请求');
+      body.remove('tool_choice');
+      body.remove('max_tool_calls');
+      resp = await sendRound();
+    }
+    if (resp.statusCode != 200) {
+      final txt2 = utf8.decode(
+          await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
+          allowMalformed: true);
+      logp('❌ Responses API（工具混用）HTTP ${resp.statusCode}: $txt2');
+      String msg = txt2;
+      try {
+        final j = jsonDecode(txt2);
+        if (j is Map && j['error'] is Map) {
+          final m = '${(j['error'] as Map)['message'] ?? ''}';
+          if (m.isNotEmpty) msg = m;
+        }
+      } catch (_) {}
+      throw Exception(
+          '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：$msg');
+    }
   }
 
   final contentBuf = StringBuffer();
@@ -905,6 +931,11 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
   String baseUrl = '',
   List<Map<String, dynamic>> mediaParts = const <Map<String, dynamic>>[],
   void Function(List<Map<String, dynamic>> sources)? onSources,
+
+  /// 用户写了「抖音百科：」或主动点击插件时：第一轮只挂 web_search，
+  /// 并下发 tool_choice=required，强制真的调用一次联网内容插件。
+  /// 第一轮结束后恢复完整 function tools，避免工具模式被永久降级。
+  bool forceWikiSearch = false,
 }) async {
   final src = dbWikiNormalizeSources(sources);
   if (src.isEmpty) throw Exception('未选择任何有效的联网内容插件信源');
@@ -945,23 +976,38 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
 
   final maxIter = maxIterations <= 0 ? 5000000000 : maxIterations;
 
+  final forcedWikiOnly =
+      <Map<String, dynamic>>[{'type': 'web_search', 'sources': src}];
   for (var iter = 0; iter < maxIter; iter++) {
+    final forceThisRound = forceWikiSearch && iter == 0;
     final r = await _dbWikiStreamRound(
       apiKey: apiKey,
       model: model,
       input: input,
       instructions: built.instructions,
       maxTokens: maxTokens,
-      tools: tools,
+      tools: forceThisRound ? forcedWikiOnly : tools,
       onContent: onContent,
       onReasoning: onReasoning,
       usageAcc: usageAcc,
       baseUrl: baseUrl,
       onSources: onSources,
+      forceSearch: forceThisRound,
     );
 
     allContent.write(r.content);
     if (r.reasoning.isNotEmpty) allReasoning.write(r.reasoning);
+
+    // 内置 web_search 不是 function_call，之前不会触发 onToolCall，
+    // 前端工具链就会显示「0 轮」，看起来像前缀又被吞掉。
+    // 这里把已经实际发生的联网检索也作为一轮工具调用上报。
+    if (r.searchCount > 0) {
+      final args = '{"sources":"${src.join(',')}"}';
+      await onToolCall?.call('start', 'web_search', args, '');
+      await onToolCall?.call(
+          'end', 'web_search', args, '联网内容插件检索完成（本轮 ${r.searchCount} 次）');
+      toolLogs.add('🌐 联网内容插件检索完成（本轮 ${r.searchCount} 次）\n');
+    }
 
     if (r.calls.isEmpty) {
       return DbWikiToolOutcome(
