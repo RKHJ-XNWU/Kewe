@@ -93,7 +93,9 @@ class DsToolGate {
   static bool _activeSearchOn = false;
   static int _activeSeq = 0;
   static const int _defaultLeaseMs = 30 * 60 * 1000;
-  static const Set<String> _searchTools = <String>{'web_search', 'fetch'};
+  /// web_search 受「联网搜索」开关约束；fetch 属于工具模式自带抓取能力，
+  /// 只要工具模式开启即可调用（豆包模式同样复用 DeepSeek 官方 fetch）。
+  static const Set<String> _searchTools = <String>{'web_search'};
 
   /// 启动一个请求租约。返回序号，可用于 [endRequest] 精确结束。
   static int beginRequest(String sessionId, bool toolsOn,
@@ -122,7 +124,8 @@ class DsToolGate {
 
   /// 本请求是否允许联网搜索工具。
   /// 与工具模式分开授权：即使工具模式开着，没开搜索按钮 / 智能判定不需要，
-  /// web_search / fetch 也必须在执行层被拒绝，杜绝无脑乱搜与额度浪费。
+  /// web_search 也必须在执行层被拒绝，杜绝无脑乱搜与额度浪费。
+  /// fetch 不在此列：它是工具模式下的显式抓取能力，开启工具模式即可使用。
   static bool get searchAllowed => hasActiveRequest && _activeSearchOn;
 
   /// 续租：长时间工具调用期间保持租约有效。
@@ -235,9 +238,9 @@ class DsToolGate {
           ? sessionId!
           : (_activeSession.isNotEmpty ? _activeSession : _boundSession);
 
-      // ★ 搜索工具独立授权：没有「本次请求允许联网」的租约标记，
-      //   web_search / fetch 一律拒绝，哪怕工具模式是开着的。
-      //   这样模型不能绕过搜索按钮和智能搜索判定偷偷消耗额度。
+      // ★ web_search 独立授权：没有「本次请求允许联网」的租约标记就拒绝，
+      //   哪怕工具模式开着；避免模型绕过搜索按钮消耗搜索额度。
+      //   fetch 属于工具模式自带抓取能力，不要求搜索按钮开启。
       if (_searchTools.contains(toolName) && !_activeSearchOn) {
         return _deny(toolName, sid, 'search-not-requested');
       }

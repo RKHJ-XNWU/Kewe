@@ -163,23 +163,12 @@
         if (box) box.checked = want;   // 开总闸即勾上信源；关总闸即强制取消
         syncWikiBtnUI();
         syncWikiSwitchUI();
-        if (want) {
-            // 抖音百科与工具模式互斥：开启瞬间自动关闭工具模式
-            if (typeof window.dscSetToolMode === 'function') window.dscSetToolMode(false);
-            var tb = $('dscToolModeBtn');
-            if (tb) tb.classList.remove('active');
-        }
+        // 抖音百科与工具模式支持同时开启：不再自动关闭工具模式。
         persistWikiState().catch(function (e) {
             console.log('[DB] wiki state save failed:', e && e.message);
         });
         if (!silent) {
             toast(want ? T('抖音百科をオンにしました') : T('抖音百科をオフにしました'), want ? 'success' : 'info');
-            // オンにした瞬間、ツールが呼び出されないことを追加で警告
-            if (want) {
-                setTimeout(function () {
-                    toast(T('抖音百科が開いているため、ツールは呼び出されません'), 'info');
-                }, 450);
-            }
         }
         return true;
     }
@@ -212,7 +201,7 @@
         syncWikiBtnUI();
     }
 
-    // 供 deepseek-chat.js 判断：豆包模式 + 总闸开启 = 工具模式必须让路
+    // 兼容旧接口：仅用于判断豆包模式 + 百科总闸状态；工具模式不再因此关闭。
     window.dscWikiTotalOn = function () { return isWikiOn(); };
     window.dscWikiEffectiveOn = function () { return isDbMode() && isWikiOn(); };
 

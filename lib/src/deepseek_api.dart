@@ -228,9 +228,10 @@ bool dsIsDbModel(String model) {
 /// 解析本次请求该用哪套工具 schema。
 /// 豆包通道优先用专属集；专属集为空（非豆包模型）时回落到全量集。
 ///
-/// [allowSearchTools] 为 false 时移除 web_search / fetch：
-/// 这两个工具的实现走 DeepSeek 官方搜索接口，只有用户开启联网搜索且
-/// 智能搜索判定需要联网时才允许暴露，避免模型自主“无脑乱搜”。
+/// [allowSearchTools] 为 false 时只移除 `web_search`，保留 `fetch`：
+/// · `web_search` 需要用户开启联网搜索，避免模型自主“无脑乱搜”；
+/// · `fetch` 是工具模式下的显式网页抓取能力（豆包模式也复用 DeepSeek
+///   官方 fetch），只要工具模式开启就应可用，用户给了 URL 时尤为需要。
 List<Map<String, dynamic>> dsResolveTools(String model, String apiUrl,
     {bool allowSearchTools = true}) {
   final all = _dsResolveAllTools(model, apiUrl);
@@ -238,8 +239,7 @@ List<Map<String, dynamic>> dsResolveTools(String model, String apiUrl,
   return all.where((t) {
     final fn = t['function'];
     if (fn is! Map) return true;
-    final name = '${fn['name'] ?? ''}';
-    return name != 'web_search' && name != 'fetch';
+    return '${fn['name'] ?? ''}' != 'web_search';
   }).toList();
 }
 

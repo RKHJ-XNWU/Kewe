@@ -1033,9 +1033,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // ========== 多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
   // 1) 反思只由前端「多轮反思」开关的 reflectionRounds(1~10) 触发；
   //    工具模式独立走 function-calling 分支、不进入反思循环；长文模式保持单轮。
-  // 2) 抖音百科（联网内容插件，仅 Responses API）生效期间强制关闭工具模式：
-  //    否则 Chat Completions 的 function calling 与插件的 web_search 会在同一轮
-  //    互相抢占，表现为「豆包模式搜索抖音百科时突然调用工具」的严重 bug。
+  // 2) 抖音百科（联网内容插件，仅 Responses API）与工具模式可以并存：
+  //    流式链路使用「web_search 内容插件 + function tools」的官方混用通道；
+  //    非流式链路仍可用工具模式，搜索则由 function web_search/fetch 兜底。
   if (!longTextMode) {
     if (reflectionRounds > 0 && rounds > 1) {
       logp(
@@ -1044,23 +1044,20 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('➡️ 单轮直接回答: model=$model, Lv.$level（等级不触发反思）');
     }
   }
-  // 抖音百科生效（含前缀强制）时工具模式必须让路：
-  // 用户在豆包专属工具模式下打开百科，开关一开就自动关闭工具模式，
-  // 且按钮置灰不可点——这里再做一次服务端强制，防止前端状态不同步。
+  // 抖音百科（含前缀强制）不再强制关闭工具模式：
+  // 流式工具链路会走「web_search 内容插件 + function tools」的混用通道，
+  // 非流式链路则由工具模式自己处理；搜索与工具可以同时开启。
   final dbWikiActiveNow =
       useDoubao && dbEffectiveSources(forcedSources).isNotEmpty;
-  if (useDoubao && enableTools && dbWikiActiveNow) {
-    enableTools = false;
-    DsToolGate.syncMode(sessionID, false);
-    logp('🛑 因抖音百科已启用，自动关闭工具模式（从根本上避免搜索与工具调用的冲突）');
-  }
   // ★ 单一可信来源：本请求最终的 enableTools 就是服务端闸门的模式状态。
   //   之后所有工具执行（含插件混用通道）都以这里为准，前端状态不再能「带私货」。
   DsToolGate.bind(sessionID);
   // ★ 请求租约：只有处在正在处理的聊天请求里，工具才可能被执行。
   //   请求外 / 租约过期后，任何残留绑定一律 fail-closed。
+  //   searchOn 对豆包同样放行：豆包工具模式通过 DeepSeek 官方搜索/抓取工具
+  //   联网，搜索按钮与工具按钮可以同时打开。
   DsToolGate.beginRequest(sessionID, enableTools,
-      searchOn: effectiveWebSearch && !useDoubao);
+      searchOn: effectiveWebSearch);
   DsToolGate.syncMode(sessionID, enableTools);
 
   // 注入提示词（system 角色）
@@ -1133,30 +1130,24 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     userPrompt += fileCtx.text;
   }
 
-  // ★ 联网检索的归属（三条互斥通道，绝不同时触发）
-  //   ① 抖音百科（联网内容插件）开启 → Responses API 自带检索
-  //   ② 百科关闭、仅开「联网搜索」→ 豆包自带联网搜索（web_search_options，
-  //      方舟豆包搜索 Custom 版，每月 2 万次免费额度）
-  //   ③ DeepSeek 通道 → DeepSeek 官方 /v1/tools/search
-  //   旧实现里 ② 走的却是 DeepSeek 官方搜索（用 DeepSeek Key 计费），
-  //   豆包模式白白多打一次国外请求，首包也被拖慢数秒。
+  // ★ 联网检索的归属：
+  //   ① 抖音百科（联网内容插件）开启 → Responses API 自带检索；
+  //   ② 工具模式开启 → 不附加 web_search_options，由模型调用
+  //      web_search / fetch（两者均为 DeepSeek 官方实现，豆包模式同样复用）；
+  //   ③ 纯搜索模式（工具关闭）→ 豆包走 web_search_options，DeepSeek 走官方搜索。
+  //   这样「工具模式」和「联网搜索」两个按钮可以同时打开，不会互相强制关闭。
   var dbNativeSearch = false;
   if (effectiveWebSearch) {
     final wikiOn = useDoubao && dbWikiActiveNow;
     if (wikiOn) {
-      // 插件自己会检索；再叠一次官方搜索就是「两次联网」，首包被拖后数秒。
-      logp('🔍 豆包模式：联网内容插件负责搜索，故省略官方搜索（避免重复搜索）');
+      // 插件负责搜索；流式工具链路会通过 web_search + function tools 混用。
+      logp('🔍 豆包模式：联网内容插件负责搜索，工具模式保持开启');
     } else if (useDoubao) {
       dbNativeSearch = true;
-      logp('🔍 豆包模式：使用豆包原生搜索（web_search_options / 每月 2 万次免费额度）');
+      logp('🔍 豆包模式：启用联网搜索（工具模式时改走 web_search/fetch 工具）');
     } else {
       final ctx = await buildWebSearchContext(content);
       if (ctx.isNotEmpty) userPrompt += ctx;
-    }
-    // ★ 硬性隔离：豆包通道（方舟）任何情况下都不允许落到 DeepSeek 官方搜索。
-    //   上面的分支已经保证这一点，这里再加一道断言，防止后续改动回退。
-    if (useDoubao && dbNativeSearch) {
-      logp('✅ 搜索路径确定：仅豆包／方舟原生搜索（未使用 DeepSeek 搜索）');
     }
   }
   if (userPrompt.trim().isEmpty) userPrompt = '请查看上传的文件。';
@@ -1247,24 +1238,6 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp(
         '🧠 DeepSeek 思考开关: ${deepThink ? 'enabled' : 'disabled'} / model=$model');
   }
-  // ★ 豆包自带联网搜索（百科关闭 + 联网开启）：Chat Completions 的
-  //   web_search_options 直接由方舟执行检索，消耗豆包搜索免费额度。
-  //   工具模式与它互斥（同时出现会被方舟拒绝），故工具模式下不附加。
-  if (dbNativeSearch && useTools) {
-    // 方舟不允许 tools 与 web_search_options 同时出现。
-    // 用户明确开了联网搜索时，搜索优先：本次不挂工具定义，
-    // 否则「搜索按钮开着却搜不到」或被迫退回 DeepSeek 搜索都是错的。
-    useTools = false;
-    DsToolGate.syncMode(sessionID, false);
-    logp('🌐 豆包联网搜索优先：本次暂停工具模式，只走方舟原生搜索');
-  }
-  if (dbNativeSearch && !useTools) {
-    dbExtraBody = <String, dynamic>{
-      ...dbExtraBody,
-      'web_search_options': dbWebSearchOptions(),
-    };
-    logp('🌐 启用豆包原生搜索（web_search_options, 每月 2 万次免费额度）');
-  }
   final dbMediaParts = <Map<String, dynamic>>[];
   // 视频统一由 doubao_video_ark 处理：≤45MB 直接作为 video_url 片段，
   // >45MB 用 ffmpeg 无损切片后逐段理解（2GB 也能看完）。
@@ -1343,6 +1316,21 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('ℹ️ 因附带媒体，已自动关闭工具模式（优先思考）');
     }
   }
+  // ★ 最终决定联网方式：工具模式与 web_search_options 互斥。
+  //   工具模式开着时不附加 web_search_options（避免方舟拒绝），
+  //   改由模型通过 web_search / fetch 工具联网；工具模式关闭时才用原生搜索。
+  if (dbNativeSearch && useTools) {
+    dbNativeSearch = false;
+    logp('🌐 工具模式 + 联网搜索并存：通过 web_search/fetch 工具联网（不附加 web_search_options）');
+  }
+  if (dbNativeSearch) {
+    dbExtraBody = <String, dynamic>{
+      ...dbExtraBody,
+      'web_search_options': dbWebSearchOptions(),
+    };
+    logp('🌐 启用豆包原生搜索（web_search_options, 每月 2 万次免费额度）');
+  }
+
   // DeepSeek 通道不具备音视频理解能力，如实告知而不是假装已读
   if (!useDoubao &&
       (fileCtx.audioFileIds.isNotEmpty || fileCtx.videoFileIds.isNotEmpty)) {

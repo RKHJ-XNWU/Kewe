@@ -3,6 +3,7 @@
  *
  * 【v7 用户强制要求落地】
  *   ✓ 墨迹天气/头条图文插件开启时，工具模式按钮完全置灰、禁止点击
+ *   ✓ 抖音百科/联网搜索开启时，工具模式按钮保持可用（两者可以并存）
  *   ✓ 所有残留硬编码日语文案全部清理，统一走多语言字典
  *   ✓ 全链路适配中文/英语/日语/韩语/法语/俄语
  *   ✓ 不备份、不编译，直接修改源文件
@@ -20,7 +21,6 @@
     /* 多语言字典：无任何硬编码日语 */
     var I18N_DICT = {
         'zh-CN': {
-            'wiki_locked': '抖音百科已开启，工具模式暂不可用',
             'plugin_locked': '墨迹天气/头条图文插件已开启，工具模式暂不可用',
             'tool_on': '豆包专属工具模式已开启（99 个工具 · 轮次无限制）',
             'tool_off': '豆包专属工具模式已关闭',
@@ -29,7 +29,6 @@
             'tool_off_title': '豆包专属工具模式：已关闭（点击开启）'
         },
         'en-US': {
-            'wiki_locked': 'Douyin Wiki is active, tool mode is unavailable',
             'plugin_locked': 'Moji/Toutiao plugin is active, tool mode is unavailable',
             'tool_on': 'Doubao tool mode enabled (99 tools · unlimited rounds)',
             'tool_off': 'Doubao tool mode disabled',
@@ -38,7 +37,6 @@
             'tool_off_title': 'Doubao tool mode: OFF (click to enable)'
         },
         'ja-JP': {
-            'wiki_locked': '抖音百科が有効中のため、ツールモードは利用できません',
             'plugin_locked': '墨迹天気/頭条記事プラグインが有効中のため、ツールモードは利用できません',
             'tool_on': '豆包専用ツールモードを有効化しました（99ツール・ラウンド無制限）',
             'tool_off': '豆包専用ツールモードを無効化しました',
@@ -47,7 +45,6 @@
             'tool_off_title': '豆包専用ツールモード：無効（クリックで有効）'
         },
         'ko-KR': {
-            'wiki_locked': '두이윈 바이백이 켜져 있어 도구 모드를 사용할 수 없습니다',
             'plugin_locked': '墨迹 날씨/헤드라인 기사 플러그인이 켜져 있어 도구 모드를 사용할 수 없습니다',
             'tool_on': '두바오 전용 도구 모드가 켜졌습니다 (99 도구 · 라운드 무제한)',
             'tool_off': '두바오 전용 도구 모드가 꺼졌습니다',
@@ -56,7 +53,6 @@
             'tool_off_title': '두바오 전용 도구 모드: 꺼짐 (클릭으로 켜기)'
         },
         'fr-FR': {
-            'wiki_locked': 'Wiki Douyin actif, mode outils indisponible',
             'plugin_locked': 'Plugin Moji/Toutiao actif, mode outils indisponible',
             'tool_on': 'Mode outils Doubao activé (99 outils · tours illimités)',
             'tool_off': 'Mode outils Doubao désactivé',
@@ -65,7 +61,6 @@
             'tool_off_title': 'Mode outils Doubao : OFF (cliquez pour activer)'
         },
         'ru-RU': {
-            'wiki_locked': 'Википедия Douyin активна, режим инструментов недоступен',
             'plugin_locked': 'Плагин Moji/Toutiao активен, режим инструментов недоступен',
             'tool_on': 'Режим инструментов Doubao включён (99 инструментов · безлимит раундов)',
             'tool_off': 'Режим инструментов Doubao выключен',
@@ -133,15 +128,6 @@
             }
         } catch (e) {}
         return '';
-    }
-
-    function wikiOn() {
-        try {
-            if (typeof window.dscWikiEffectiveOn === 'function') {
-                return !!window.dscWikiEffectiveOn();
-            }
-        } catch (e) {}
-        return false;
     }
 
     function pluginOn() {
@@ -324,10 +310,6 @@
             e.preventDefault();
             e.stopImmediatePropagation();
 
-            if (wikiOn()) {
-                toast(T('wiki_locked'), 'info');
-                return;
-            }
             if (pluginOn()) {
                 toast(T('plugin_locked'), 'info');
                 return;
@@ -362,7 +344,6 @@
         if (!isDbMode()) return 'off:' + has + ':' + oldHas;
         return ['db', has, oldHas,
             toolModeOn() ? '1' : '0',
-            wikiOn() ? '1' : '0',
             pluginOn() ? '1' : '0',
             dbModel()
         ].join('|');
@@ -393,7 +374,7 @@
         if (!b) return;
 
         var on = toolModeOn();
-        var locked = wikiOn() || pluginOn();
+        var locked = pluginOn();
 
         if (b.style.display === 'none') b.style.display = '';
         b.classList.toggle('active', on && !locked);
@@ -409,7 +390,7 @@
         b.removeAttribute('aria-disabled');
         b.style.pointerEvents = '';
         b.title = locked
-            ? (wikiOn() ? T('wiki_locked') : T('plugin_locked'))
+            ? T('plugin_locked')
             : (on ? T('tool_on_title') : T('tool_off_title'));
 
         if (!announcedDb) {
@@ -420,11 +401,11 @@
 
     window.dscDbToolModeOn = function () {
         try {
-            return isDbMode() && toolModeOn() && !wikiOn() && !pluginOn();
+            return isDbMode() && toolModeOn() && !pluginOn();
         } catch (e) { return false; }
     };
     window.dscDbToolSync = sync;
-    window.dscDbToolLocked = function () { return isDbMode() && (wikiOn() || pluginOn()); };
+    window.dscDbToolLocked = function () { return isDbMode() && pluginOn(); };
     window.dscDbToolTier = function () {
         return { code: 'unified', tools: DB_TOOLS, rounds: DB_ROUNDS };
     };

@@ -4228,14 +4228,12 @@
                         // ★ 修复严重 Bug：旧实现写的是 state.enableTools || __dscDeviceIntent(content)，
                         //   消息里一旦有「打开应用 / 点击 / adb」等词，开关关着也会发 tools 定义。
                         //   现在只认 UI 状态，服务端 DsToolGate 还会在执行层再拦一次。
-                        enableTools: (window.dscWikiEffectiveOn && window.dscWikiEffectiveOn())
-                            ? false
-                            : state.enableTools,
+                        // ★ 工具模式与联网搜索/百科可以同时开启：
+                        //   直接上报 UI 真实状态，不再因为百科开启而强制关闭工具。
+                        enableTools: state.enableTools,
                         // ★ 双保险：UI 真实状态一并上报；服务端 enableTools 与 toolModeUI
                         //   必须同时为真才下发 tools 定义，否则执行层直接拒绝。
-                        toolModeUI: (window.dscWikiEffectiveOn && window.dscWikiEffectiveOn())
-                            ? false
-                            : state.enableTools,
+                        toolModeUI: state.enableTools,
                         explicitPlugin: __pluginOnce,
                         stream: true,
                         injectedPrompts: __dscJaOnlyMerge((typeof window.__dsDevToolsGetInjectedContents === 'function')
@@ -4301,14 +4299,12 @@
                         // ★ 修复严重 Bug：旧实现写的是 state.enableTools || __dscDeviceIntent(content)，
                         //   消息里一旦有「打开应用 / 点击 / adb」等词，开关关着也会发 tools 定义。
                         //   现在只认 UI 状态，服务端 DsToolGate 还会在执行层再拦一次。
-                        enableTools: (window.dscWikiEffectiveOn && window.dscWikiEffectiveOn())
-                            ? false
-                            : state.enableTools,
+                        // ★ 工具模式与联网搜索/百科可以同时开启：
+                        //   直接上报 UI 真实状态，不再因为百科开启而强制关闭工具。
+                        enableTools: state.enableTools,
                         // ★ 双保险：UI 真实状态一并上报；服务端 enableTools 与 toolModeUI
                         //   必须同时为真才下发 tools 定义，否则执行层直接拒绝。
-                        toolModeUI: (window.dscWikiEffectiveOn && window.dscWikiEffectiveOn())
-                            ? false
-                            : state.enableTools,
+                        toolModeUI: state.enableTools,
                         explicitPlugin: __pluginOnce,
                         stream: false,
                         injectedPrompts: __dscJaOnlyMerge((typeof window.__dsDevToolsGetInjectedContents === 'function')
@@ -6427,9 +6423,8 @@
         updateSwitchBtn($('dscToolModeBtn'), state.enableTools);
     }
 
-    // 抖音百科（联网内容插件）开启期间必须强制关闭工具模式：
-    // 两者分别占用 Responses API 与 Chat Completions 的工具链，混用会相互抢占。
-    // 这里把开关暴露给 dsc-doubao.js，供总闸切换时立即生效。
+    // 兼容旧调用：显式插件/特殊按钮仍可通过该入口关闭工具模式。
+    // 普通「联网搜索 / 抖音百科」与工具模式已经支持并存，不再自动关闭。
     window.dscSetToolMode = function (on) {
         var want = !!on;
         /* v6 修复：旧实现 `if (state.enableTools === want) return;` 会在
@@ -7387,18 +7382,12 @@
         });
 
         bind('dscToolModeBtn', 'click', function () {
-            // 抖音百科开启中：工具模式不允许打开（后端同样会强制关闭）
-            if (window.dscWikiEffectiveOn && window.dscWikiEffectiveOn()) {
-                /* v6：只提示，不再顺手把工具模式关掉。
-                   强制关闭会让用户误以为「工具模式被自动关闭」。 */
-                toast(T('抖音百科が開いています。先に百科をオフにしてください'), 'info');
-                return;
-            }
+            // 工具模式与联网搜索/百科可以同时开启，不再互相强制关闭。
             state.enableTools = !state.enableTools;
             updateToolUI();
             updateLevelUI(state.reasoningLevel);
             saveToolState();
-            toast(state.enableTools ? '🤖 自律エージェントをオンにしました（最大 50 億ラウンド）' : '🤖 自律エージェントをオフにしました', 'info');
+            toast(T(state.enableTools ? '🤖 自律エージェントをオンにしました（最大 50 億ラウンド）' : '🤖 自律エージェントをオフにしました'), 'info');
         });
 
         bind('dscCloseBtn', 'click', closeApp);

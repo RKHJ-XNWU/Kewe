@@ -349,7 +349,8 @@ Map<String, dynamic>? dbThinkingDisableParam(String model) {
 ///   「web_search_options：联网搜索开关。传入 {} 或包含任意子字段的 object
 ///     都会触发搜索准入判定」→ 这里直接给空对象，最不容易被网关拒绝。
 /// 另外：tools 与 web_search_options 同时传入时，方舟只执行自定义工具、
-/// 联网搜索不生效 —— 所以工具模式下必须二选一（见 chat_send.dart）。
+/// 联网搜索不生效 —— 所以工具模式开启时不附加 web_search_options，
+/// 改由模型调用 web_search / fetch 工具联网（见 chat_send.dart）。
 /// ★ 修复：这里原先返回空 Map，等于「豆包联网搜索」根本没打开，
 /// 豆包模式被迫退回 DeepSeek 搜索（用 DeepSeek Key 计费、还慢）。
 /// 方舟 Chat Completions 的豆包自带搜索（月 2 万次免费额度）长这样：

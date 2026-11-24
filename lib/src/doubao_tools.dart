@@ -313,16 +313,13 @@ List<Map<String, dynamic>> buildDbTools(String model) {
     return '${fn['name'] ?? ''}'.startsWith(retiredPrefix);
   });
 
-  // ★ 搜索工具维度隔离：web_search / fetch 的实现走 DeepSeek 官方接口。
-  //   豆包维度下暴露它们就等于允许「用豆包额度的话题却烧 DeepSeek 搜索」，
-  //   与商品需求（豆包维度只用豆包搜索）冲突，故从豆包工具集永久移除。
-  //   豆包的联网能力统一由 web_search_options（方舟原生搜索）提供。
-  const blockedSearchTools = <String>{'web_search', 'fetch'};
-  out.removeWhere((t) {
-    final fn = t['function'];
-    if (fn is! Map) return false;
-    return blockedSearchTools.contains('${fn['name'] ?? ''}');
-  });
+  // ★ 搜索/抓取工具：豆包工具模式复用 DeepSeek 官方搜索与 fetch。
+  //   豆包自身没有函数式抓取工具；即使用户配置了豆包抓取专用 Key，
+  //   这里也优先走 DeepSeek 原生 fetch（用户明确要求）。
+  //   · fetch：工具模式开启即可调用（显式抓取能力）；
+  //   · web_search：只有用户开启「联网搜索」时执行层才放行，避免无脑搜索。
+  //   DsToolGate 会再次校验，防止绕过搜索开关消耗额度。
+  //   纯搜索模式（工具模式关闭）仍使用方舟 web_search_options。
 
   if (out.length > p.maxTools) {
     return out.sublist(0, p.maxTools);
@@ -562,7 +559,7 @@ const String DB_TOOL_AGENT_SYSTEM_PROMPT = '''
 
 【十五、优先级与例外】
 
-77. 本规约适用于豆包专用工具模式的全部会话。与上层互斥控制（联网内容插件的启用等）冲突时以上层为准。
+77. 本规约适用于豆包专用工具模式的全部会话。联网搜索与工具模式可以同时开启；需要网页正文时调用 fetch（DeepSeek 官方抓取），需要检索时调用 web_search。
 78. 用户明确指示与本规约冲突时，关于安全、权限、凭证保护的条款（第 18、21、22、23 条）及文件删除红线（第 26～35 条）不让步。其余运用规约在尊重用户明确指示的同时，以可执行性为先解释。
 79. 需要规约未定的判断时，回到"用执行来回应"的基本姿态，做最接近用户成果的选择。迷茫时不停下，而在安全范围内前进。
 
