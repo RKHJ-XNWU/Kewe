@@ -22,15 +22,11 @@ import 'tool_gate.dart';
 const String DS_API_URL = 'https://api.deepseek.com/chat/completions';
 
 /// API 边界统一解析 max_tokens：
-/// · 角色扮演（charter / character）固定 32,000（十进制）；
-/// · Doubao-Seed-2.0-lite 固定 128,000（十进制）；
-/// · 其它模型原样使用调用方传入值；<=0 时回退到全局档位（默认 384,000）。
-int dsResolveMaxTokens(String model, int maxTokens) {
-  final special = dbSpecialModelMaxOutput(model);
-  if (special > 0) return special;
-  if (maxTokens <= 0) return dbCurrentOutputLimit();
-  return maxTokens;
-}
+/// · 角色扮演（charter / character）固定 32,000（十进制，不随档位变化）；
+/// · 其它特例模型只做「上限收敛」：调用方可传更小值，但不会超过模型上限；
+/// · <=0 时回退到全局档位（默认 384,000）。
+int dsResolveMaxTokens(String model, int maxTokens) =>
+    dbClampToModelCap(model, maxTokens);
 
 /// 从上游 400 文本解析 max_tokens 的二进制上限（如 32768 / 131072），
 /// 再按用户规则收敛到十进制档位（32000 / 128000），绝不直接沿用二进制值。
@@ -860,7 +856,8 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
 }) async {
   var maxIter = maxIterations <= 0 ? DS_TOOL_MAX_ITERATIONS : maxIterations;
   var mt = dsResolveMaxTokens(model, maxTokens);
-  temperature = 0.0; // 工具模式恒为 0（确定性输出）
+  // 工具模式默认温度 0（确定性输出）；Kimi 系列按用户规则强制 1.0。
+  temperature = dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : 0.0;
   final tools = dsResolveTools(model, apiUrl);
 
   final finalContent = StringBuffer();

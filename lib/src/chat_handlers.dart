@@ -981,10 +981,12 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   level = dbClampReasoningLevel(level);
   final params = levelToParams(level);
   var maxTokens = params.maxTokens;
+  // Kimi 系列强制温度 1.0；其它模型沿用推理等级给出的原值。
+  final contTemp = dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : params.temperature;
   final contForcedOut = dbForcedMaxOutput(model);
   if (contForcedOut > 0) {
     if (maxTokens != contForcedOut) {
-      logp('🔒 续写强制最大输出: $model → $contForcedOut tokens（原 $maxTokens）');
+      logp('🔒 续写输出上限: $model → $contForcedOut tokens（原 $maxTokens）');
     }
     maxTokens = contForcedOut;
   }
@@ -1025,7 +1027,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
       model,
       apiMessages,
       maxTokens,
-      params.temperature,
+      contTemp,
       1,
       (round, total, stage) {},
       (s) {

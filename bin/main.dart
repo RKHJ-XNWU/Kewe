@@ -217,6 +217,23 @@ void registerPrefixHandler(String prefix, Handler h) {
 
 final Map<String, Handler> _prefixRoutes = {};
 
+/// 未登录也允许访问的「登录页」入口。
+bool _isLoginShellPath(String path) =>
+    path == '/' || path == '/index.html' || path == '/login';
+
+/// 登录页渲染所需的最小资源；其余资源/页面未登录一律 404。
+bool _isLoginPageAsset(String path) {
+  const allowed = <String>{
+    '/kewe-auth.css',
+    '/kewe-auth.js',
+    '/kewe-toplang.css',
+    '/kewe-toplang.js',
+    '/kewe.png',
+    '/favicon.ico',
+  };
+  return allowed.contains(path);
+}
+
 bool _isPrivateStaticPath(String path) {
   return path == '/data' ||
       path.startsWith('/data/') ||
@@ -277,13 +294,30 @@ Future<void> dispatch(HttpRequest req) async {
     return;
   }
 
-  // 私人目录（账号库、data、备份临时目录）永远不通过静态文件暴露。
+  // ★ 页面与静态资源必须先通过登录鉴权：
+  //   未登录只放行登录页（/、/index.html、/login）与登录页最小资源；
+  //   其余任何页面、SPA 深链、私人目录统一返回 404 错误页，不加载应用外壳。
+  final pageUser = keweUserFromRequest(req);
+  if (pageUser == null) {
+    if (_isLoginShellPath(path)) {
+      await loggerMiddleware(corsMiddleware((r) => serveStatic(r, '/index.html')))(req);
+      return;
+    }
+    if (_isLoginPageAsset(path)) {
+      await loggerMiddleware(corsMiddleware((r) => serveStatic(r, path)))(req);
+      return;
+    }
+    await loggerMiddleware(corsMiddleware(keweReplyNotFoundPage))(req);
+    return;
+  }
+
+  // 私人目录（账号库、data、备份临时目录）即使已登录也不通过静态文件暴露。
   if (_isPrivateStaticPath(path)) {
     await loggerMiddleware(corsMiddleware(keweReplyUnauthorized))(req);
     return;
   }
 
-  // 静态资源（含 index.html 回退）；index 本身公开，用作登录页外壳。
+  // 已登录：正常提供页面与静态资源（不存在则回退 index.html）
   await serveStatic(req, path);
 }
 

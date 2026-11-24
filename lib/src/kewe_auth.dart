@@ -4,7 +4,8 @@
 //   注册：用户名唯一；密码可重复；密码只以客户端派生 verifier 抵达服务器。
 //   登录：HttpOnly + SameSite=Strict Cookie，服务端只保存加密令牌表。
 //   注销：数据目录、聊天密文、文件密文、密钥派生身份全部销毁，不做匿名化。
-//   门禁：未登录访问任何 /api 均返回 404（并带 X-Kewe-Auth: required）。
+//   门禁：未登录访问任何 /api 返回 404（带 X-Kewe-Auth: required）；
+//         未登录访问任何页面/深链一律返回 404 页面，仅放行登录页与其最小资源。
 // ============================================================
 
 import 'dart:convert';
@@ -526,4 +527,77 @@ Future<void> keweReplyUnauthorized(HttpRequest req) async {
     'code': 'not_found',
     'auth': true,
   });
+}
+
+// ------------------------------------------------------------
+// 未登录页面访问：统一 404 错误页（六语，按 Accept-Language 选择）
+// ------------------------------------------------------------
+const Map<String, List<String>> _keweNotFoundTexts = <String, List<String>>{
+  'zh': <String>['404 · 页面不存在', '此页面不存在，或您尚未登录。登录后可访问全部页面。', '前往登录'],
+  'ja': <String>['404 · ページが見つかりません', 'このページは存在しないか、ログインが必要です。ログインすると全ページにアクセスできます。', 'ログインへ'],
+  'en': <String>['404 · Page Not Found', 'This page does not exist, or you are not signed in. Sign in to access all pages.', 'Go to sign-in'],
+  'ko': <String>['404 · 페이지를 찾을 수 없음', '이 페이지가 없거나 로그인하지 않았습니다. 로그인하면 모든 페이지에 접근할 수 있습니다.', '로그인으로'],
+  'ru': <String>['404 · Страница не найдена', 'Этой страницы нет, или вы не вошли в аккаунт. После входа доступны все страницы.', 'Перейти ко входу'],
+  'fr': <String>['404 · Page introuvable', 'Cette page n’existe pas, ou vous n’êtes pas connecté. Connectez-vous pour accéder à toutes les pages.', 'Aller à la connexion'],
+};
+
+String _keweLangFromHeader(String? raw) {
+  // 只取 Accept-Language 的第一个语言标签，避免 "zh-CN,ja;q=0.8" 误判成日语。
+  final first = (raw ?? '').split(',').first.split(';').first.trim().toLowerCase();
+  if (first.startsWith('ja')) return 'ja';
+  if (first.startsWith('ko')) return 'ko';
+  if (first.startsWith('ru')) return 'ru';
+  if (first.startsWith('fr')) return 'fr';
+  if (first.startsWith('zh')) return 'zh';
+  if (first.startsWith('en')) return 'en';
+  return 'zh';
+}
+
+/// 未登录访问受保护页面：返回真正的 HTTP 404 页面（不加载应用外壳）。
+Future<void> keweReplyNotFoundPage(HttpRequest req) async {
+  final res = req.response;
+  res.statusCode = HttpStatus.notFound;
+  res.headers.contentType = ContentType('text', 'html', charset: 'utf-8');
+  res.headers.set('Cache-Control', 'no-store');
+  res.headers.set('X-Kewe-Auth', 'required');
+  res.headers.set('X-Content-Type-Options', 'nosniff');
+  res.headers.set('X-Frame-Options', 'DENY');
+  if (req.method == 'HEAD') {
+    await res.close();
+    return;
+  }
+  final lang = _keweLangFromHeader(req.headers.value('accept-language'));
+  final t = _keweNotFoundTexts[lang] ?? _keweNotFoundTexts['zh']!;
+  res.write('''<!DOCTYPE html>
+<html lang="$lang">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>${t[0]}</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;
+background:radial-gradient(900px 600px at 20% 10%,#12263a 0%,#070b16 60%,#04060d 100%);
+color:#e2e8f0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif}
+.wrap{width:min(100%,420px);text-align:center}
+.code{font:800 4.4rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.12em;
+background:linear-gradient(135deg,#67e8f9,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1{margin:18px 0 10px;font-size:1.15rem;font-weight:700}
+p{margin:0;color:#94a3b8;font-size:.86rem;line-height:1.7}
+a{border:1px solid rgba(103,232,249,.45);background:linear-gradient(145deg,#0891b2,#155e75);
+color:#fff;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;
+height:44px;padding:0 22px;border-radius:12px;font-weight:700;font-size:.85rem}
+</style>
+</head>
+<body>
+<main class="wrap">
+<div class="code">404</div>
+<h1>${t[0]}</h1>
+<p>${t[1]}</p>
+<a href="/">${t[2]}</a>
+</main>
+</body>
+</html>''');
+  await res.close();
 }

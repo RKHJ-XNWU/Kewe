@@ -967,19 +967,26 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     temperature = 1.0;
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
-  // ★★★ 统一强制能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
-  //   ★ 2026-11-23 起所有模型：上下文 1024K（1K=1000，固定 1,024,000）；最大输出读取全局 64K–384K 档位；角色扮演固定 32K、2.0-lite 固定 128K。
-  //     —— 预设模型、自定义模型、中转站、DeepSeek 维度全部统一，无例外。
-  //   这里只覆盖 max_tokens；上下文窗口由模型侧能力声明与前端展示统一给出。
-  final forcedOut = dbForcedMaxOutput(model);
-  if (forcedOut > 0) {
-    if (maxTokens != forcedOut) {
+  // ★★★ 统一能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
+  //   · 上下文 1024K（1K=1000，固定 1,024,000）；
+  //   · 角色扮演固定 32K；其它特例模型（2.0-lite / 2.0-mini / 2.0-turbo / GLM-5.2 /
+  //     2.1 lite・Pro・turbo / Evolving）只设最大上限，实际取全局档位与该上限的较小值。
+  final cappedOut = dbForcedMaxOutput(model);
+  if (cappedOut > 0) {
+    if (maxTokens != cappedOut) {
       logp(
-          '🔒 强制最大输出: $model → $forcedOut tokens（原 $maxTokens，忽略推理等级 Lv.$level 的 max_tokens）');
+          '🔒 输出上限: $model → $cappedOut tokens（原 $maxTokens，按模型上限与全局档位取小）');
     }
-    maxTokens = forcedOut;
+    maxTokens = cappedOut;
   }
   if (enableTools) temperature = 0.0;
+  // Kimi 系列（kimi-k3 / kimi-k3.1-pro 等）强制温度 1.0；非 Kimi 模型完全沿用原有逻辑。
+  if (dbIsKimiModel(model)) {
+    if (temperature != DB_KIMI_TEMPERATURE) {
+      logp('🌡️ Kimi 强制温度: $model → $DB_KIMI_TEMPERATURE（原 $temperature）');
+    }
+    temperature = DB_KIMI_TEMPERATURE;
+  }
 
   // ========== 豆包多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
   // 1) 豆包维度全部对话模型按推理等级执行多轮反思（与 DeepSeek 同一套等级逻辑）；

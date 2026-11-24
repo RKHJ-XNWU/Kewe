@@ -6,10 +6,11 @@
 // · 最大输出：64K=64,000、128K=128,000、256K=256,000、
 //   384K=384,000，默认 384K（十进制 384,000，不使用二进制 393,216）。
 // · 模型特例（用户规则优先于上游二进制）：
-//   Seed-Character / charter 角色扮演模型 → 固定 32K=32,000；
-//   Doubao-Seed-2.0-lite → 固定 128K=128,000；
-//   Doubao-Seed-2.0-mini、GLM-5.2 → 固定 256K=256,000；
-//   Doubao-Seed-2.1 lite / Pro / turbo / Evolving → 固定 256K=256,000。
+//   Seed-Character / charter 角色扮演模型 → 固定 32K=32,000（不随全局档位变化）；
+//   其它特例模型只设「最大上限」，实际发送 = min(所选档位, 模型上限)，允许更低：
+//     Doubao-Seed-2.0-lite → 128K=128,000；
+//     Doubao-Seed-2.0-mini / Doubao-Seed-2.0-turbo / GLM-5.2 → 256K=256,000；
+//     Doubao-Seed-2.1 lite / Pro / turbo / Evolving → 256K=256,000。
 // · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
 //   聊天、续写及模型能力目录都读取同一个值。
 // · 推理等级不再参与最终 max_tokens 的计算。
@@ -40,6 +41,8 @@ const int DB_DOUBAO_20_MINI_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 const int DB_GLM_52_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 const int DB_DOUBAO_21_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 
+const double DB_KIMI_TEMPERATURE = 1.0;
+
 const int DB_REASONING_LEVEL_MIN = 1;
 const int DB_REASONING_LEVEL_MAX = 999;
 const int DB_REASONING_LEVEL_FORCED = 999;
@@ -59,7 +62,7 @@ const List<String> dbCharacterModelPrefixes = <String>[
   'doubao-charter',
   'charter',
 ];
-// 用户指定：Doubao-Seed-2.0-lite 固定 128K（十进制 128000）。
+// 用户指定：Doubao-Seed-2.0-lite 最大上限 128K（十进制 128000）。
 const List<String> dbDoubao20LiteModelPrefixes = <String>[
   'doubao-seed-2-0-lite',
   'doubao-seed-2.0-lite',
@@ -68,7 +71,7 @@ const List<String> dbDoubao20LiteModelPrefixes = <String>[
   'doubao-lite-2-0',
   'doubao-lite-2.0',
 ];
-// 用户指定：Doubao-Seed-2.0-mini 固定 256K（十进制 256000）。
+// 用户指定：Doubao-Seed-2.0-mini 最大上限 256K（十进制 256000）。
 const List<String> dbDoubao20MiniModelPrefixes = <String>[
   'doubao-seed-2-0-mini',
   'doubao-seed-2.0-mini',
@@ -77,12 +80,13 @@ const List<String> dbDoubao20MiniModelPrefixes = <String>[
   'doubao-mini-2-0',
   'doubao-mini-2.0',
 ];
-// 用户指定：GLM-5.2 固定 256K（十进制 256000）。
+// 用户指定：GLM-5.2 最大上限 256K（十进制 256000）。
 const List<String> dbGlm52ModelPrefixes = <String>[
   'glm-5-2',
   'glm-5.2',
 ];
-// 用户指定：Doubao-Seed-2.1 lite / Pro / turbo 与 Evolving 固定 256K（十进制 256000）。
+// 用户指定：Doubao-Seed-2.0-turbo / Doubao-Seed-2.1 lite・Pro・turbo / Evolving
+// 最大上限 256K（十进制 256000）。
 const List<String> dbDoubao21ModelPrefixes = <String>[
   'doubao-seed-2-1-lite',
   'doubao-seed-2.1-lite',
@@ -90,6 +94,10 @@ const List<String> dbDoubao21ModelPrefixes = <String>[
   'doubao-seed-2.1-pro',
   'doubao-seed-2-1-turbo',
   'doubao-seed-2.1-turbo',
+  'doubao-seed-2-0-turbo',
+  'doubao-seed-2.0-turbo',
+  'doubao-2-0-turbo',
+  'doubao-2.0-turbo',
   'doubao-seed-evolving',
   'doubao-seed-evo',
 ];
@@ -240,6 +248,13 @@ bool dbIsGlm52Model(String model) {
   return false;
 }
 
+bool dbIsKimiModel(String model) {
+  final m = dbCanonicalModelValue(model).toLowerCase();
+  if (m.isEmpty) return false;
+  // kimi-k3 / kimi-k3.1-pro / kimi-k3-1-pro 等，统一按前缀识别。
+  return m.startsWith('kimi');
+}
+
 bool dbIsDoubao21Model(String model) {
   final m = dbCanonicalModelValue(model).toLowerCase();
   if (m.isEmpty) return false;
@@ -251,9 +266,9 @@ bool dbIsDoubao21Model(String model) {
 
 bool dbHasForcedLimits(String model) => model.trim().isNotEmpty;
 
-/// 仅返回「模型固定特例」：角色扮演 32,000；2.0-lite 128,000；
-/// 2.0-mini / GLM-5.2 / 2.1 lite・Pro・turbo / Evolving 256,000；其它 0。
-/// 用于 API 边界兜底，确保任何调用路径都不会把特例模型放大。
+/// 返回「模型最大上限」：角色扮演 32,000；2.0-lite 128,000；
+/// 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo / Evolving 256,000；其它 0。
+/// 该值只是上限：调用方可以传更小的 max_tokens，但绝不能超过它。
 int dbSpecialModelMaxOutput(String model) {
   if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
   if (dbIsDoubao20LiteModel(model)) return DB_DOUBAO_20_LITE_OUTPUT_TOKENS;
@@ -263,13 +278,27 @@ int dbSpecialModelMaxOutput(String model) {
   return 0;
 }
 
-/// 解析一次请求真正要发送的 max_tokens。
-/// 用户规则优先：角色扮演 32,000；2.0-lite 128,000；
-/// 2.0-mini / GLM-5.2 / 2.1 lite・Pro・turbo / Evolving 256,000；其余使用当前全局档位。
+/// 解析一次请求默认要发送的 max_tokens。
+/// · 角色扮演：固定 32,000（不随档位变化）；
+/// · 其它特例模型：取「当前全局档位」与「模型上限」的较小值，允许低于上限；
+/// · 无特例模型：使用当前全局档位。
 int dbForcedMaxOutput(String model) {
   if (!dbHasForcedLimits(model)) return 0;
-  final special = dbSpecialModelMaxOutput(model);
-  return special > 0 ? special : dbCurrentOutputLimit();
+  // 角色扮演是唯一「固定」而非「上限」的规则。
+  if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
+  final cap = dbSpecialModelMaxOutput(model);
+  final global = dbCurrentOutputLimit();
+  if (cap > 0 && cap < global) return cap;
+  return global;
+}
+
+/// 请求边界收紧：在调用方给出的 maxTokens 基础上套模型上限，
+/// 允许调用方传更小值（如工具模式、短回答），但绝不放大到上限之上。
+int dbClampToModelCap(String model, int maxTokens) {
+  if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
+  final base = maxTokens > 0 ? maxTokens : dbCurrentOutputLimit();
+  final cap = dbSpecialModelMaxOutput(model);
+  return (cap > 0 && cap < base) ? cap : base;
 }
 
 int dbForcedContextWindow(String model) =>
