@@ -568,6 +568,54 @@ Future<void> handleDbRealtimeVideo(HttpRequest req) async {
 // ------------------------------------------------------------
 String _videoRecordDir() => '$DATA_DIR/jilmtshx';
 
+/// 转写文本归一化时需要忽略的字符（空格/标点）。
+/// 只用于判断「同一句是否被重复拼接」，不会改写原始标点。
+final RegExp _transcriptNoiseRe = RegExp(
+    r'''[\s，,。.？?！!、；;：:…·\-—~～'"“”‘’（）()\[\]【】]''');
+
+/// 把「同一句被反复拼接」的用户转写收回成最后一遍完整句。
+///
+/// Seed-Realtime 的 ASR completed 偶尔会把多个累计快照连成一整段，
+/// 例如「你就是就是语音就是语音识别…」。这里在去空格/标点后的字符串上
+/// 找「最长且至少出现两次的后缀」，只保留最后一遍；正常句子不满足条件时
+/// 原样返回。
+String _collapseRepeatedTranscript(String input) {
+  final s = input
+      .replaceAll('\r', '')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .trim();
+  if (s.length < 32) return s;
+
+  final key = StringBuffer();
+  final map = <int>[];
+  for (var i = 0; i < s.length; i++) {
+    final ch = s[i];
+    if (_transcriptNoiseRe.hasMatch(ch)) continue;
+    key.write(ch.toLowerCase());
+    map.add(i);
+  }
+  final k = key.toString();
+  if (k.length < 32) return s;
+
+  for (var len = k.length - 8; len >= 18; len--) {
+    final suffix = k.substring(k.length - len);
+    final before = k.lastIndexOf(suffix, k.length - len - 1);
+    if (before < 0) continue;
+    // 只接受与最后一遍不重叠的早期出现，避免把句尾小循环误判。
+    if (before + len > k.length - len) continue;
+    var count = 0;
+    var at = k.indexOf(suffix);
+    while (at >= 0) {
+      count++;
+      at = k.indexOf(suffix, at + 1);
+    }
+    if (count < 2) continue;
+    final rawStart = map[k.length - len];
+    return s.substring(rawStart).trim();
+  }
+  return s;
+}
+
 List<String>? _videoRecordLines(Object? raw) {
   if (raw is! List || raw.isEmpty) return null;
   final out = <String>[];
@@ -576,8 +624,14 @@ List<String>? _videoRecordLines(Object? raw) {
     if (line.isEmpty) continue;
     if (!line.endsWith('|')) line = '$line|';
     // 文本中的竖线必须由前端替换成全角｜，否则五段格式会被破坏。
-    if (line.split('|').length != 6) return null;
-    out.add(line);
+    final parts = line.split('|');
+    if (parts.length != 6) return null;
+    // ★ 落库前清洗用户转写：即使上游 completed 把多个累计快照串在一起，
+    //   通话详情里也只保留最后一遍完整句。
+    if (parts[1] == 'user') {
+      parts[2] = _collapseRepeatedTranscript(parts[2]);
+    }
+    out.add(parts.join('|'));
   }
   return out.isEmpty ? null : out;
 }
@@ -631,7 +685,10 @@ Map<String, dynamic>? _parseVideoRecord(String name, File f) {
       final p = line.split('|');
       if (p.length < 5) continue;
       final role = p[1] == 'ai' ? 'assistant' : p[1];
-      final text = p[2];
+      var text = p[2];
+      // ★ 读取旧记录时也做同一套清洗：修复前已落库的重复转写，
+      //   更新后打开通话详情会自动收敛成最后一遍完整句。
+      if (role == 'user') text = _collapseRepeatedTranscript(text);
       turns.add(<String, dynamic>{
         'at': int.tryParse(p[0]) ?? 0,
         'role': role,
@@ -1056,6 +1113,14 @@ List<Map<String, dynamic>> _listVoiceRecords() {
           final t = raw.trim();
           if (t.isEmpty) continue;
           lines.add(t);
+        }
+        // 旧语音记录同样清洗用户转写，避免历史里的重复文本继续显示。
+        for (var i = 0; i < lines.length; i++) {
+          final parts = lines[i].split('|');
+          if (parts.length >= 5 && parts[1] == 'user') {
+            parts[2] = _collapseRepeatedTranscript(parts[2]);
+            lines[i] = parts.join('|');
+          }
         }
         // 预览：取第一条 user 文本的前 40 字
         for (final l in lines) {

@@ -1114,45 +1114,31 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.delta') {
-            // 只使用服务端真正的转写字段；部分实现会发「累计文本」而不是增量，
-            // 这里做前缀识别，避免把同一句听写重复拼接成“请问啊？请问一下…”。
+            // ★ 2026-11-24 终极修复：Seed-Realtime 的 delta 是「当前整句快照」，
+            //   不是可以无限拼接的增量。官方 Web Demo 对 delta 也是直接覆盖
+            //   （setQuestion(extractEventText(event))），从不累加。
+            //   旧实现把快照当增量拼接，ASR 中途修正/回退时就会滚出
+            //   “你就是就是语音就是语音识别…”这种巨型重复文本。
+            //   这里改为始终采用服务端最新快照；最终以 completed 的整句为准。
             var ud = (typeof m.delta === 'string') ? m.delta : '';
             if (ud) {
                 V.lastUserDelta = ud;
-                if (!V.curUserText) {
-                    V.curUserText = ud;
-                } else {
-                    var kPrev = transcriptKey(V.curUserText);
-                    var kNew = transcriptKey(ud);
-                    if (kNew && kPrev && kNew.indexOf(kPrev) >= 0) {
-                        // 服务端下发的是“累计全文”，不是增量：直接替换。
-                        V.curUserText = ud;
-                        V.userDeltaCumulative = true;
-                    } else if (kNew !== kPrev) {
-                        V.curUserText += ud;
-                    }
-                }
-                // 用户还在说话时就把识别结果放进字幕气泡，和豆包语音通话一致。
+                V.curUserText = ud;
+                V.userDeltaCumulative = true;
+                // 用户还在说话时就把最新快照放进字幕气泡。
                 showLiveUser(V.curUserText, m.item_id || m.itemId || '');
             }
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.completed') {
-            // 最终字幕必须使用服务端原样返回的 transcript；
-            // 不能退到 m.text（那可能是别的字段/模型文本），否则会出现
-            // “显示的字和用户说的不一致”。仅在 transcript 缺失时用本地增量兜底。
-            var ut;
-            if (typeof m.transcript === 'string' && m.transcript.trim()) {
-                ut = m.transcript;
-                // 完成事件是服务端最终、修正后的整句；中途 delta 只是临时
-                // 识别结果，绝不能用它反向覆盖最终 transcript，否则就会出现
-                // “显示的字和用户实际说的不一致”。
-            } else {
-                // 累计式转写时，最后一个 delta 才是完整原句；增量式才用拼接结果。
-                ut = V.userDeltaCumulative ? V.lastUserDelta : V.curUserText;
-            }
+            // 最终字幕优先取服务端 completed 的整句字段：
+            //   · 官方 Web Demo 的取值顺序是 text → delta → transcript → content；
+            //   · 不同网关/版本字段名不一致，这里全部兼容；
+            //   · 绝不能拿本地拼接结果当最终文本，否则就会把重复快照落库。
+            var ut = asrFinalText(m);
+            if (!ut) ut = V.lastUserDelta || V.curUserText;
             V.curUserText = '';
-            ut = String(ut || '').replace(/\r/g, '').trim();
+            ut = collapseRepeatedTranscript(String(ut || '').replace(/\r/g, '').trim());
             if (ut) {
                 var kFinal = transcriptKey(ut);
                 var kLast = transcriptKey(V.lastUserFinal);
@@ -1240,6 +1226,70 @@
         if (b && a && b.indexOf(a) >= 0) return incoming; // 累计全文
         if (b && a && b === a) return incoming.length > prev.length ? incoming : prev;
         return prev + incoming;
+    }
+
+    // completed 事件的整句字段兼容：优先 transcript（协议标准字段），
+    // 再兼容 text / delta / content / item 嵌套；官方 Web Demo 在 transcript
+    // 缺失时也是按 text→delta→content 取。
+    function asrFinalText(m) {
+        var vals = [
+            m && m.transcript,
+            m && m.text,
+            m && m.delta,
+            m && m.content
+        ];
+        var item = m && m.item;
+        if (item) {
+            vals.push(item.transcript, item.text, item.content);
+        }
+        for (var i = 0; i < vals.length; i++) {
+            if (typeof vals[i] === 'string' && vals[i].trim()) return vals[i];
+        }
+        return '';
+    }
+
+    // 同一套标点归一化：只用于比较重复片段，不改写原始文本。
+    function isTranscriptNoise(ch) {
+        return /[\s，,。.？?！!、；;：:…·\-—~～'"“”‘’（）()\[\]【】]/.test(ch);
+    }
+
+    // ★ 兜底清洗：把「同一句被反复拼接」的转写收回成最后一遍完整句。
+    //
+    // 背景：Seed-Realtime 的 ASR 在修正中途结果时，completed 偶尔会把
+    // 多个累计快照连成一整段，落库后就是截图里那种“你就是就是语音就是…”
+    // 的巨型重复。这里在归一化（去空格/标点）后的字符串上找「最长且出现
+    // 过至少两次的后缀」，只保留最后一遍。正常句子没有这种长后缀重复时
+    // 原样返回，不做任何改写。
+    function collapseRepeatedTranscript(text) {
+        var s = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').trim();
+        if (s.length < 32) return s;
+
+        var key = '';
+        var map = [];
+        for (var i = 0; i < s.length; i++) {
+            var ch = s.charAt(i);
+            if (isTranscriptNoise(ch)) continue;
+            key += ch.toLowerCase();
+            map.push(i);
+        }
+        if (key.length < 32) return s;
+
+        var maxLen = key.length - 8;
+        for (var len = maxLen; len >= 18; len--) {
+            var suffix = key.slice(key.length - len);
+            var before = key.lastIndexOf(suffix, key.length - len - 1);
+            if (before < 0) continue;
+            // 只接受与最后一遍不重叠的早期出现，避免把句尾小循环误判。
+            if (before + len > key.length - len) continue;
+            var count = 0;
+            var at = key.indexOf(suffix);
+            while (at >= 0) { count++; at = key.indexOf(suffix, at + 1); }
+            if (count < 2) continue;
+            var rawStart = map[key.length - len];
+            if (typeof rawStart !== 'number') return s;
+            return s.slice(rawStart).trim();
+        }
+        return s;
     }
 
     function scheduleRenderSubs() {
@@ -1349,6 +1399,9 @@
             text = String(text || '').replace(/\r/g, '').trim();
             if (text) t.text = text.length > 2000 ? text.slice(0, 2000) : text;
         }
+        // 通话结束时 completed 可能还没到；这里对未收口的用户转写再洗一次，
+        // 保证界面与落库都不会留下累计快照滚出来的重复文本。
+        if (t.role === 'user') t.text = collapseRepeatedTranscript(t.text);
         t.live = false;
         V[key] = null;
         if (t.role === 'assistant' && t.text) V.lastAssistantText = t.text;
@@ -1542,7 +1595,10 @@
     function buildSavePayload() {
         if (!V.turns.length) return null;
         var lines = V.turns.map(function (t) {
-            var text = String(t.text || '').replace(/\|/g, '｜').replace(/\r?\n/g, ' ').trim();
+            var text = String(t.text || '');
+            // 落库前对用户转写做最后一道去重；豆包回复不走这个清洗。
+            if (t.role === 'user') text = collapseRepeatedTranscript(text);
+            text = text.replace(/\|/g, '｜').replace(/\r?\n/g, ' ').trim();
             return [t.at, t.role, text, t.seq, t.lang || curLang()].join('|') + '|';
         });
         return {
@@ -1718,7 +1774,9 @@
             who.textContent = t.role === 'user' ? (V.userName || tr('you')) : tr('doubao');
             var tx = document.createElement('span');
             tx.className = 'txt';
-            tx.textContent = t.text || '';
+            tx.textContent = t.role === 'user'
+                ? collapseRepeatedTranscript(t.text || '')
+                : (t.text || '');
             line.appendChild(who);
             line.appendChild(tx);
             wrap.appendChild(line);
