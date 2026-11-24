@@ -143,7 +143,6 @@ void registerRoutes() {
   _register('/api/doubao/realtime/status', handleDbRealtimeStatus);
   _register('/api/doubao/realtime-video', handleDbRealtimeVideo);
   _register('/api/doubao/realtime-video/status', handleDbRealtimeVideoStatus);
-  _register('/api/doubao/realtime-video/text-answer', handleDbVideoTextAnswer);
   _register('/api/doubao/realtime-video/save', handleDbVideoRecordSave);
   _register('/api/doubao/realtime-video/list', handleDbVideoRecordList);
   _register('/api/doubao/realtime-video/delete', handleDbVideoRecordDelete);

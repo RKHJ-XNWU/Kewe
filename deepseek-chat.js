@@ -7520,7 +7520,7 @@
             state.webSearch = !state.webSearch;
             updateToolUI();
             saveToolState();
-            toast(state.webSearch ? '🌐 ウェブ検索をオンにしました' : '🌐 ウェブ検索をオフにしました', 'info');
+            toast(T(state.webSearch ? '🌐 ウェブ検索をオンにしました' : '🌐 ウェブ検索をオフにしました'), 'info');
         });
 
         bind('dscDeepThinkBtn', 'click', function () {
@@ -7532,7 +7532,7 @@
             }
             updateToolUI();
             saveToolState();
-            toast(state.deepThink ? '🧠 深い思考をオンにしました' : '🧠 深い思考をオフにしました', 'info');
+            toast(T(state.deepThink ? '🧠 深い思考をオンにしました' : '🧠 深い思考をオフにしました'), 'info');
         });
 
         bind('dscLevelBtn', 'click', openLevelDialog);

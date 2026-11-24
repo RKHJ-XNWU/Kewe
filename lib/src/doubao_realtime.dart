@@ -786,55 +786,6 @@ Future<void> handleDbVideoRecordClear(HttpRequest req) async {
   });
 }
 
-/// 文字输入兜底：原生会话事件不响应时，用文本模型生成短答，再交给通话 TTS 朗读。
-Future<void> handleDbVideoTextAnswer(HttpRequest req) async {
-  if (req.method != 'POST') {
-    await errJson(req.response, 405, 'Method not allowed');
-    return;
-  }
-  final body = await readJsonBody(req);
-  final text = mStr(body, 'text').trim();
-  if (text.isEmpty) {
-    await errJson(req.response, 400, '文字内容为空');
-    return;
-  }
-  final lang = trimOr(mStr(body, 'lang'), 'zh');
-  final history = <Map<String, dynamic>>[];
-  final rawHist = body['history'];
-  if (rawHist is List) {
-    for (final e in rawHist) {
-      final m = _asMap(e);
-      final role = mStr(m, 'role');
-      final c = mStr(m, 'text');
-      if (c.trim().isEmpty) continue;
-      if (role != 'user' && role != 'assistant') continue;
-      history.add(<String, dynamic>{
-        'role': role,
-        'content': c.length > 800 ? c.substring(c.length - 800) : c,
-      });
-    }
-  }
-  if (history.length > 8) history.removeRange(0, history.length - 8);
-  history.add(<String, dynamic>{'role': 'user', 'content': text});
-  try {
-    final answer = await dbChatText(
-      '${dbVideoSystemPrompt(lang)}\n'
-      '当前是文字输入：用户打字，你负责用口语回答。不要提及这条系统说明。',
-      history,
-      maxTokens: 800,
-      temperature: 0.6,
-      timeout: const Duration(seconds: 45),
-    );
-    await jsonResponse(req.response, 200, <String, dynamic>{
-      'ok': true,
-      'text': answer.trim(),
-    });
-  } catch (e) {
-    logp('❌ 实时音视频文字回答失败: $e');
-    await errJson(req.response, 502, '文字回答生成失败：${dbErrText(e)}');
-  }
-}
-
 Future<void> handleDbRealtimeVideoStatus(HttpRequest req) async {
   final cfg = getDbConfig();
   final hasKey = cfg.duplexApiKey.trim().isNotEmpty ||

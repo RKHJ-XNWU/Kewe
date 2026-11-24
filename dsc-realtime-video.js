@@ -5,6 +5,7 @@
  *   · 浏览器 ⇄ 本地 Dart 服务 WebSocket 代理 ⇄ 火山引擎 /api/v3/realtime
  *   · 20ms PCM16/16k 上行、24k PCM 下行；摄像头 JPEG 2 FPS 上行
  *   · 摄像头上/下/前后切换、静音、打断、文字输入由豆包语音回答
+ *   · 文字输入走同一实时会话，仅计实时音视频分钟额度；不回退文本/TTS 额度
  *   · 通话结束（挂断/退出）才把五段格式 .sts 记录写入当前账号 data/jilmtshx
  *   · 六语 UI（zh/ja/en/ko/ru/fr），不新增页面，保持单页应用
  * ============================================================ */
@@ -65,6 +66,10 @@
         speaking: false,
         curText: '',
         curUserText: '',
+        audioText: '',
+        audioFinal: '',
+        audioTextSeen: false,
+        textFinal: '',
         lastAssistantText: '',
         nativeTimer: null,
         responseSeen: false,
@@ -101,7 +106,6 @@
             saveFail: '通话记录保存失败：{0}', camFail: '无法打开摄像头：{0}',
             micFail: '无法使用麦克风：{0}', connFail: '连接失败：{0}',
             upstreamFail: '实时音视频服务连接失败：{0}', endedRemote: '通话已断开',
-            textFail: '文字回答失败：{0}', configMissing: '未配置豆包语音 API Key，请先在设置中填写',
             loading: '正在检查配置…', network: '网络异常', mins: '分钟', secs: '秒',
             noRecords: '暂无记录', historySub: '只读 · 支持单条/批量删除与一键清空',
             userFallback: '用户', saved: '通话记录已保存', selected: '已选 {0} 条',
@@ -127,7 +131,6 @@
             saveFail: '通話記録の保存に失敗：{0}', camFail: 'カメラを開けません：{0}',
             micFail: 'マイクを使用できません：{0}', connFail: '接続に失敗：{0}',
             upstreamFail: 'リアルタイム映像通話サービスに接続できません：{0}', endedRemote: '通話が切断されました',
-            textFail: '文字回答に失敗：{0}', configMissing: '豆包音声 API Key が未設定です。設定で入力してください',
             loading: '設定を確認しています…', network: 'ネットワーク異常', mins: '分', secs: '秒',
             noRecords: '記録なし', historySub: '閲覧専用・単件/一括削除と全削除に対応',
             userFallback: 'ユーザー', saved: '通話記録を保存しました', selected: '{0} 件選択中',
@@ -153,7 +156,6 @@
             saveFail: 'Failed to save call record: {0}', camFail: 'Cannot open camera: {0}',
             micFail: 'Cannot use microphone: {0}', connFail: 'Connection failed: {0}',
             upstreamFail: 'Realtime video service connection failed: {0}', endedRemote: 'Call disconnected',
-            textFail: 'Text answer failed: {0}', configMissing: 'Doubao voice API Key is not configured. Set it in Settings first',
             loading: 'Checking configuration…', network: 'Network error', mins: 'min', secs: 'sec',
             noRecords: 'No records', historySub: 'Read-only · single/batch delete and clear all',
             userFallback: 'User', saved: 'Call record saved', selected: '{0} selected',
@@ -179,7 +181,6 @@
             saveFail: '통화 기록 저장 실패: {0}', camFail: '카메라를 열 수 없습니다: {0}',
             micFail: '마이크를 사용할 수 없습니다: {0}', connFail: '연결 실패: {0}',
             upstreamFail: '실시간 영상 통화 서비스 연결 실패: {0}', endedRemote: '통화가 끊겼습니다',
-            textFail: '문자 답변 실패: {0}', configMissing: '豆包 음성 API Key가 설정되지 않았습니다. 설정에서 입력하세요',
             loading: '설정 확인 중…', network: '네트워크 오류', mins: '분', secs: '초',
             noRecords: '기록 없음', historySub: '읽기 전용 · 단일/일괄 삭제 및 전체 삭제 지원',
             userFallback: '사용자', saved: '통화 기록이 저장되었습니다', selected: '{0}개 선택됨',
@@ -205,7 +206,6 @@
             saveFail: 'Не удалось сохранить запись: {0}', camFail: 'Не удалось открыть камеру: {0}',
             micFail: 'Не удалось использовать микрофон: {0}', connFail: 'Ошибка подключения: {0}',
             upstreamFail: 'Нет подключения к сервису видеозвонка: {0}', endedRemote: 'Звонок прерван',
-            textFail: 'Ошибка текстового ответа: {0}', configMissing: 'API Key голосового сервиса Doubao не задан. Укажите его в настройках',
             loading: 'Проверка настроек…', network: 'Ошибка сети', mins: 'мин', secs: 'сек',
             noRecords: 'Нет записей', historySub: 'Только чтение · удаление по одной, пакетно и полностью',
             userFallback: 'Пользователь', saved: 'Запись звонка сохранена', selected: 'Выбрано: {0}',
@@ -231,7 +231,6 @@
             saveFail: 'Échec de l’enregistrement : {0}', camFail: 'Impossible d’ouvrir la caméra : {0}',
             micFail: 'Impossible d’utiliser le micro : {0}', connFail: 'Échec de connexion : {0}',
             upstreamFail: 'Connexion au service vidéo impossible : {0}', endedRemote: 'Appel interrompu',
-            textFail: 'Échec de la réponse texte : {0}', configMissing: 'Clé API vocale Doubao non configurée. Renseignez-la dans les réglages',
             loading: 'Vérification de la configuration…', network: 'Erreur réseau', mins: 'min', secs: 's',
             noRecords: 'Aucun enregistrement', historySub: 'Lecture seule · suppression unitaire, groupée et totale',
             userFallback: 'Utilisateur', saved: 'Appel enregistré', selected: '{0} sélectionné(s)',
@@ -571,6 +570,10 @@
         V.curText = '';
         V.curUserText = '';
         V.lastAssistantText = '';
+        V.audioText = '';
+        V.audioFinal = '';
+        V.audioTextSeen = false;
+        V.textFinal = '';
         V.responseSeen = false;
         V.textToken++;
         V.speaking = false;
@@ -984,11 +987,34 @@
         if (t === 'response.created') {
             V.speaking = true;
             V.responseSeen = true;
+            V.audioText = '';
+            V.audioFinal = '';
+            V.audioTextSeen = false;
+            V.textFinal = '';
             if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
             setCallStatusUi('speaking');
             return;
         }
-        if (t === 'response.output_text.delta') {
+        // ★ 以「实际播报的音频字幕」为准：实时模型的文本流和语音内容可能
+        //   有细微差异；优先用 response.output_audio_transcript，确保气泡
+        //   与用户听到的语音一致。没有该事件时才回退 output_text。
+        if (t === 'response.output_audio_transcript.delta' || t === 'response.audio_transcript.delta') {
+            V.audioTextSeen = true;
+            var atd = m.delta || '';
+            if (atd) {
+                V.audioText += atd;
+                var shown = V.audioText.length > 90 ? V.audioText.slice(-90) : V.audioText;
+                setCenterStatus(shown);
+            }
+            return;
+        }
+        if (t === 'response.output_audio_transcript.done' || t === 'response.audio_transcript.done') {
+            V.audioTextSeen = true;
+            V.audioFinal = String(m.transcript || m.text || V.audioText || '');
+            V.audioText = '';
+            return;
+        }
+        if (t === 'response.output_text.delta' || t === 'response.text.delta') {
             var dl = m.delta || '';
             if (dl) {
                 V.curText += dl;
@@ -996,28 +1022,39 @@
             }
             return;
         }
-        if (t === 'response.output_text.done') {
-            var tx = m.text || V.curText || '';
+        if (t === 'response.output_text.done' || t === 'response.text.done') {
+            if (V.audioTextSeen) return; // 已有实际语音字幕，忽略文本流
+            V.textFinal = String(m.text || V.curText || '');
             V.curText = '';
-            if (tx.trim()) addTurn('assistant', tx);
             return;
         }
-        if (t === 'response.output_audio.started') {
+        if (t === 'response.output_audio.started' || t === 'response.audio.started') {
             V.speaking = true;
             setCallStatusUi('speaking');
             return;
         }
-        if (t === 'response.output_audio.delta') {
+        if (t === 'response.output_audio.delta' || t === 'response.audio.delta') {
             var a = m.delta || m.audio || '';
             if (a) { V.gotAudio = true; playPcm(a); }
             return;
         }
-        if (t === 'response.output_audio.done') {
+        if (t === 'response.output_audio.done' || t === 'response.audio.done') {
             return;
         }
         if (t === 'response.done') {
             V.speaking = false;
-            if (V.curText.trim()) { addTurn('assistant', V.curText); V.curText = ''; }
+            var spoken = String(V.audioFinal || V.audioText || '').trim();
+            if (spoken) {
+                addTurn('assistant', spoken);
+            } else if (!V.audioTextSeen) {
+                var finalText = String(V.textFinal || V.curText || '').trim();
+                if (finalText) addTurn('assistant', finalText);
+            }
+            V.audioText = '';
+            V.audioFinal = '';
+            V.audioTextSeen = false;
+            V.textFinal = '';
+            V.curText = '';
             setCallStatusUi('listening');
             setCenterStatus('');
             return;
@@ -1025,6 +1062,10 @@
         if (t === 'response.canceled') {
             V.speaking = false;
             V.curText = '';
+            V.audioText = '';
+            V.audioFinal = '';
+            V.audioTextSeen = false;
+            V.textFinal = '';
             stopPlayback();
             setCallStatusUi('listening');
             setCenterStatus('');
@@ -1036,17 +1077,27 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.delta') {
-            var ud = m.delta || m.text || '';
+            // 只使用服务端真正的转写字段；部分实现会发「累计文本」而不是增量，
+            // 这里做前缀识别，避免把同一句听写重复拼接成“请问啊？请问一下…”。
+            var ud = (typeof m.delta === 'string') ? m.delta : '';
             if (ud) {
-                V.curUserText += ud;
+                if (V.curUserText && ud.indexOf(V.curUserText) === 0) {
+                    V.curUserText = ud;
+                } else if (!V.curUserText || ud !== V.curUserText) {
+                    V.curUserText += ud;
+                }
                 setCenterStatus((V.userName || tr('you')) + '：' + V.curUserText);
             }
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.completed') {
-            var ut = m.transcript || m.text || V.curUserText || '';
+            // 最终字幕必须使用服务端原样返回的 transcript；
+            // 不能退到 m.text（那可能是别的字段/模型文本），否则会出现
+            // “显示的字和用户说的不一致”。仅在 transcript 缺失时用本地增量兜底。
+            var ut = (typeof m.transcript === 'string') ? m.transcript : V.curUserText;
             V.curUserText = '';
-            if (ut.trim()) addTurn('user', ut);
+            ut = String(ut || '').replace(/\r/g, '').trim();
+            if (ut) addTurn('user', ut);
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.failed') {
@@ -1197,7 +1248,9 @@
     }
 
     // ------------------------------------------------------------
-    // 文字输入：先试探原生会话事件，无响应再走文本模型 + 豆包 TTS
+    // 文字输入：直接注入实时会话（input_text），由实时音视频模型生成语音回答。
+    // 不再回退到普通文本模型 / 独立 TTS：这样只消耗实时音视频分钟额度，
+    // 不消耗文本 token 额度，也不消耗语音通话 token 额度。
     // ------------------------------------------------------------
     function sendTyped() {
         var input = $('dscVcTextInput');
@@ -1211,97 +1264,29 @@
         V.textToken++;
         var token = V.textToken;
 
-        // 1.3.0.0 文档允许 conversation.item.create 注入上下文；
-        // 某些服务端会据此自动开启新一轮 response。
+        // 火山实时音视频标准协议：conversation.item.create 使用单数 item，
+        // content.type = input_text 表示“文本提问”，服务端会按语音对话回答。
+        // interrupt_mode=1：用户打字发送时立即打断当前播报并处理新问题。
         sendWs({
             type: 'conversation.item.create',
             event_id: newId(),
-            items: [{
+            item: {
                 type: 'message',
                 role: 'user',
-                content: [{ type: 'input_text', text: text }]
-            }]
+                content: [{ type: 'input_text', text: text }],
+                interrupt_mode: 1
+            }
         });
 
+        // server_vad 模式通常会自动创建 response；若服务端没有自动触发，
+        // 短暂等待后显式 response.create，仍走同一条实时音视频链路。
         if (V.nativeTimer) clearTimeout(V.nativeTimer);
         V.nativeTimer = setTimeout(function () {
             V.nativeTimer = null;
-            if (token !== V.textToken || V.responseSeen) return;
-            fallbackTextAnswer(text, token);
-        }, 2400);
+            if (token !== V.textToken || V.responseSeen || !V.active) return;
+            sendWs({ type: 'response.create', event_id: newId() });
+        }, 650);
         setCenterStatus('');
-    }
-
-    function fallbackTextAnswer(text, token) {
-        var hist = V.turns.slice(0, -1).slice(-10).map(function (t) {
-            return { role: t.role, text: t.text };
-        });
-        fetch('/api/doubao/realtime-video/text-answer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ text: text, lang: curLang(), history: hist })
-        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-            .then(function (res) {
-                if (token !== V.textToken) return;
-                if (!res.ok || !res.d || !res.d.text) {
-                    throw new Error((res.d && (res.d.error || res.d.message)) || 'empty');
-                }
-                var answer = String(res.d.text).trim();
-                if (!answer) throw new Error('empty');
-                addTurn('assistant', answer);
-                sendSpeechText(answer);
-                // 把这一轮问答写回实时会话上下文，后续语音对话能接上。
-                sendWs({
-                    type: 'conversation.item.create',
-                    event_id: newId(),
-                    items: [{
-                        type: 'message',
-                        role: 'assistant',
-                        content: [{ type: 'text', text: answer }]
-                    }]
-                });
-                setCallStatusUi('speaking');
-                setTimeout(function () {
-                    if (!V.speaking) setCallStatusUi('listening');
-                }, 1800);
-            })
-            .catch(function (e) {
-                if (token !== V.textToken) return;
-                vcToast(tr('textFail', e && e.message ? e.message : e), 'error');
-            });
-    }
-
-    function sendSpeechText(text) {
-        var speechId = 'speech_' + Date.now().toString(36);
-        var chunks = splitText(text, 280);
-        chunks.forEach(function (c) {
-            sendWs({
-                type: 'speech_text_buffer.replacement.append',
-                event_id: newId(),
-                speech_id: speechId,
-                text: c
-            });
-        });
-        sendWs({
-            type: 'speech_text_buffer.replacement.commit',
-            event_id: newId(),
-            speech_id: speechId
-        });
-    }
-
-    function splitText(text, n) {
-        var out = [];
-        var s = String(text || '');
-        while (s.length > n) {
-            var cut = n;
-            var idx = Math.max(s.lastIndexOf('。', n), s.lastIndexOf('，', n), s.lastIndexOf('. ', n), s.lastIndexOf(' ', n));
-            if (idx > n * 0.4) cut = idx + 1;
-            out.push(s.slice(0, cut));
-            s = s.slice(cut);
-        }
-        if (s) out.push(s);
-        return out;
     }
 
     // ------------------------------------------------------------

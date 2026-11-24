@@ -1326,9 +1326,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (dbNativeSearch) {
     dbExtraBody = <String, dynamic>{
       ...dbExtraBody,
-      'web_search_options': dbWebSearchOptions(),
+      'web_search_options': dbWebSearchOptions(searchType: 'mandatory'),
     };
-    logp('🌐 启用豆包原生搜索（web_search_options, 每月 2 万次免费额度）');
+    logp('🌐 启用豆包原生搜索（web_search_options=mandatory，无需工具模式，每月 2 万次免费额度）');
   }
 
   // DeepSeek 通道不具备音视频理解能力，如实告知而不是假装已读
