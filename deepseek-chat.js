@@ -102,7 +102,7 @@
     }
 
     // 模型上限（非强制固定值）：角色扮演固定 32K=32,000；
-    // 2.0-lite 上限 128K=128,000；2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 系列上限 256K=256,000。
+    // 2.0-lite / 2.0-mini 上限 128K=128,000；2.0-turbo / GLM-5.2 / 2.1 系列上限 256K=256,000。
     // 实际发送 = min(全局档位, 模型上限)，允许低于上限。
     function dscModelOutputCap(m) {
         m = dscCanonicalLimitModel(m);
@@ -112,11 +112,11 @@
         if (m.indexOf('doubao-seed-2-0-lite') === 0 || m.indexOf('doubao-seed-2.0-lite') === 0 ||
             m.indexOf('doubao-2-0-lite') === 0 || m.indexOf('doubao-2.0-lite') === 0 ||
             m.indexOf('doubao-lite-2-0') === 0 || m.indexOf('doubao-lite-2.0') === 0) return 128000;
-        // 豆包 2.0-mini：上限 256K（十进制 256,000）。
+        // 豆包 2.0-mini：上限 128K（十进制 128,000）。
         if (m.indexOf('doubao-seed-2-0-mini') === 0 || m.indexOf('doubao-seed-2.0-mini') === 0 ||
             m.indexOf('doubao-2-0-mini') === 0 || m.indexOf('doubao-2.0-mini') === 0 ||
             m.indexOf('doubao-mini-2-0') === 0 || m.indexOf('doubao-mini-2.0') === 0) {
-            return DSC_LIMIT_DOUBAO_21_OUTPUT_TOKENS;
+            return 128000;
         }
         // GLM-5.2：上限 256K（十进制 256,000）。
         if (m.indexOf('glm-5-2') === 0 || m.indexOf('glm-5.2') === 0) {
@@ -203,12 +203,12 @@
         var ctx = dscTokenLabel(lim.context);
         var globalOut = dscOutputTokenLabel(DSC_LIMIT_OUTPUT_TOKENS);
         var map = {
-            zh: '上下文窗口 ' + ctx + '（固定）；全局最大输出 ' + globalOut + '。当前模型实际上限 ' + out + '。角色扮演固定 32K；2.0-lite 上限 128K；2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo・Evolving 上限 256K（均为十进制）。特例模型取「所选档位」与「模型上限」的较小值，允许更低；推理等级内的输出设置已忽略。',
-            ja: 'コンテキスト ' + ctx + '（固定）。グローバル最大出力 ' + globalOut + '。現在のモデル実際上限 ' + out + '。ロールプレイは 32K 固定、2.0-lite は上限 128K、2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo・Evolving は上限 256K（10進）。特例モデルは「選択した段階」と「モデル上限」の小さい方を採用し、より低い値も選択できます。推論レベル内の出力設定は無視されます。',
-            en: 'Context window ' + ctx + ' (fixed); global maximum output ' + globalOut + '. Current model effective cap: ' + out + '. Roleplay is fixed at 32K; 2.0-lite caps at 128K; 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving cap at 256K (decimal). Special models use the smaller of the selected tier and the model cap, so lower values are allowed; output settings inside the reasoning level are ignored.',
-            ko: '컨텍스트 ' + ctx + '(고정); 전역 최대 출력 ' + globalOut + '. 현재 모델 실제 상한 ' + out + '. 역할극은 32K 고정, 2.0-lite는 상한 128K, 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving은 상한 256K(10진수). 특례 모델은 선택한 단계와 모델 상한 중 작은 값을 쓰며 더 낮은 값도 허용됩니다. 추론 레벨의 출력 설정은 무시됩니다.',
-            ru: 'Контекст ' + ctx + ' (фиксированный); глобальный максимум вывода ' + globalOut + '. Фактический лимит текущей модели: ' + out + '. Ролевые модели — ровно 32K, 2.0-lite — предел 128K, 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving — предел 256K (десятичные). Для особых моделей берётся меньшее из выбранного уровня и предела модели, поэтому допустимы меньшие значения; настройки вывода уровня рассуждений игнорируются.',
-            fr: "Contexte " + ctx + " (fixe) ; sortie maximale globale " + globalOut + ". Plafond effectif du modèle courant : " + out + ". Roleplay fixé à 32K ; 2.0-lite plafonné à 128K ; 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving plafonnés à 256K (décimal). Pour ces modèles, la plus petite valeur entre le palier choisi et le plafond du modèle est utilisée, donc des valeurs inférieures restent possibles ; le réglage de sortie du niveau de raisonnement est ignoré."
+            zh: '上下文窗口 ' + ctx + '（固定）；全局最大输出 ' + globalOut + '。当前模型实际上限 ' + out + '。角色扮演固定 32K；2.0-lite / 2.0-mini 上限 128K；2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo・Evolving 上限 256K（均为十进制）。特例模型取「所选档位」与「模型上限」的较小值，允许更低；推理等级内的输出设置已忽略。',
+            ja: 'コンテキスト ' + ctx + '（固定）。グローバル最大出力 ' + globalOut + '。現在のモデル実際上限 ' + out + '。ロールプレイは 32K 固定、2.0-lite / 2.0-mini は上限 128K、2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo・Evolving は上限 256K（10進）。特例モデルは「選択した段階」と「モデル上限」の小さい方を採用し、より低い値も選択できます。推論レベル内の出力設定は無視されます。',
+            en: 'Context window ' + ctx + ' (fixed); global maximum output ' + globalOut + '. Current model effective cap: ' + out + '. Roleplay is fixed at 32K; 2.0-lite / 2.0-mini cap at 128K; 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving cap at 256K (decimal). Special models use the smaller of the selected tier and the model cap, so lower values are allowed; output settings inside the reasoning level are ignored.',
+            ko: '컨텍스트 ' + ctx + '(고정); 전역 최대 출력 ' + globalOut + '. 현재 모델 실제 상한 ' + out + '. 역할극은 32K 고정, 2.0-lite / 2.0-mini는 상한 128K, 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving은 상한 256K(10진수). 특례 모델은 선택한 단계와 모델 상한 중 작은 값을 쓰며 더 낮은 값도 허용됩니다. 추론 레벨의 출력 설정은 무시됩니다.',
+            ru: 'Контекст ' + ctx + ' (фиксированный); глобальный максимум вывода ' + globalOut + '. Фактический лимит текущей модели: ' + out + '. Ролевые модели — ровно 32K, 2.0-lite / 2.0-mini — предел 128K, 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving — предел 256K (десятичные). Для особых моделей берётся меньшее из выбранного уровня и предела модели, поэтому допустимы меньшие значения; настройки вывода уровня рассуждений игнорируются.',
+            fr: "Contexte " + ctx + " (fixe) ; sortie maximale globale " + globalOut + ". Plafond effectif du modèle courant : " + out + ". Roleplay fixé à 32K ; 2.0-lite / 2.0-mini plafonnés à 128K ; 2.0-turbo / GLM-5.2 / 2.1 lite·Pro·turbo·Evolving plafonnés à 256K (décimal). Pour ces modèles, la plus petite valeur entre le palier choisi et le plafond du modèle est utilisée, donc des valeurs inférieures restent possibles ; le réglage de sortie du niveau de raisonnement est ignoré."
         };
         return map[lang] || map.zh;
     }

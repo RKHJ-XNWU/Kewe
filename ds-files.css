@@ -165,10 +165,16 @@
     outline: none;
     font-family: inherit;
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
 }
-.dsc-files-search input:focus {
-    border-color: #4f46e5;
+.dsc-files-search input:focus,
+.dsc-files-search input:focus-visible {
+    /* 用户要求：点击搜索框时不出现蓝色边框/焦点环 */
+    border-color: #e5e7eb;
     background: #ffffff;
+    outline: none !important;
+    box-shadow: none !important;
+    -webkit-focus-ring-color: transparent;
 }
 .dsc-files-search .s-icon {
     position: absolute;

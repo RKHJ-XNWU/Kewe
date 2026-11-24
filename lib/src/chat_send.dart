@@ -128,8 +128,14 @@ Future<void> handleDsChatSendStream(
   /// 用户在有消息里写了「抖音百科：/百科：/墨迹天气：/天气：」，
   /// 就必须真的去检索，不允许因为开关关着而静默跳过。
   List<String> forcedSources = const <String>[],
+
+  /// 原始用户输入（保留「抖音百科：」等前缀）。仅用于气泡/标题/落库，
+  /// 不参与 apiMessages；为空时回退到 [content]。
+  String displayContent = '',
 }) async {
   final sse = Sse(req.response);
+  // 气泡/标题/落库使用原始输入；插件与模型仍使用剥掉前缀的 content。
+  final savedUserText = displayContent.isNotEmpty ? displayContent : content;
 
   // ★ 豆包思考链泵（见 doubao_thinking.dart）
   //   summary 型模型的 reasoning 是「大块突发 + 长空档」，
@@ -332,7 +338,7 @@ Future<void> handleDsChatSendStream(
     }
 
     final now = DateTime.now();
-    final savedContent = content.isEmpty ? '[工具模式]' : content;
+    final savedContent = savedUserText.isEmpty ? '[工具模式]' : savedUserText;
     final userMsg = DsMessage(
       id: 'dsm_${fmtStamp14(now)}_${randomHex(6)}',
       sessionId: sessionID,
@@ -362,13 +368,13 @@ Future<void> handleDsChatSendStream(
     if (sess != null) {
       title = sess.title;
       if (title.isEmpty || title == '新对话') {
-        final runes = content.runes.toList();
+        final runes = savedUserText.runes.toList();
         if (runes.isEmpty) {
           title = '[工具对话]';
         } else if (runes.length > 18) {
           title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
         } else {
-          title = content;
+          title = savedUserText;
         }
       }
     }
@@ -534,7 +540,7 @@ Future<void> handleDsChatSendStream(
   }
 
   final now = DateTime.now();
-  final savedContent = content.isEmpty ? '[已上传文件]' : content;
+  final savedContent = savedUserText.isEmpty ? '[已上传文件]' : savedUserText;
   final userMsg = DsMessage(
     id: 'dsm_${fmtStamp14(now)}_${randomHex(6)}',
     sessionId: sessionID,
@@ -563,13 +569,13 @@ Future<void> handleDsChatSendStream(
   if (sess != null) {
     title = sess.title;
     if (title.isEmpty || title == '新对话') {
-      final runes = content.runes.toList();
+      final runes = savedUserText.runes.toList();
       if (runes.isEmpty) {
         title = '[文件对话]';
       } else if (runes.length > 18) {
         title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
       } else {
-        title = content;
+        title = savedUserText;
       }
     }
   }
@@ -811,6 +817,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   final sessionID = mStr(body, 'sessionId');
   var content = mStr(body, 'content').trim();
+  // ★ 原始用户输入（保留「抖音百科：」等前缀）：用于聊天气泡、会话标题与落库。
+  //   插件检索需要的是剥掉前缀后的正文 content；二者不能混用，
+  //   否则用户会看到自己发的「抖音百科：QQ」被吃成只剩「QQ」。
+  final displayContent = content;
+  final savedUserText = displayContent.isEmpty ? content : displayContent;
   final fileIDs = asList(body['fileIds']).map((e) => '$e').toList();
   final webSearch = mBool(body, 'webSearch');
   final deepThink = mBool(body, 'deepThink');
@@ -1391,6 +1402,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   sysParts.add(knowledgeSystemPromptForChat(uiLang));
   final autoKnowledge = knowledgeContextForQuery(content);
   if (autoKnowledge.isNotEmpty) sysParts.add(autoKnowledge);
+  // ★ 前缀被剥离后，必须把「用户确实用了抖音百科前缀」告诉模型。
+  //   否则模型只看到 body 里的「QQ」，就会回答“你只发了 QQ 两个字”，
+  //   既不知道用户要求百科检索，也会误判意图。
+  if (dbIntent.forced) {
+    final rule = dbIntentSystemRule(dbIntent, uiLang);
+    if (rule.isNotEmpty) sysParts.add(rule);
+  }
   if (deepThink) {
     sysParts.add('你能进行深入的多步推理。请充分展示思考过程。');
   }
@@ -1454,6 +1472,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         lang: uiLang,
         dim: chatDim,
         forcedSources: forcedSources,
+        displayContent: displayContent,
         userPrompt: deferVideoPrepare ? userPrompt : '',
         mediaParts: dbMediaParts,
         pendingVideoIds:
@@ -1485,7 +1504,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     }
 
     final now = DateTime.now();
-    final savedContent = content.isEmpty ? '[工具模式]' : content;
+    final savedContent = savedUserText.isEmpty ? '[工具模式]' : savedUserText;
     final userMsg = DsMessage(
       id: 'dsm_${fmtStamp14(now)}_${randomHex(6)}',
       sessionId: sessionID,
@@ -1524,11 +1543,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     if (sess != null) {
       title = sess.title;
       if (title.isEmpty || title == '新对话') {
-        final runes = content.runes.toList();
+        final runes = savedUserText.runes.toList();
         if (runes.length > 18) {
           title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
         } else if (runes.isNotEmpty) {
-          title = content;
+          title = savedUserText;
         }
       }
     }
@@ -1606,7 +1625,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
 
   final now = DateTime.now();
-  final savedContent = content.isEmpty ? '[已上传文件]' : content;
+  final savedContent = savedUserText.isEmpty ? '[已上传文件]' : savedUserText;
   final userMsg = DsMessage(
     id: 'dsm_${fmtStamp14(now)}_${randomHex(6)}',
     sessionId: sessionID,
@@ -1635,13 +1654,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (sess != null) {
     title = sess.title;
     if (title.isEmpty || title == '新对话') {
-      final runes = content.runes.toList();
+      final runes = savedUserText.runes.toList();
       if (runes.isEmpty) {
         title = '[文件对话]';
       } else if (runes.length > 18) {
         title = '${String.fromCharCodes(runes.sublist(0, 18))}…';
       } else {
-        title = content;
+        title = savedUserText;
       }
     }
   }

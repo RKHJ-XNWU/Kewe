@@ -88,8 +88,8 @@ knowledge/
 - 默认最大输出：384K = **384000**；不得把 384000 静默截成 300000。
 - 可选全局档位：64K / 128K / 256K / 384K，对应 64000 / 128000 / 256000 / 384000。
 - 角色扮演 / charter / character 模型：**固定 32000**（唯一不按「上限」处理的规则）。
-- Doubao-Seed-2.0-lite：**上限 128000**（可更低）。
-- Doubao-Seed-2.0-mini / Doubao-Seed-2.0-turbo / GLM-5.2：**上限 256000**（可更低）。
+- Doubao-Seed-2.0-lite / Doubao-Seed-2.0-mini：**上限 128000**（可更低）。
+- Doubao-Seed-2.0-turbo / GLM-5.2：**上限 256000**（可更低）。
 - Doubao-Seed-2.1 lite / Pro / turbo / Evolving：**上限 256000**（可更低）。
 - 其它模型：使用当前全局档位。
 - 上限模型实际发送 = min(所选档位, 模型上限)，允许更低，绝不放大到上限之上。

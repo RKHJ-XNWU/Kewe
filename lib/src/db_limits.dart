@@ -9,7 +9,8 @@
 //   Seed-Character / charter 角色扮演模型 → 固定 32K=32,000（不随全局档位变化）；
 //   其它特例模型只设「最大上限」，实际发送 = min(所选档位, 模型上限)，允许更低：
 //     Doubao-Seed-2.0-lite → 128K=128,000；
-//     Doubao-Seed-2.0-mini / Doubao-Seed-2.0-turbo / GLM-5.2 → 256K=256,000；
+//     Doubao-Seed-2.0-mini → 128K=128,000；
+//     Doubao-Seed-2.0-turbo / GLM-5.2 → 256K=256,000；
 //     Doubao-Seed-2.1 lite / Pro / turbo / Evolving → 256K=256,000。
 // · 档位保存在 data/output_limit.txt；预设、自定义、DeepSeek、豆包、
 //   聊天、续写及模型能力目录都读取同一个值。
@@ -37,7 +38,7 @@ const Map<int, int> DB_LEGACY_OUTPUT_TOKENS = <int, int>{
 const int DB_FORCED_CTX_TOKENS = 1024 * DB_TOKEN_K;
 const int DB_CHARACTER_OUTPUT_TOKENS = 32 * DB_TOKEN_K;
 const int DB_DOUBAO_20_LITE_OUTPUT_TOKENS = 128 * DB_TOKEN_K;
-const int DB_DOUBAO_20_MINI_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
+const int DB_DOUBAO_20_MINI_OUTPUT_TOKENS = 128 * DB_TOKEN_K;
 const int DB_GLM_52_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 const int DB_DOUBAO_21_OUTPUT_TOKENS = 256 * DB_TOKEN_K;
 
@@ -71,7 +72,7 @@ const List<String> dbDoubao20LiteModelPrefixes = <String>[
   'doubao-lite-2-0',
   'doubao-lite-2.0',
 ];
-// 用户指定：Doubao-Seed-2.0-mini 最大上限 256K（十进制 256000）。
+// 用户指定：Doubao-Seed-2.0-mini 最大上限 128K（十进制 128000）。
 const List<String> dbDoubao20MiniModelPrefixes = <String>[
   'doubao-seed-2-0-mini',
   'doubao-seed-2.0-mini',
@@ -266,8 +267,8 @@ bool dbIsDoubao21Model(String model) {
 
 bool dbHasForcedLimits(String model) => model.trim().isNotEmpty;
 
-/// 返回「模型最大上限」：角色扮演 32,000；2.0-lite 128,000；
-/// 2.0-mini / 2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo / Evolving 256,000；其它 0。
+/// 返回「模型最大上限」：角色扮演 32,000；2.0-lite / 2.0-mini 128,000；
+/// 2.0-turbo / GLM-5.2 / 2.1 lite・Pro・turbo / Evolving 256,000；其它 0。
 /// 该值只是上限：调用方可以传更小的 max_tokens，但绝不能超过它。
 int dbSpecialModelMaxOutput(String model) {
   if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
