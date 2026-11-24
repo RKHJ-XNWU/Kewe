@@ -789,7 +789,7 @@ Future<({String text, dynamic usage})> dbChatTextWithUsage(
     'messages': msgs,
     'stream': false,
     'max_tokens': maxTokens,
-    'temperature': temperature,
+    'temperature': dbEffectiveTemperature(useModel, temperature),
   };
   final r = await _httpRaw('POST', dbChatEndpoint(),
       headers: _jsonHeaders(cfg.apiKey),
@@ -834,7 +834,7 @@ Future<String> _dbChatRawOnce(
     'messages': msgs,
     'stream': false,
     'max_tokens': maxTokens,
-    'temperature': temperature,
+    'temperature': dbEffectiveTemperature(model, temperature),
     if (thinking) 'thinking': <String, dynamic>{'type': 'enabled'},
   };
   final r = await _httpRaw('POST', dbChatEndpoint(),

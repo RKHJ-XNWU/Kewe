@@ -294,6 +294,10 @@ int dbForcedMaxOutput(String model) {
 
 /// 请求边界收紧：在调用方给出的 maxTokens 基础上套模型上限，
 /// 允许调用方传更小值（如工具模式、短回答），但绝不放大到上限之上。
+/// Kimi 系列强制采样温度 1.0；其它模型原样返回调用方温度（原有逻辑不变）。
+double dbEffectiveTemperature(String model, double temperature) =>
+    dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : temperature;
+
 int dbClampToModelCap(String model, int maxTokens) {
   if (dbIsCharacterModel(model)) return DB_CHARACTER_OUTPUT_TOKENS;
   final base = maxTokens > 0 ? maxTokens : dbCurrentOutputLimit();

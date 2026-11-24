@@ -329,7 +329,7 @@ Future<
   String apiUrl = DS_API_URL,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temperature0 = temperature < 0 ? 0.0 : temperature;
+  var temperature0 = dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
 
   // 豆包"快速模式"启用时禁用深度思考
   // （实测：到首段正文的等待时间 16.83s → 0.86s）
@@ -477,7 +477,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
   Map<String, dynamic>? extraBody,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temp = temperature;
+  var temp = dbEffectiveTemperature(model, temperature);
   if (temp <= 0) temp = 1.0;
 
   final thinkParam = apiUrl == DS_API_URL ? null : dbThinkingParam(model);
@@ -572,7 +572,7 @@ Future<DsRawResponse> callDsChatAPIRaw(
   String apiUrl = DS_API_URL,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  final temp = temperature < 0 ? 0.0 : temperature;
+  final temp = dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
 
   final body = <String, dynamic>{
     'model': model,
@@ -634,7 +634,7 @@ Future<void> callDsChatAPIStream(
   void Function(List<Map<String, dynamic>> references)? onReferences,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temp = temperature;
+  var temp = dbEffectiveTemperature(model, temperature);
   if (temp <= 0) temp = 1.0;
 
   // ★ 豆包（方舟）通道：快速模式必须真正生效。
@@ -1166,7 +1166,7 @@ Future<String> callDsVisionAPI(String apiKey, String textPrompt,
     String imageBase64, String mime, int maxTokens, double temperature,
     {String model = '', String apiUrl = ''}) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temp = temperature <= 0 ? 1.0 : temperature;
+  var temp = dbEffectiveTemperature(model, temperature <= 0 ? 1.0 : temperature);
   final content = <Map<String, dynamic>>[];
   if (imageBase64.isNotEmpty) {
     content.add({
