@@ -66,6 +66,9 @@
         speaking: false,
         curText: '',
         curUserText: '',
+        lastUserFinal: '',
+        lastUserDelta: '',
+        userDeltaCumulative: false,
         audioText: '',
         audioFinal: '',
         audioTextSeen: false,
@@ -991,6 +994,8 @@
             V.audioFinal = '';
             V.audioTextSeen = false;
             V.textFinal = '';
+            // 新一轮回答开始后，下一句用户语音不再与上一轮做前缀合并。
+            V.lastUserFinal = '';
             if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
             setCallStatusUi('speaking');
             return;
@@ -1073,6 +1078,9 @@
         }
         if (t === 'conversation.item.input_audio_transcription.started') {
             V.curUserText = '';
+            V.lastUserFinal = '';
+            V.lastUserDelta = '';
+            V.userDeltaCumulative = false;
             setCenterStatus('');
             return;
         }
@@ -1081,10 +1089,19 @@
             // 这里做前缀识别，避免把同一句听写重复拼接成“请问啊？请问一下…”。
             var ud = (typeof m.delta === 'string') ? m.delta : '';
             if (ud) {
-                if (V.curUserText && ud.indexOf(V.curUserText) === 0) {
+                V.lastUserDelta = ud;
+                if (!V.curUserText) {
                     V.curUserText = ud;
-                } else if (!V.curUserText || ud !== V.curUserText) {
-                    V.curUserText += ud;
+                } else {
+                    var kPrev = transcriptKey(V.curUserText);
+                    var kNew = transcriptKey(ud);
+                    if (kNew && kPrev && kNew.indexOf(kPrev) >= 0) {
+                        // 服务端下发的是“累计全文”，不是增量：直接替换。
+                        V.curUserText = ud;
+                        V.userDeltaCumulative = true;
+                    } else if (kNew !== kPrev) {
+                        V.curUserText += ud;
+                    }
                 }
                 setCenterStatus((V.userName || tr('you')) + '：' + V.curUserText);
             }
@@ -1094,10 +1111,42 @@
             // 最终字幕必须使用服务端原样返回的 transcript；
             // 不能退到 m.text（那可能是别的字段/模型文本），否则会出现
             // “显示的字和用户说的不一致”。仅在 transcript 缺失时用本地增量兜底。
-            var ut = (typeof m.transcript === 'string') ? m.transcript : V.curUserText;
+            var ut;
+            if (typeof m.transcript === 'string' && m.transcript.trim()) {
+                ut = m.transcript;
+                // 有些服务端的 completed transcript 会把多段累计结果再拼一遍；
+                // 若已确认是累计式 delta，且最后一段完整句就在 transcript 内，
+                // 取最后一段，避免出现「豆包你好…豆包你好…」的重复原文。
+                if (V.userDeltaCumulative && V.lastUserDelta) {
+                    var kT = transcriptKey(ut);
+                    var kD = transcriptKey(V.lastUserDelta);
+                    if (kD && (kT.indexOf(kD) >= 0 || kD.indexOf(kT) >= 0)) {
+                        ut = V.lastUserDelta;
+                    }
+                }
+            } else {
+                // 累计式转写时，最后一个 delta 才是完整原句；增量式才用拼接结果。
+                ut = V.userDeltaCumulative ? V.lastUserDelta : V.curUserText;
+            }
             V.curUserText = '';
             ut = String(ut || '').replace(/\r/g, '').trim();
-            if (ut) addTurn('user', ut);
+            if (ut) {
+                var kFinal = transcriptKey(ut);
+                var kLast = transcriptKey(V.lastUserFinal);
+                var lastTurn = V.turns.length ? V.turns[V.turns.length - 1] : null;
+                if (kLast && kFinal && kFinal.indexOf(kLast) >= 0 &&
+                    lastTurn && lastTurn.role === 'user') {
+                    // 同一句话的多个 completed 事件：用最新完整版替换上一段，
+                    // 不再生成多条“豆包你好…豆包你好…”气泡。
+                    lastTurn.text = ut.length > 2000 ? ut.slice(0, 2000) : ut;
+                    lastTurn.seq = ++V.seq;
+                    lastTurn.at = Date.now();
+                    renderSubs();
+                } else {
+                    addTurn('user', ut);
+                }
+                V.lastUserFinal = ut;
+            }
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.failed') {
@@ -1128,6 +1177,13 @@
             el.classList.remove('show');
             el.textContent = '';
         }
+    }
+
+    // 语音转写归一化：去掉空格/标点后再比较，用来识别「累计式转写」。
+    // 只用于显示去重，不改动任何音频或计费逻辑。
+    function transcriptKey(s) {
+        return String(s || '').toLowerCase()
+            .replace(/[\s，,。.？?！!、；;：:…·\-—~～'"“”‘’（）()\[\]【】]/g, '');
     }
 
     function addTurn(role, text) {
