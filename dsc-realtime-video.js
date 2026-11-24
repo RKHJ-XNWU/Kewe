@@ -69,6 +69,9 @@
         lastUserFinal: '',
         lastUserDelta: '',
         userDeltaCumulative: false,
+        liveUserTurn: null,
+        liveAiTurn: null,
+        subsTimer: null,
         audioText: '',
         audioFinal: '',
         audioTextSeen: false,
@@ -573,6 +576,12 @@
         V.curText = '';
         V.curUserText = '';
         V.lastAssistantText = '';
+        V.lastUserFinal = '';
+        V.lastUserDelta = '';
+        V.userDeltaCumulative = false;
+        V.liveUserTurn = null;
+        V.liveAiTurn = null;
+        if (V.subsTimer) { clearTimeout(V.subsTimer); V.subsTimer = null; }
         V.audioText = '';
         V.audioFinal = '';
         V.audioTextSeen = false;
@@ -988,14 +997,15 @@
             return;
         }
         if (t === 'response.created') {
+            // 上一轮若因网络/取消没有收到 done，先把残留的实时气泡收口。
+            if (V.liveUserTurn) closeLiveTurn('liveUserTurn');
+            if (V.liveAiTurn) closeLiveTurn('liveAiTurn');
             V.speaking = true;
             V.responseSeen = true;
             V.audioText = '';
             V.audioFinal = '';
             V.audioTextSeen = false;
             V.textFinal = '';
-            // 新一轮回答开始后，下一句用户语音不再与上一轮做前缀合并。
-            V.lastUserFinal = '';
             if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
             setCallStatusUi('speaking');
             return;
@@ -1004,33 +1014,39 @@
         //   有细微差异；优先用 response.output_audio_transcript，确保气泡
         //   与用户听到的语音一致。没有该事件时才回退 output_text。
         if (t === 'response.output_audio_transcript.delta' || t === 'response.audio_transcript.delta') {
-            V.audioTextSeen = true;
-            var atd = m.delta || '';
+            var atd = (typeof m.delta === 'string') ? m.delta : ((typeof m.text === 'string') ? m.text : '');
             if (atd) {
-                V.audioText += atd;
-                var shown = V.audioText.length > 90 ? V.audioText.slice(-90) : V.audioText;
-                setCenterStatus(shown);
+                V.audioTextSeen = true;
+                // 语音字幕与用户转写一样，部分服务端会发累计全文而不是增量。
+                V.audioText = mergeTranscript(V.audioText, atd);
+                showLiveAssistant(V.audioText);
             }
             return;
         }
         if (t === 'response.output_audio_transcript.done' || t === 'response.audio_transcript.done') {
-            V.audioTextSeen = true;
-            V.audioFinal = String(m.transcript || m.text || V.audioText || '');
+            var atFinal = String(m.transcript || m.text || '');
+            V.audioFinal = mergeTranscript(V.audioText, atFinal);
             V.audioText = '';
+            if (V.audioFinal) {
+                V.audioTextSeen = true;
+                showLiveAssistant(V.audioFinal);
+            }
             return;
         }
         if (t === 'response.output_text.delta' || t === 'response.text.delta') {
-            var dl = m.delta || '';
+            var dl = (typeof m.delta === 'string') ? m.delta : ((typeof m.text === 'string') ? m.text : '');
             if (dl) {
-                V.curText += dl;
-                setCenterStatus(V.curText.length > 90 ? V.curText.slice(-90) : V.curText);
+                V.curText = mergeTranscript(V.curText, dl);
+                // 有真实语音字幕时以语音字幕为准，文本流仅作兜底保存；
+                // 没有语音字幕时，文本流也必须实时上屏，不能等 done。
+                if (!V.audioTextSeen) showLiveAssistant(V.curText);
             }
             return;
         }
         if (t === 'response.output_text.done' || t === 'response.text.done') {
-            if (V.audioTextSeen) return; // 已有实际语音字幕，忽略文本流
-            V.textFinal = String(m.text || V.curText || '');
+            V.textFinal = mergeTranscript(V.curText, String(m.text || ''));
             V.curText = '';
+            if (!V.audioTextSeen && V.textFinal) showLiveAssistant(V.textFinal);
             return;
         }
         if (t === 'response.output_audio.started' || t === 'response.audio.started') {
@@ -1048,12 +1064,14 @@
         }
         if (t === 'response.done') {
             V.speaking = false;
+            // 优先实际播报的语音字幕；语音字幕为空时才回退文本流。
             var spoken = String(V.audioFinal || V.audioText || '').trim();
+            if (!spoken) spoken = String(V.textFinal || V.curText || '').trim();
             if (spoken) {
-                addTurn('assistant', spoken);
-            } else if (!V.audioTextSeen) {
-                var finalText = String(V.textFinal || V.curText || '').trim();
-                if (finalText) addTurn('assistant', finalText);
+                if (V.liveAiTurn) finalizeLiveTurn('liveAiTurn', spoken);
+                else addTurn('assistant', spoken);
+            } else {
+                closeLiveTurn('liveAiTurn');
             }
             V.audioText = '';
             V.audioFinal = '';
@@ -1066,6 +1084,11 @@
         }
         if (t === 'response.canceled') {
             V.speaking = false;
+            // 被打断时保留豆包已经说出口的部分；用户这边的转写仍在继续，
+            // 不能在这里提前收口，否则下一段 delta 会新建出第二个用户气泡。
+            if (V.liveAiTurn) {
+                closeLiveTurn('liveAiTurn', V.liveAiTurn.text);
+            }
             V.curText = '';
             V.audioText = '';
             V.audioFinal = '';
@@ -1077,6 +1100,8 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.started') {
+            // 新一句开始：上一句若还没收到 completed，先把已识别部分收口。
+            if (V.liveUserTurn) closeLiveTurn('liveUserTurn', V.liveUserTurn.text);
             V.curUserText = '';
             V.lastUserFinal = '';
             V.lastUserDelta = '';
@@ -1103,7 +1128,8 @@
                         V.curUserText += ud;
                     }
                 }
-                setCenterStatus((V.userName || tr('you')) + '：' + V.curUserText);
+                // 用户还在说话时就把识别结果放进字幕气泡，和豆包语音通话一致。
+                showLiveUser(V.curUserText);
             }
             return;
         }
@@ -1120,7 +1146,11 @@
                 if (V.userDeltaCumulative && V.lastUserDelta) {
                     var kT = transcriptKey(ut);
                     var kD = transcriptKey(V.lastUserDelta);
-                    if (kD && (kT.indexOf(kD) >= 0 || kD.indexOf(kT) >= 0)) {
+                    // transcript 自身干净且与最后一段等价时保留官方标点；
+                    // 只有 transcript 明显把最后一段又包在前面时才取最后一段。
+                    if (kD && kT && kT !== kD &&
+                        ((kT.indexOf(kD) >= 0 && kT.length > kD.length + 2) ||
+                         kD.indexOf(kT) >= 0)) {
                         ut = V.lastUserDelta;
                     }
                 }
@@ -1134,12 +1164,14 @@
                 var kFinal = transcriptKey(ut);
                 var kLast = transcriptKey(V.lastUserFinal);
                 var lastTurn = V.turns.length ? V.turns[V.turns.length - 1] : null;
-                if (kLast && kFinal && kFinal.indexOf(kLast) >= 0 &&
+                if (V.liveUserTurn) {
+                    // 流式气泡已经存在：直接收口为最终文本，不再新建一条。
+                    closeLiveTurn('liveUserTurn', ut);
+                } else if (kLast && kFinal && kFinal.indexOf(kLast) >= 0 &&
                     lastTurn && lastTurn.role === 'user') {
                     // 同一句话的多个 completed 事件：用最新完整版替换上一段，
                     // 不再生成多条“豆包你好…豆包你好…”气泡。
                     lastTurn.text = ut.length > 2000 ? ut.slice(0, 2000) : ut;
-                    lastTurn.seq = ++V.seq;
                     lastTurn.at = Date.now();
                     renderSubs();
                 } else {
@@ -1150,6 +1182,7 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.failed') {
+            if (V.liveUserTurn) closeLiveTurn('liveUserTurn', V.liveUserTurn.text);
             setCenterStatus('');
             return;
         }
@@ -1186,6 +1219,106 @@
             .replace(/[\s，,。.？?！!、；;：:…·\-—~～'"“”‘’（）()\[\]【】]/g, '');
     }
 
+    // 合并流式转写：服务端可能发增量，也可能发累计全文；两种都兼容。
+    function mergeTranscript(prev, incoming) {
+        prev = String(prev || '').replace(/\r/g, '');
+        incoming = String(incoming || '').replace(/\r/g, '');
+        if (!incoming) return prev;
+        if (!prev) return incoming;
+        var a = transcriptKey(prev);
+        var b = transcriptKey(incoming);
+        if (b && a && b.indexOf(a) >= 0) return incoming; // 累计全文
+        if (b && a && b === a) return incoming.length > prev.length ? incoming : prev;
+        return prev + incoming;
+    }
+
+    function scheduleRenderSubs() {
+        if (V.subsTimer) return;
+        V.subsTimer = setTimeout(function () {
+            V.subsTimer = null;
+            renderSubs();
+        }, 36);
+    }
+
+    function ensureLiveTurn(role) {
+        var key = role === 'user' ? 'liveUserTurn' : 'liveAiTurn';
+        var t = V[key];
+        if (t && V.turns.indexOf(t) >= 0) return t;
+        t = {
+            at: Date.now(),
+            role: role === 'user' ? 'user' : 'assistant',
+            text: '',
+            seq: ++V.seq,
+            lang: curLang(),
+            live: true
+        };
+        V.turns.push(t);
+        V[key] = t;
+        return t;
+    }
+
+    function applyLiveText(t, text) {
+        text = String(text || '').replace(/\r/g, '').trim();
+        if (!t || !text) return;
+        t.text = text.length > 2000 ? text.slice(0, 2000) : text;
+        t.live = true;
+        scheduleRenderSubs();
+    }
+
+    function showLiveUser(text) {
+        var t = ensureLiveTurn('user');
+        applyLiveText(t, text);
+    }
+
+    function showLiveAssistant(text) {
+        var t = ensureLiveTurn('assistant');
+        applyLiveText(t, text);
+    }
+
+    function finalizeLiveTurn(key, text) {
+        var t = V[key];
+        if (!t) {
+            if (text) addTurn(key === 'liveUserTurn' ? 'user' : 'assistant', text);
+            return;
+        }
+        if (text) {
+            text = String(text || '').replace(/\r/g, '').trim();
+            if (text) t.text = text.length > 2000 ? text.slice(0, 2000) : text;
+        }
+        t.live = false;
+        V[key] = null;
+        if (t.role === 'assistant') V.lastAssistantText = t.text;
+        if (!String(t.text || '').trim()) {
+            var i = V.turns.indexOf(t);
+            if (i >= 0) V.turns.splice(i, 1);
+        }
+        renderSubs();
+    }
+
+    function closeLiveTurn(key, text) {
+        var t = V[key];
+        if (!t) return;
+        if (text) {
+            text = String(text || '').replace(/\r/g, '').trim();
+            if (text) t.text = text.length > 2000 ? text.slice(0, 2000) : text;
+        }
+        t.live = false;
+        V[key] = null;
+        if (t.role === 'assistant' && t.text) V.lastAssistantText = t.text;
+        if (t.role === 'user' && t.text) V.lastUserFinal = t.text;
+        if (!String(t.text || '').trim()) {
+            var i = V.turns.indexOf(t);
+            if (i >= 0) V.turns.splice(i, 1);
+        }
+        renderSubs();
+    }
+
+    function flushLiveTurns() {
+        closeLiveTurn('liveUserTurn');
+        closeLiveTurn('liveAiTurn');
+        if (V.subsTimer) { clearTimeout(V.subsTimer); V.subsTimer = null; }
+    }
+
     function addTurn(role, text) {
         text = String(text || '').trim();
         if (!text) return;
@@ -1206,21 +1339,51 @@
     function renderSubs() {
         var box = $('dscVcSubs');
         if (!box) return;
-        box.innerHTML = '';
         var recent = V.turns.slice(-5);
-        recent.forEach(function (t) {
-            var row = document.createElement('div');
-            row.className = 'dsc-vc-sub ' + (t.role === 'user' ? 'me' : 'ai');
-            var who = document.createElement('span');
-            who.className = 'who';
-            who.textContent = t.role === 'user' ? (V.userName || tr('you')) : tr('doubao');
-            var txt = document.createElement('span');
-            txt.className = 'txt';
-            txt.textContent = t.text.length > 180 ? t.text.slice(-180) : t.text;
-            row.appendChild(who);
-            row.appendChild(txt);
-            box.appendChild(row);
-        });
+        var rows = box.children;
+        var same = rows.length === recent.length;
+        if (same) {
+            for (var i = 0; i < recent.length; i++) {
+                if (rows[i].getAttribute('data-seq') !== String(recent[i].seq)) {
+                    same = false;
+                    break;
+                }
+            }
+        }
+        if (same) {
+            // 流式更新时只改文字/class，不重建节点，避免每个 token 触发
+            // backdrop-filter 和入场动画，手机上会闪烁、掉帧。
+            recent.forEach(function (t, i) {
+                var row = rows[i];
+                var cls = 'dsc-vc-sub ' + (t.role === 'user' ? 'me' : 'ai') + (t.live ? ' live' : '');
+                if (row.className !== cls) row.className = cls;
+                var who = row.querySelector('.who');
+                var whoText = t.role === 'user' ? (V.userName || tr('you')) : tr('doubao');
+                if (who && who.textContent !== whoText) who.textContent = whoText;
+                var txt = row.querySelector('.txt');
+                var shown = t.text.length > 180 ? t.text.slice(-180) : t.text;
+                if (txt && txt.textContent !== shown) txt.textContent = shown;
+            });
+        } else {
+            box.innerHTML = '';
+            recent.forEach(function (t) {
+                var row = document.createElement('div');
+                row.className = 'dsc-vc-sub ' + (t.role === 'user' ? 'me' : 'ai') + (t.live ? ' live' : '');
+                row.setAttribute('data-seq', String(t.seq));
+                var who = document.createElement('span');
+                who.className = 'who';
+                who.textContent = t.role === 'user' ? (V.userName || tr('you')) : tr('doubao');
+                var txt = document.createElement('span');
+                txt.className = 'txt';
+                txt.textContent = t.text.length > 180 ? t.text.slice(-180) : t.text;
+                row.appendChild(who);
+                row.appendChild(txt);
+                box.appendChild(row);
+            });
+        }
+        var hasLive = false;
+        for (var j = 0; j < recent.length; j++) if (recent[j].live) { hasLive = true; break; }
+        box.classList.toggle('has-live', hasLive);
         box.scrollTop = box.scrollHeight;
     }
 
@@ -1369,6 +1532,8 @@
         stopCamera();
         if (V.nativeTimer) { clearTimeout(V.nativeTimer); V.nativeTimer = null; }
         V.textToken++;
+        // 挂断时收口最后一个流式气泡，避免空行写入通话记录。
+        flushLiveTurns();
 
         var payload = buildSavePayload();
         if (payload) {
