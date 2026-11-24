@@ -1001,7 +1001,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (longTextMode) {
     maxTokens = DS_MAX_OUTPUT_TOKENS;
     rounds = 1;
-    temperature = 1.0;
+    // 超长文默认 1.0，但 Lv.900–999 仍必须按 0.0 采样。
+    temperature = level >= 900 ? 0.0 : 1.0;
     logp('📚 超长文模式启用: maxTokens=$maxTokens, 目标字数=$targetChars');
   }
   // ★★★ 统一能力上限（db_limits.dart，优先级高于推理等级／超长文模式）★★★
@@ -1020,8 +1021,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     temperature = 0.0;
     rounds = 1;
   }
-  // Kimi 系列（kimi-k3 / kimi-k3.1-pro 等）强制温度 1.0；非 Kimi 模型完全沿用原有逻辑。
-  if (dbIsKimiModel(model)) {
+  // Kimi 系列（kimi-k3 / kimi-k3.1-pro 等）接口要求温度 1.0；
+  // 但 Lv.900–999 的「0.0 采样」是全局硬规则，此时不再强制 1.0。
+  if (dbIsKimiModel(model) && level < 900) {
     if (temperature != DB_KIMI_TEMPERATURE) {
       logp('🌡️ Kimi 强制温度: $model → $DB_KIMI_TEMPERATURE（原 $temperature）');
     }
@@ -1335,8 +1337,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     // 仅在附带媒体时自动关闭（不默默忽略）。
     if (useTools) {
       useTools = false;
-      // 工具模式曾把 temperature 压到 0，这里恢复默认采样温度
-      temperature = 1.0;
+      // 工具模式曾把 temperature 压到 0，这里恢复默认采样温度；
+      // Lv.900–999 仍保持全局零温度。
+      temperature = level >= 900 ? 0.0 : 1.0;
       logp('ℹ️ 因附带媒体，已自动关闭工具模式（优先思考）');
     }
   }

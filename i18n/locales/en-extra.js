@@ -572,4 +572,6 @@ B: Let’s talk about AI today.
     9分|9 min
     10分|10 min
     5分（既定）|5 min (default)
+    豆包实时视频通话|Doubao realtime video call
+    实时视频通话模块未加载|Realtime video call module is not loaded
 `);

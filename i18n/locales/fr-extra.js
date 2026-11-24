@@ -572,4 +572,6 @@ B : Parlons aujourd’hui de l’IA.
     9分|9 min
     10分|10 min
     5分（既定）|5 min (par défaut)
+    豆包实时视频通话|Appel vidéo Doubao en temps réel
+    实时视频通话模块未加载|Le module d’appel vidéo en temps réel n’est pas chargé
 `);

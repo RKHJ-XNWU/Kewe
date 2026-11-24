@@ -8,12 +8,13 @@
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%0A%3Cdefs%3E%3CradialGradient%20id%3D%22g%22%20cx%3D%2250%25%22%20cy%3D%2245%25%22%20r%3D%2260%25%22%3E%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%238b5cf6%22%2F%3E%3Cstop%20offset%3D%2255%25%22%20stop-color%3D%22%234c1d95%22%2F%3E%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%231e1b4b%22%2F%3E%3C%2FradialGradient%3E%3C%2Fdefs%3E%0A%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%2248%22%20fill%3D%22url%28%23g%29%22%2F%3E%0A%3Cg%20fill%3D%22none%22%20stroke%3D%22%23c4b5fd%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2241%22%20ry%3D%2212%22%20transform%3D%22rotate%28-24%2050%2050%29%22%20opacity%3D%220.95%22%2F%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2241%22%20ry%3D%2212%22%20transform%3D%22rotate%2838%2050%2050%29%22%20opacity%3D%220.55%22%2F%3E%0A%3Cellipse%20cx%3D%2250%22%20cy%3D%2250%22%20rx%3D%2227%22%20ry%3D%228%22%20transform%3D%22rotate%288%2050%2050%29%22%20opacity%3D%220.85%22%2F%3E%0A%3C%2Fg%3E%0A%3Ccircle%20cx%3D%2250%22%20cy%3D%2250%22%20r%3D%223.2%22%20fill%3D%22%23fde68a%22%2F%3E%0A%3Cpath%20d%3D%22M50%2022%20L53.4%2041%20L72%2044%20L53.4%2047%20L50%2066%20L46.6%2047%20L28%2044%20L46.6%2041%20Z%22%20fill%3D%22%23fbbf24%22%2F%3E%0A%3C%2Fsvg%3E" sizes="any">
     <title>聚维</title>
     <link rel="stylesheet" href="deepseek-chat.css?v=20261124-polish3">
-    <link rel="stylesheet" href="ds-files.css?v=5">
+    <link rel="stylesheet" href="ds-files.css?v=6">
+    <link rel="stylesheet" href="dsc-realtime-video.css?v=20261124-vc2">
     <link rel="stylesheet" href="ds-devtools.css?v=3">
     <link rel="stylesheet" href="peakvalley.css?v=3">
     <link rel="stylesheet" href="dsc-forum.css?v=1">
     <link rel="stylesheet" href="dsc-vocab.css?v=1">
-    <link rel="stylesheet" href="dsc-doubao.css?v=20261124-imgfull">
+    <link rel="stylesheet" href="dsc-doubao.css?v=20261124-videocall">
     <link rel="stylesheet" href="kewe-auth.css?v=20261124-auth6">
     <link rel="stylesheet" href="kewe-toplang.css?v=20261123-auth1">
     <style>
@@ -219,13 +220,6 @@
                         <input type="file" id="dscFileInput">
                     </div>
                 </div>
-                <div class="dsc-gen-panel">
-                    <div class="dsc-gen-title">🎨 AI 画像生成</div>
-                    <div class="dsc-gen-row">
-                        <input type="text" id="dscGenPrompt" placeholder="生成したい画像を描写..." autocomplete="off">
-                        <button class="dsc-gen-btn" id="dscGenBtn">🎨 生成</button>
-                    </div>
-                </div>
                 <div class="dsc-files-filter">
                     <button class="dsc-filter-chip active" data-cat="all">すべて</button>
                     <button class="dsc-filter-chip" data-cat="image">🖼️ 画像</button>
@@ -239,7 +233,7 @@
                         <input type="text" id="dscFilesSearch" placeholder="ファイル名を検索..." autocomplete="off">
                         <button class="s-clear" id="dscFilesSearchClear">✕</button>
                     </div>
-                    <label class="dsc-files-regex" id="dscFilesRegexToggle">
+                    <label class="dsc-files-regex" id="dscFilesRegexToggle" title="正規表現">
                         <input type="checkbox" id="dscFilesRegexCheckbox">
                         <span>正規表現</span>
                     </label>
@@ -756,7 +750,7 @@
     <script src="i18n/ai-prompts.js?v=20261123-1"></script>
     <script src="ds-files.js?v=20261123-1"></script>
     <script src="ds-devtools.js?v=20261123-1"></script>
-    <script src="deepseek-chat.js?v=20261124-polish3"></script>
+    <script src="deepseek-chat.js?v=20261124-temp15"></script>
     <script src="dsc-control-center.js?v=20261124-ctxmono"></script>
     <script src="peakvalley.js?v=20261124i18n15"></script>
 
@@ -1031,7 +1025,8 @@
 <script src="dsc-forum.js?v=3"></script>
 <script src="dsc-vocab.js?v=1"></script>
 <script src="dsc-model-route.js?v=1"></script>
-<script src="dsc-doubao.js?v=20261123-reason6"></script>
+<script src="dsc-doubao.js?v=20261124-video-call"></script>
+<script src="dsc-realtime-video.js?v=20261124-vc2"></script>
 <script src="dsc-doubao-tools.js?v=11"></script>
     <script>
     /* ★ 停用整改：页面启动即强制清除任何残留的中转站(st)维度状态，

@@ -1009,7 +1009,15 @@ LevelParams levelToParams(int level) {
   const span = DB_REASONING_LEVEL_MAX - 1; // 999 → 998 个区间
   final maxTokens = DS_NORMAL_OUTPUT_TOKENS +
       (l - 1) * (DS_MAX_OUTPUT_TOKENS - DS_NORMAL_OUTPUT_TOKENS) ~/ span;
-  final temperature = 1.0 - (l - 1) * 0.9 / span;
+  // 采样温度范围固定 0.0–1.5：Lv.1 最高 1.5，随后线性降到 0.0；
+  // Lv.900–999 一律按 0.0 采样（贪心解码），避免高等级仍残留极小温度。
+  const double tempMax = 1.5;
+  const int tempFloorLevel = 900;
+  var temperature = 0.0;
+  if (l < tempFloorLevel) {
+    final t = tempMax * (tempFloorLevel - l) / (tempFloorLevel - 1);
+    temperature = t < 0 ? 0.0 : (t > tempMax ? tempMax : t);
+  }
   return LevelParams(maxTokens, temperature);
 }
 

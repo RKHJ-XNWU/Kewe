@@ -38,6 +38,24 @@ const String dbDuplexUrl =
 /// Seeduplex 协议要求固定的 model 值
 const String dbDuplexModel = '1.2.6.1';
 
+/// Doubao-Seed-Realtime-1.0（实时音视频）WebSocket 端点与模型
+const String dbRealtimeVideoUrl =
+    'wss://openspeech.bytedance.com/api/v3/realtime';
+const String dbRealtimeVideoModel = '1.3.0.0';
+
+/// 实时音视频只允许这四种官方 2.0 音色，默认 Vivi 2.0。
+const String dbRealtimeDefaultVoice = 'zh_female_vv_uranus_bigtts';
+const List<String> dbRealtimeVoices = <String>[
+  'zh_female_vv_uranus_bigtts', // Vivi 2.0
+  'zh_female_xiaohe_uranus_bigtts', // 小何 2.0
+  'zh_male_m191_uranus_bigtts', // 云舟 2.0
+  'zh_male_taocheng_uranus_bigtts', // 小天 2.0
+];
+
+/// 计费：实时语音 0.2 元/分钟，实时视频 0.4 元/分钟。
+const double dbVoiceYuanPerMinute = 0.2;
+const double dbVideoYuanPerMinute = 0.4;
+
 /// RTC OpenAPI 配置
 const String dbRtcHost = 'rtc.volcengineapi.com';
 const String dbRtcRegion = 'cn-north-1';
@@ -73,6 +91,20 @@ String dbDuplexSystemPrompt(String lang) {
       '4. 没听清时只简短追问一次。';
 }
 
+/// 实时音视频提示词：在语音版本上增加「看画面」的行为约束。
+String dbVideoSystemPrompt(String lang) {
+  final say = _dbSpeakLang[lang] ?? _dbSpeakLang['zh']!;
+  return '你正在和用户进行实时视频通话，可以通过摄像头看到用户的画面。$say\n'
+      '语言不受任何限制，任何语言都可以使用，始终跟随用户当前使用的语言。\n'
+      '要求：\n'
+      '1. 回答最多 1000 字，最少不限，说完就停。\n'
+      '2. 不要列表、不要 Markdown、不要念代码、网址或标点符号串。\n'
+      '3. 用自然口语，句子短，便于朗读。\n'
+      '4. 结合当前画面回答；画面看不清或没有收到画面时，不要编造看到的内容，可以简短说明。\n'
+      '5. 用户关闭摄像头后，仍然可以正常语音交流。\n'
+      '6. 没听清时只简短追问一次。';
+}
+
 // ------------------------------------------------------------
 // 工具：把任意值安全转成 Map<String, dynamic>
 // ------------------------------------------------------------
@@ -93,8 +125,7 @@ String dbPrepareUpstream(
   String voice = '',
   String instructions = '',
   bool skipVoice = false,
-}) {
-  Object? decoded;
+}) {  Object? decoded;
   try {
     decoded = jsonDecode(raw);
   } catch (_) {
@@ -181,6 +212,92 @@ String dbPrepareUpstream(
     session['extension'] = extension;
   }
 
+  m['session'] = session;
+  return jsonEncode(m);
+}
+
+/// 实时音视频版 session.create 补齐：
+///   · model 固定 1.3.0.0；
+///   · 输入 pcm/16000、输出 pcm_s16le/24000；
+///   · extension.video 固定在顶层（与 1.3.0.0 文档和官方 Web Demo 一致）；
+///   · 只接受四种 2.0 官方音色，默认 Vivi 2.0。
+String dbPrepareVideoUpstream(
+  String raw,
+  DbConfig cfg, {
+  String lang = 'zh',
+  String voice = '',
+  String instructions = '',
+}) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(raw);
+  } catch (_) {
+    return raw;
+  }
+  final m = _asMap(decoded);
+  if (_str(m['type']) != 'session.create') return raw;
+
+  final session = _asMap(m['session']);
+  session['model'] = dbRealtimeVideoModel;
+
+  final audio = _asMap(session['audio']);
+  final input = _asMap(audio['input']);
+  final inFmt = _asMap(input['format']);
+  inFmt['type'] = 'pcm';
+  inFmt['rate'] = 16000;
+  input['format'] = inFmt;
+  audio['input'] = input;
+
+  final output = _asMap(audio['output']);
+  final outFmt = _asMap(output['format']);
+  outFmt['type'] = 'pcm_s16le';
+  outFmt['rate'] = 24000;
+  output['format'] = outFmt;
+  var v = _str(output['voice']);
+  if (v.isEmpty) v = _str(voice);
+  if (v.isEmpty) v = _str(cfg.duplexVoice);
+  if (v.isEmpty) v = dbRealtimeDefaultVoice;
+  v = dbNormalizeDuplexVoice(v);
+  if (!dbRealtimeVoices.contains(v)) v = dbRealtimeDefaultVoice;
+  output['voice'] = v;
+  if (cfg.duplexSpeechRate != 0) {
+    output['speed'] = cfg.duplexSpeechRate;
+  }
+  audio['output'] = output;
+  session['audio'] = audio;
+
+  if (_str(session['instructions']).isEmpty) {
+    final custom = _str(instructions).isNotEmpty
+        ? _str(instructions)
+        : _str(cfg.duplexInstructions);
+    session['instructions'] =
+        custom.isNotEmpty ? custom : dbVideoSystemPrompt(lang);
+  }
+
+  // 旧版前端若误把 extension 塞进 session，这里迁移到顶层，避免 1.3.0.0 忽略视频配置。
+  final legacy = _asMap(session.remove('extension'));
+  final extension = _asMap(m['extension']);
+  final legacyDialog = _asMap(legacy['dialog']);
+  final dialog = _asMap(extension['dialog']);
+  for (final e in legacyDialog.entries) {
+    dialog.putIfAbsent(e.key, () => e.value);
+  }
+  final extra = _asMap(dialog['extra']);
+  if (cfg.duplexMusic) extra['enable_music'] = true;
+  if (cfg.duplexWebsearch) {
+    extra['enable_volc_websearch'] = true;
+    extra['volc_websearch_type'] = 'web_custom_api';
+    if (cfg.duplexWebsearchApiKey.trim().isNotEmpty) {
+      extra['volc_websearch_api_key'] = cfg.duplexWebsearchApiKey.trim();
+    }
+  }
+  if (extra.isNotEmpty) dialog['extra'] = extra;
+  if (dialog.isNotEmpty) extension['dialog'] = dialog;
+  extension['video'] = <String, dynamic>{
+    'frame_format': 'JPEG',
+    'frame_rate': 2,
+  };
+  m['extension'] = extension;
   m['session'] = session;
   return jsonEncode(m);
 }
@@ -328,6 +445,419 @@ Object? _safeDecode(String s) {
   } catch (_) {
     return null;
   }
+}
+
+// ------------------------------------------------------------
+// Doubao-Seed-Realtime-1.0 实时音视频 WebSocket 代理
+// ------------------------------------------------------------
+Future<void> handleDbRealtimeVideo(HttpRequest req) async {
+  final cfg = getDbConfig();
+  final auth = dbDuplexAuthHeaders(cfg);
+  if (auth.isEmpty) {
+    await errJson(req.response, 400,
+        '端到端实时音视频服务的认证信息未设置。请在设置界面输入豆包语音 API Key。');
+    return;
+  }
+  auth['X-Api-Connect-Id'] = randomHex(16);
+
+  final lang = trimOr(qp(req, 'lang'), 'zh');
+  final voice = trimOr(qp(req, 'voice'), dbRealtimeDefaultVoice);
+  final instructions = trimOr(qp(req, 'instructions'), '');
+
+  WebSocket client;
+  try {
+    client = await WebSocketTransformer.upgrade(req);
+  } catch (e) {
+    logp('❌ RealtimeVideo: 升级到 WebSocket 失败: $e');
+    return;
+  }
+
+  WebSocket remote;
+  try {
+    remote = await WebSocket.connect(
+      dbRealtimeVideoUrl,
+      headers: auth,
+    ).timeout(const Duration(seconds: 20));
+  } catch (e) {
+    final msg = '无法连接到实时音视频服务：${dbErrText(e)}';
+    logp('❌ RealtimeVideo: $msg');
+    try {
+      client.add(jsonEncode(<String, dynamic>{
+        'type': 'error',
+        'code': 'upstream_connect_failed',
+        'message': msg,
+      }));
+      await client.close(1011, 'upstream connect failed');
+    } catch (_) {}
+    return;
+  }
+
+  logp('🎥 RealtimeVideo 连接已开始（lang=$lang, voice=$voice）');
+
+  var closed = false;
+  var framesUp = 0;
+  var framesDown = 0;
+
+  Future<void> shutdown(String reason) async {
+    if (closed) return;
+    closed = true;
+    logp('🎥 RealtimeVideo 结束（$reason・上行 $framesUp 帧 / 下行 $framesDown 帧）');
+    try {
+      await remote.close();
+    } catch (_) {}
+    try {
+      await client.close();
+    } catch (_) {}
+  }
+
+  remote.listen(
+    (Object? data) {
+      if (closed) return;
+      framesDown++;
+      if (data is String) {
+        final t = _str(_asMap(_safeDecode(data))['type']);
+        if (t == 'session.created' ||
+            t == 'error' ||
+            t == 'response.created' ||
+            t == 'response.done') {
+          if (t.isNotEmpty) logp('🎥 RealtimeVideo ↓ $t');
+        }
+        if (t == 'error') logp('❌ RealtimeVideo 错误: $data');
+      }
+      try {
+        client.add(data);
+      } catch (e) {
+        shutdown('写入浏览器侧失败: $e');
+      }
+    },
+    onError: (Object e) => shutdown('上游错误: $e'),
+    onDone: () => shutdown('上游已断开'),
+    cancelOnError: false,
+  );
+
+  client.listen(
+    (Object? data) {
+      if (closed) return;
+      framesUp++;
+      final out = data is String
+          ? dbPrepareVideoUpstream(
+              data,
+              cfg,
+              lang: lang,
+              voice: voice,
+              instructions: instructions,
+            )
+          : data;
+      try {
+        remote.add(out);
+      } catch (e) {
+        shutdown('写入上游失败: $e');
+      }
+    },
+    onError: (Object e) => shutdown('浏览器侧错误: $e'),
+    onDone: () => shutdown('浏览器已断开'),
+    cancelOnError: false,
+  );
+}
+
+// ------------------------------------------------------------
+// 实时音视频通话记录：$DATA_DIR/jilmtshx/*.sts
+//   · 仅当前账号目录，禁止跨账号扫描；
+//   · 五段格式：时间戳|角色|文本|序号|语言 + 行尾 |；
+//   · 通话结束后一次性写入，不支持中途增量保存。
+// ------------------------------------------------------------
+String _videoRecordDir() => '$DATA_DIR/jilmtshx';
+
+List<String>? _videoRecordLines(Object? raw) {
+  if (raw is! List || raw.isEmpty) return null;
+  final out = <String>[];
+  for (final e in raw) {
+    var line = '$e'.replaceAll('\r', ' ').replaceAll('\n', ' ').trim();
+    if (line.isEmpty) continue;
+    if (!line.endsWith('|')) line = '$line|';
+    // 文本中的竖线必须由前端替换成全角｜，否则五段格式会被破坏。
+    if (line.split('|').length != 6) return null;
+    out.add(line);
+  }
+  return out.isEmpty ? null : out;
+}
+
+Future<void> handleDbVideoRecordSave(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final body = await readJsonBody(req);
+  final lines = _videoRecordLines(body['lines']);
+  if (lines == null) {
+    await errJson(req.response, 400, '通话记录格式无效：需要五段并以 | 结尾');
+    return;
+  }
+  final duration = intArgDefault(body, 'durationSec', 0);
+  final costFen = intArgDefault(body, 'costFen', 0);
+  final safeDur = duration < 0 ? 0 : (duration > 86400 ? 86400 : duration);
+  final safeCost = costFen < 0 ? 0 : (costFen > 100000 ? 100000 : costFen);
+  try {
+    final dir = _videoRecordDir();
+    ensureDir(dir);
+    final name =
+        'video_${fmtStamp14(DateTime.now())}_${safeDur}s_${safeCost}c_${randomHex(4)}.sts';
+    final file = File('$dir/$name');
+    file.writeAsStringSync('${lines.join('\n')}\n');
+    logp('🎥 实时音视频记录已保存: $name（${lines.length} 行）');
+    await jsonResponse(req.response, 200, <String, dynamic>{
+      'ok': true,
+      'file': name,
+      'count': lines.length,
+      'durationSec': safeDur,
+      'costFen': safeCost,
+    });
+  } catch (e) {
+    logp('❌ 实时音视频记录保存失败: $e');
+    await errJson(req.response, 500, '通话记录保存失败：$e');
+  }
+}
+
+Map<String, dynamic>? _parseVideoRecord(String name, File f) {
+  try {
+    final lines = <String>[];
+    for (final raw in f.readAsStringSync().split('\n')) {
+      final t = raw.trim();
+      if (t.isNotEmpty) lines.add(t);
+    }
+    final turns = <Map<String, dynamic>>[];
+    var preview = '';
+    for (final line in lines) {
+      final p = line.split('|');
+      if (p.length < 5) continue;
+      final role = p[1] == 'ai' ? 'assistant' : p[1];
+      final text = p[2];
+      turns.add(<String, dynamic>{
+        'at': int.tryParse(p[0]) ?? 0,
+        'role': role,
+        'text': text,
+        'seq': int.tryParse(p[3]) ?? 0,
+        'lang': p[4],
+      });
+      if (preview.isEmpty && role == 'user' && text.trim().isNotEmpty) {
+        preview = text.trim();
+      }
+    }
+    if (preview.length > 48) preview = '${preview.substring(0, 48)}…';
+    if (preview.isEmpty && turns.isNotEmpty) {
+      preview = _str(turns.first['text']);
+      if (preview.length > 48) preview = '${preview.substring(0, 48)}…';
+    }
+    final m = RegExp(r'video_[0-9]{8}_[0-9]{6}_([0-9]+)s_([0-9]+)c_')
+        .firstMatch(name);
+    final dur = m == null ? 0 : (int.tryParse(m.group(1) ?? '') ?? 0);
+    final fen = m == null ? 0 : (int.tryParse(m.group(2) ?? '') ?? 0);
+    return <String, dynamic>{
+      'name': name,
+      'preview': preview,
+      'lineCount': lines.length,
+      'lines': lines,
+      'turns': turns,
+      'mtime': f.statSync().modified.millisecondsSinceEpoch,
+      'durationSec': dur,
+      'costFen': fen,
+      'costYuan': fen / 100.0,
+      'mode': 'video',
+      'lang': turns.isEmpty ? '' : _str(turns.first['lang']),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+List<Map<String, dynamic>> _listVideoRecords() {
+  final dir = Directory(_videoRecordDir());
+  final out = <Map<String, dynamic>>[];
+  if (!dir.existsSync()) return out;
+  try {
+    final files = dir
+        .listSync()
+        .whereType<File>()
+        .where((f) {
+          final n = f.uri.pathSegments.isEmpty
+              ? f.path
+              : f.uri.pathSegments.last.toLowerCase();
+          return n.startsWith('video_') && n.endsWith('.sts');
+        })
+        .toList()
+      ..sort((a, b) => b.path.compareTo(a.path));
+    for (final f in files) {
+      final name = f.uri.pathSegments.isEmpty
+          ? f.path
+          : f.uri.pathSegments.last;
+      final rec = _parseVideoRecord(name, f);
+      if (rec != null) out.add(rec);
+    }
+  } catch (e) {
+    logp('⚠️ 读取实时音视频记录失败: $e');
+  }
+  return out;
+}
+
+Future<void> handleDbVideoRecordList(HttpRequest req) async {
+  if (req.method != 'GET') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'records': _listVideoRecords(),
+    'dir': 'jilmtshx',
+    'canEdit': false,
+  });
+}
+
+Future<void> handleDbVideoRecordDelete(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final body = await readJsonBody(req);
+  final targets = <String>[];
+  final nm = mStr(body, 'name').trim();
+  if (nm.isNotEmpty) targets.add(nm);
+  final names = body['names'];
+  if (names is List) {
+    for (final e in names) {
+      final v = '$e'.trim();
+      if (v.isNotEmpty) targets.add(v);
+    }
+  }
+  final dir = _videoRecordDir();
+  var removed = 0;
+  final seen = <String>{};
+  for (final name in targets) {
+    if (!seen.add(name)) continue;
+    if (name.contains('/') || name.contains('\\') || name.contains('..')) {
+      continue;
+    }
+    if (!name.startsWith('video_') || !name.toLowerCase().endsWith('.sts')) {
+      continue;
+    }
+    try {
+      final f = File('$dir/$name');
+      if (f.existsSync()) {
+        f.deleteSync();
+        removed++;
+      }
+    } catch (e) {
+      logp('⚠️ 删除实时音视频记录失败 $name: $e');
+    }
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'removed': removed,
+  });
+}
+
+Future<void> handleDbVideoRecordClear(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final dir = Directory(_videoRecordDir());
+  var removed = 0;
+  if (dir.existsSync()) {
+    try {
+      for (final f in dir.listSync().whereType<File>()) {
+        final n = f.uri.pathSegments.isEmpty
+            ? f.path
+            : f.uri.pathSegments.last;
+        if (!n.startsWith('video_') || !n.toLowerCase().endsWith('.sts')) {
+          continue;
+        }
+        try {
+          f.deleteSync();
+          removed++;
+        } catch (_) {}
+      }
+    } catch (e) {
+      logp('⚠️ 清空实时音视频记录失败: $e');
+    }
+  }
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'removed': removed,
+  });
+}
+
+/// 文字输入兜底：原生会话事件不响应时，用文本模型生成短答，再交给通话 TTS 朗读。
+Future<void> handleDbVideoTextAnswer(HttpRequest req) async {
+  if (req.method != 'POST') {
+    await errJson(req.response, 405, 'Method not allowed');
+    return;
+  }
+  final body = await readJsonBody(req);
+  final text = mStr(body, 'text').trim();
+  if (text.isEmpty) {
+    await errJson(req.response, 400, '文字内容为空');
+    return;
+  }
+  final lang = trimOr(mStr(body, 'lang'), 'zh');
+  final history = <Map<String, dynamic>>[];
+  final rawHist = body['history'];
+  if (rawHist is List) {
+    for (final e in rawHist) {
+      final m = _asMap(e);
+      final role = mStr(m, 'role');
+      final c = mStr(m, 'text');
+      if (c.trim().isEmpty) continue;
+      if (role != 'user' && role != 'assistant') continue;
+      history.add(<String, dynamic>{
+        'role': role,
+        'content': c.length > 800 ? c.substring(c.length - 800) : c,
+      });
+    }
+  }
+  if (history.length > 8) history.removeRange(0, history.length - 8);
+  history.add(<String, dynamic>{'role': 'user', 'content': text});
+  try {
+    final answer = await dbChatText(
+      '${dbVideoSystemPrompt(lang)}\n'
+      '当前是文字输入：用户打字，你负责用口语回答。不要提及这条系统说明。',
+      history,
+      maxTokens: 800,
+      temperature: 0.6,
+      timeout: const Duration(seconds: 45),
+    );
+    await jsonResponse(req.response, 200, <String, dynamic>{
+      'ok': true,
+      'text': answer.trim(),
+    });
+  } catch (e) {
+    logp('❌ 实时音视频文字回答失败: $e');
+    await errJson(req.response, 502, '文字回答生成失败：${dbErrText(e)}');
+  }
+}
+
+Future<void> handleDbRealtimeVideoStatus(HttpRequest req) async {
+  final cfg = getDbConfig();
+  final hasKey = cfg.duplexApiKey.trim().isNotEmpty ||
+      (cfg.s2sAppId.trim().isNotEmpty && cfg.s2sToken.trim().isNotEmpty);
+  await jsonResponse(req.response, 200, <String, dynamic>{
+    'ok': true,
+    'video': <String, dynamic>{
+      'available': hasKey,
+      'url': dbRealtimeVideoUrl,
+      'model': dbRealtimeVideoModel,
+      'voices': dbRealtimeVoices,
+      'defaultVoice': dbRealtimeDefaultVoice,
+      'maxFps': 2,
+      'historyDir': 'jilmtshx',
+      'rates': <String, dynamic>{
+        'voiceYuanPerMinute': dbVoiceYuanPerMinute,
+        'videoYuanPerMinute': dbVideoYuanPerMinute,
+      },
+      'reason': hasKey
+          ? ''
+          : '实时音视频服务需要豆包语音控制台的 API Key（方舟 API Key 通常会 401）',
+    },
+  });
 }
 
 // ------------------------------------------------------------

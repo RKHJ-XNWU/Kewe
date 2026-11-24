@@ -518,7 +518,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
   var temp = dbEffectiveTemperature(model, temperature);
-  if (temp <= 0) temp = 1.0;
+  if (temp < 0) temp = 1.0;
 
   final thinkParam = apiUrl == DS_API_URL ? null : dbThinkingParam(model);
   final body = <String, dynamic>{
@@ -718,7 +718,7 @@ Future<void> callDsChatAPIStream(
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
   var temp = dbEffectiveTemperature(model, temperature);
-  if (temp <= 0) temp = 1.0;
+  if (temp < 0) temp = 1.0;
 
   // ★ 豆包（方舟）通道：快速模式必须真正生效。
   //   extraBody 只在「含图片 / 音频 / 视频」时才携带 thinking:{type:enabled}；
@@ -961,8 +961,8 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
 }) async {
   var maxIter = maxIterations <= 0 ? DS_TOOL_MAX_ITERATIONS : maxIterations;
   var mt = dsResolveMaxTokens(model, maxTokens);
-  // 工具模式默认温度 0（确定性输出）；Kimi 系列按用户规则强制 1.0。
-  temperature = dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : 0.0;
+  // 工具模式沿用调用方按推理等级算出的温度；Kimi 默认 1.0、Lv.900+ 仍为 0.0。
+  temperature = dbEffectiveTemperature(model, temperature);
   final tools = dsResolveTools(model, apiUrl,
       allowSearchTools: allowSearchTools);
 
@@ -1278,7 +1278,7 @@ Future<String> callDsVisionAPI(String apiKey, String textPrompt,
     {String model = '', String apiUrl = ''}) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
   var temp =
-      dbEffectiveTemperature(model, temperature <= 0 ? 1.0 : temperature);
+      dbEffectiveTemperature(model, temperature < 0 ? 1.0 : temperature);
   final content = <Map<String, dynamic>>[];
   if (imageBase64.isNotEmpty) {
     content.add({

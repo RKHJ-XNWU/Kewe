@@ -141,6 +141,13 @@ void registerRoutes() {
   // 端到端实时语音（Seeduplex）：WebSocket 全双工
   _register('/api/doubao/realtime', handleDbRealtime);
   _register('/api/doubao/realtime/status', handleDbRealtimeStatus);
+  _register('/api/doubao/realtime-video', handleDbRealtimeVideo);
+  _register('/api/doubao/realtime-video/status', handleDbRealtimeVideoStatus);
+  _register('/api/doubao/realtime-video/text-answer', handleDbVideoTextAnswer);
+  _register('/api/doubao/realtime-video/save', handleDbVideoRecordSave);
+  _register('/api/doubao/realtime-video/list', handleDbVideoRecordList);
+  _register('/api/doubao/realtime-video/delete', handleDbVideoRecordDelete);
+  _register('/api/doubao/realtime-video/clear', handleDbVideoRecordClear);
   _register('/api/doubao/voice/save', handleDbVoiceSave);
   _register('/api/doubao/voice/list', handleDbVoiceList);
   _register('/api/doubao/voice/delete', handleDbVoiceDelete);

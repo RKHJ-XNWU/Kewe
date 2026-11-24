@@ -469,6 +469,10 @@ var EDGE_VOICE_POOL = {
         { id: 'dscDbVideoBtn', ic: '🎬', label: '豆包で動画生成', tip: '豆包動画生成', open: function () { openVideoModal(); } },
         { id: 'dscDbPodcastBtn', ic: '🎧', label: '豆包ポッドキャスト', tip: '豆包ポッドキャスト', open: function () { openPodcastModal(); } },
         { id: 'dscDbCallBtn', ic: '📞', label: '豆包音声通話', tip: '豆包音声通話', open: function () { openCallModal(); } },
+        { id: 'dscDbVideoCallBtn', ic: '📹', label: '豆包实时视频通话', tip: '豆包实时视频通话', open: function () {
+            if (window.dscVideoCall && window.dscVideoCall.open) window.dscVideoCall.open();
+            else toast(T('实时视频通话模块未加载'));
+        } },
         { id: 'dscDbAsrBtn', ic: '🎤', label: '録音ファイルを豆包で認識', tip: '録音ファイルを豆包で認識', open: function () { openAsrModal(); } },
         { id: 'dscDbTranslateBtn', ic: '🌐', label: '豆包機械翻訳', tip: '豆包機械翻訳', open: function () { openTranslateModal(); } },
         // 术语表隐藏
@@ -2365,6 +2369,10 @@ var EDGE_VOICE_POOL = {
         var info = el('div', 'dsc-db-call-info');
         info.id = 'dscDbCallInfo';
         md.appendChild(info);
+        var meter = el('div', 'dsc-db-call-meter');
+        meter.id = 'dscDbCallMeter';
+        meter.textContent = '00:00 · ¥0.00';
+        md.appendChild(meter);
 
         var stage = el('div', 'dsc-db-call-stage');
 
@@ -2737,6 +2745,8 @@ var EDGE_VOICE_POOL = {
             playing: false,
             thinking: false,
             micOn: true,
+            startedAt: 0,
+            meterTimer: null,
             history: []
         };
     }
@@ -2784,6 +2794,10 @@ var EDGE_VOICE_POOL = {
         }
         try {
             await window.dscDuplex.start();
+            if (S.call) {
+                S.call.startedAt = Date.now();
+                startCallMeter();
+            }
             setCallStatus(T('接続済み（全二重）'), 'listening');
             addBubble('sys', T('接続成功。話しかけてください！'));
             // ★ 通话中隐藏「开始通话」大按钮，界面更沉浸
@@ -2793,6 +2807,28 @@ var EDGE_VOICE_POOL = {
             addBubble('sys', T('接続失敗：') + e.message);
             setCallStatus(T('接続エラー'), '');
         }
+    }
+
+
+    // 实时语音计费：0.2 元/分钟（视频通话 0.4 元/分钟由 dsc-realtime-video.js 计时）
+    function startCallMeter() {
+        var c = S.call;
+        if (!c) return;
+        if (c.meterTimer) clearInterval(c.meterTimer);
+        var tick = function () {
+            if (!S.call || !S.call.active || !S.call.startedAt) return;
+            var sec = Math.max(0, Math.floor((Date.now() - S.call.startedAt) / 1000));
+            var mm = Math.floor(sec / 60), ss = sec % 60;
+            var hh = Math.floor(mm / 60);
+            mm = mm % 60;
+            var t = (hh > 0 ? (hh < 10 ? '0' + hh : hh) + ':' : '') +
+                (mm < 10 ? '0' + mm : mm) + ':' + (ss < 10 ? '0' + ss : ss);
+            var fen = Math.round(sec * 0.2 * 100 / 60);
+            var elM = $('dscDbCallMeter');
+            if (elM) elM.textContent = t + ' · ¥' + (fen / 100).toFixed(2);
+        };
+        tick();
+        c.meterTimer = setInterval(tick, 1000);
     }
 
     function stopCall() {
@@ -2806,6 +2842,7 @@ var EDGE_VOICE_POOL = {
                 window.dscDuplex.stop();
             } catch (e) {}
         }
+        if (c.meterTimer) { clearInterval(c.meterTimer); c.meterTimer = null; }
         c.active = false;
         c.duplex = false;
         stopCallAudio();              // 停掉正在播放的人声

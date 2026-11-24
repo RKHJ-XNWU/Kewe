@@ -298,33 +298,7 @@
         return uploadQueue;
     }
 
-    async function generateImage() {
-        var input = $('dscGenPrompt');
-        var btn = $('dscGenBtn');
-        if (!input || !btn) return;
-        var prompt = input.value.trim();
-        if (!prompt) { dsToast('画像の説明を入力してください', 'info'); return; }
-        btn.disabled = true;
-        btn.textContent = '生成中...';
-        try {
-            var res = await fetch('/api/ds-chat/generate-image', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt, width: 1024, height: 1024 })
-            });
-            var data = await res.json();
-            if (!res.ok) throw new Error(data.error || '生成に失敗');
-            dsToast('画像の生成に成功しました！', 'success');
-            input.value = '';
-            await loadDsFiles();
-            if (data.fileId) attachFile(data.fileId);
-        } catch (e) {
-            dsToast('生成に失敗: ' + e.message, 'error');
-        } finally {
-            btn.disabled = false;
-            btn.textContent = '🎨 生成';
-        }
-    }
+    // （AI 生图入口已下线：文件管理只负责文件本身，不再提供图片生成面板）
 
     function initDsFiles() {
         console.log('[DSF] 初期化');
@@ -469,8 +443,7 @@
             });
         }
 
-        var genBtn = $('dscGenBtn');
-        if (genBtn) genBtn.addEventListener('click', generateImage);
+        // AI 生图入口已下线（免费额度取消），不再绑定生成按钮。
 
         // dscFileInput* の複数選択アップロードを一元処理（deepseek-chat.js 側の重複バインドは削除済み）
         ['dscFileInputImage', 'dscFileInputDoc', 'dscFileInputVideo', 'dscFileInputAny'].forEach(function (id) {
