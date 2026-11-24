@@ -3299,6 +3299,10 @@
         if (payload && typeof payload === 'object' && !payload.dim) payload.dim = state.sendDim;
 
         var t = state.typer;
+        // 冻结本次请求的思考展示权限：只看深度思考开关。
+        // 关闭时即使上游（工具模式/兼容接口）意外回了 reasoning，
+        // 也一律不写入、不显示思考链；开启时必须展示真实思考链。
+        t.allowReasoning = !!state.deepThink;
         t.contentBuf = '';
         t.contentShown = '';
         t.reasoningBuf = '';
@@ -3416,8 +3420,9 @@
                     }
 
                     if (currentEvent === 'reasoning') {
-                        t.reasoningBuf += obj.delta || '';
-                        if (thinkPanel && thinkPanel.style.display === 'none') {
+                        // 关闭深度思考后不写入、不展示模型思考链。
+                        if (t.allowReasoning) t.reasoningBuf += obj.delta || '';
+                        if (t.allowReasoning && thinkPanel && thinkPanel.style.display === 'none') {
                             thinkPanel.style.display = '';
                         }
 
@@ -3595,13 +3600,16 @@
             thinkBody.removeAttribute('id');
             thinkBody.style.maxHeight = '';
             thinkBody.style.overflowY = '';
-            var finalReasoning = (aiMessage.reasoning && aiMessage.reasoning.trim())
-                ? aiMessage.reasoning
-                : (state.typer.reasoningBuf && state.typer.reasoningBuf.trim() ? state.typer.reasoningBuf : '');
+            var finalReasoning = state.typer && state.typer.allowReasoning
+                ? ((aiMessage.reasoning && aiMessage.reasoning.trim())
+                    ? aiMessage.reasoning
+                    : (state.typer.reasoningBuf && state.typer.reasoningBuf.trim() ? state.typer.reasoningBuf : ''))
+                : '';
             if (finalReasoning) {
                 thinkBody.textContent = finalReasoning;
                 aiMessage.reasoning = finalReasoning;
             } else {
+                aiMessage.reasoning = '';
                 thinkPanel.remove();
             }
         }
@@ -3844,6 +3852,8 @@
         var lastRender = 0;
         var ctrl = new AbortController();
         state.abortCtrl = ctrl;
+        // 冻结续写请求的思考展示权限，避免请求途中切换开关导致显示不一致。
+        var continueAllowReasoning = !!state.deepThink;
         if (typeof window.DscPetSetPhase === 'function') window.DscPetSetPhase('review', '生成を継続中…');
 
         try {
@@ -3873,7 +3883,7 @@
                 var dj = await res.json().catch(function () { return {}; });
                 if (dj && dj.aiMessage) {
                     m.content = dj.aiMessage.content || m.content;
-                    m.reasoning = dj.aiMessage.reasoning || m.reasoning;
+                    m.reasoning = continueAllowReasoning ? (dj.aiMessage.reasoning || m.reasoning) : '';
                 }
                 renderMessages();
                 decorateContinueButton();
@@ -3920,7 +3930,7 @@
                                 if (wrapS && isNearBottom(wrapS, NEAR_BOTTOM_THRESHOLD)) wrapS.scrollTop = wrapS.scrollHeight;
                             }
                         } else if (ev === 'reasoning') {
-                            reasoningAdd += obj.delta || '';
+                            if (continueAllowReasoning) reasoningAdd += obj.delta || '';
                         } else if (ev === 'error') {
                             throw new Error(obj.message || '続きの生成に失敗');
                         } else if (ev === 'done') {
@@ -3934,7 +3944,7 @@
 
             if (doneObj && doneObj.aiMessage) {
                 m.content = doneObj.aiMessage.content || (baseContent + addBuf);
-                m.reasoning = doneObj.aiMessage.reasoning || (m.reasoning || '');
+                m.reasoning = continueAllowReasoning ? (doneObj.aiMessage.reasoning || (m.reasoning || '')) : '';
                 if (doneObj.aiMessage.usage) m.usage = doneObj.aiMessage.usage;
             } else {
                 m.content = baseContent + addBuf;
@@ -3951,7 +3961,7 @@
                     content: '',
                     fileIds: [],
                     aiContent: merged,
-                    reasoning: (m.reasoning || '') + reasoningAdd,
+                    reasoning: continueAllowReasoning ? ((m.reasoning || '') + reasoningAdd) : '',
                     messageId: m.id
                 });
                 m.content = (rs && rs.aiMessage && rs.aiMessage.content) ? rs.aiMessage.content : merged;

@@ -25,6 +25,7 @@ import 'knowledge.dart';
 import 'httpsrv.dart';
 import 'model_router.dart';
 import 'relay.dart';
+import 'search_intent.dart';
 import 'sessions.dart';
 import 'session_ref.dart';
 import 'tool_gate.dart';
@@ -288,6 +289,8 @@ Future<void> handleDsChatSendStream(
           },
           usageAcc,
           apiUrl: apiUrl,
+          extraBody: extraBody,
+          allowSearchTools: webSearch,
         );
       }
     } catch (e) {
@@ -884,6 +887,19 @@ Future<void> handleDsChatSend(HttpRequest req) async {
           ? dimReq
           : '';
   final chatDim = dsDimOf(model, dimOverride);
+  // ★ 维度与通道硬校验：搜索工具绝不允许跨维度串联。
+  //   豆包维度只走豆包搜索，DeepSeek 维度只走 DeepSeek 搜索；
+  //   若前端维度与模型路由不一致，直接拒绝，避免把搜索额度花到错误通道。
+  if (dimOverride == DS_DIM_DB && !useDoubao) {
+    await dsJSONErr(res, 400,
+        dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDb'));
+    return;
+  }
+  if (dimOverride == DS_DIM_DS && useDoubao) {
+    await dsJSONErr(res, 400,
+        dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDs'));
+    return;
+  }
   if (useDoubao) {
     if (dbCfg.apiKey.isEmpty) {
       await dsJSONErr(res, 400, '已选择豆包模型，但豆包 API Key 未填写（设置 → 豆包设定）');
@@ -945,6 +961,20 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         '→ 強制 sources=${forcedSources.join(',')}');
   }
 
+  // ★★ 智能搜索总闸：联网按钮只代表“允许搜索”，不代表每条消息都必须搜。
+  //    纯问候 / 定义 / 闲聊 / 创作 / 代码等内部知识可答的内容一律跳过，
+  //    只有明确要求来源、时效性事实或外部信息时才真正调用搜索。
+  //    显式信源前缀 / 插件视为用户已明确要求，必须检索。
+  final searchIntent =
+      dbWebSearchIntent(content, forced: forcedSources.isNotEmpty);
+  final effectiveWebSearch = content.isNotEmpty &&
+      (forcedSources.isNotEmpty || (webSearch && searchIntent.need));
+  if (webSearch && !effectiveWebSearch) {
+    logp('🧭 智能搜索：跳过联网（${searchIntent.reason}）');
+  } else if (effectiveWebSearch) {
+    logp('🧭 智能搜索：允许联网（${searchIntent.reason}）');
+  }
+
   // ========== 小说模式分流 ==========
   if (novelMode) {
     if (stream) {
@@ -981,8 +1011,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final cappedOut = dbForcedMaxOutput(model);
   if (cappedOut > 0) {
     if (maxTokens != cappedOut) {
-      logp(
-          '🔒 输出上限: $model → $cappedOut tokens（原 $maxTokens，按模型上限与全局档位取小）');
+      logp('🔒 输出上限: $model → $cappedOut tokens（原 $maxTokens，按模型上限与全局档位取小）');
     }
     maxTokens = cappedOut;
   }
@@ -1007,7 +1036,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //    互相抢占，表现为「豆包模式搜索抖音百科时突然调用工具」的严重 bug。
   if (!longTextMode) {
     if (reflectionRounds > 0 && rounds > 1) {
-      logp('🔁 多轮反思已开启: $reflectionRounds 轮（rounds=$rounds, model=$model, Lv.$level 仅影响温度）');
+      logp(
+          '🔁 多轮反思已开启: $reflectionRounds 轮（rounds=$rounds, model=$model, Lv.$level 仅影响温度）');
     } else {
       logp('➡️ 单轮直接回答: model=$model, Lv.$level（等级不触发反思）');
     }
@@ -1027,7 +1057,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   DsToolGate.bind(sessionID);
   // ★ 请求租约：只有处在正在处理的聊天请求里，工具才可能被执行。
   //   请求外 / 租约过期后，任何残留绑定一律 fail-closed。
-  DsToolGate.beginRequest(sessionID, enableTools);
+  DsToolGate.beginRequest(sessionID, enableTools,
+      searchOn: effectiveWebSearch && !useDoubao);
   DsToolGate.syncMode(sessionID, enableTools);
 
   // 注入提示词（system 角色）
@@ -1108,7 +1139,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   旧实现里 ② 走的却是 DeepSeek 官方搜索（用 DeepSeek Key 计费），
   //   豆包模式白白多打一次国外请求，首包也被拖慢数秒。
   var dbNativeSearch = false;
-  if ((webSearch || forcedSources.isNotEmpty) && content.isNotEmpty) {
+  if (effectiveWebSearch) {
     final wikiOn = useDoubao && dbWikiActiveNow;
     if (wikiOn) {
       // 插件自己会检索；再叠一次官方搜索就是「两次联网」，首包被拖后数秒。
@@ -1182,35 +1213,52 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp('⛔ 检测到设备操作意图，但工具模式为 OFF，不自动启用');
   }
   Map<String, dynamic>? dbExtraBody;
-  // ★ 豆包通道：把"深度思考"开关直接映射到方舟的 thinking 字段。
-  //   不传时方舟按模型默认开启深度思考，首包会被拖到 60 秒以上，
-  //   前端看到的就是「不是流式、非常慢」。关闭时不思考，立刻逐字出流。
-  //   含媒体时由下面的 dbThinkingEnableParam 覆盖为 enabled（先看再想）。
-  if (useDoubao) {
-    dbExtraBody = deepThink
-        ? dbThinkingEnableParam(model)
-        : dbThinkingDisableParam(model);
-    // ★ 思考长度旋钮（方舟 reasoning_effort）
-    //   「思考链卡」的第一因是 summary 块间延迟，与思维链总长正相关。
-    //   这里按 UI 推理等级把默认 high 降下来，配合服务端 micro-delta
-    //   重排（DbReasoningPump），两者叠加才是真正不卡的组合。
-    final effort = dbReasoningEffortParam(model,
-        level: level, mode: deepThink ? 'on' : 'auto');
+  // ★ 深度思考开关 = 真正的上游 thinking 开关，不能只改前端 Lv.999。
+  //   豆包/方舟：thinking enabled/disabled + reasoning_effort；
+  //   DeepSeek：同样下发 thinking，官方接口不支持时由 API 层 400 回退自动摘除。
+  //   关掉深度思考时必须显式 disabled，绝不允许模型按默认值继续思考。
+  dbExtraBody =
+      deepThink ? dbThinkingEnableParam(model) : dbThinkingDisableParam(model);
+  if (dbExtraBody == null) {
+    // 能力表未识别的模型：无论开或关都显式下发，交给上游 400 回退判定。
+    // 关掉时必须显式 disabled，绝不允许模型按默认值继续思考。
+    dbExtraBody = <String, dynamic>{
+      'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
+    };
+  }
+  // ★ 思考长度旋钮：只在用户明确开启深度思考时下发。
+  //   关闭时连 reasoning_effort 都不能留，否则部分上游会按 effort 重新思考。
+  if (deepThink) {
+    final effort = dbReasoningEffortParam(model, level: level, mode: 'on');
     if (effort != null) {
       dbExtraBody = <String, dynamic>{
-        ...?dbExtraBody,
+        ...dbExtraBody,
         'reasoning_effort': effort,
       };
-      logp('🧠 调整豆包的思考长度: reasoning_effort=$effort'
+      logp('🧠 调整思考长度: reasoning_effort=$effort'
           '（推理级别 $level / ${dbThinkingProfileOf(model)}）');
     }
+  }
+  if (useDoubao) {
+    logp('🧠 豆包思考开关: ${deepThink ? 'enabled' : 'disabled'} / model=$model');
+  } else {
+    logp(
+        '🧠 DeepSeek 思考开关: ${deepThink ? 'enabled' : 'disabled'} / model=$model');
   }
   // ★ 豆包自带联网搜索（百科关闭 + 联网开启）：Chat Completions 的
   //   web_search_options 直接由方舟执行检索，消耗豆包搜索免费额度。
   //   工具模式与它互斥（同时出现会被方舟拒绝），故工具模式下不附加。
+  if (dbNativeSearch && useTools) {
+    // 方舟不允许 tools 与 web_search_options 同时出现。
+    // 用户明确开了联网搜索时，搜索优先：本次不挂工具定义，
+    // 否则「搜索按钮开着却搜不到」或被迫退回 DeepSeek 搜索都是错的。
+    useTools = false;
+    DsToolGate.syncMode(sessionID, false);
+    logp('🌐 豆包联网搜索优先：本次暂停工具模式，只走方舟原生搜索');
+  }
   if (dbNativeSearch && !useTools) {
     dbExtraBody = <String, dynamic>{
-      ...(dbExtraBody ?? const <String, dynamic>{}),
+      ...dbExtraBody,
       'web_search_options': dbWebSearchOptions(),
     };
     logp('🌐 启用豆包原生搜索（web_search_options, 每月 2 万次免费额度）');
@@ -1274,11 +1322,15 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('🎬 ${fileCtx.videoFileIds.length} 个视频将在 SSE 连接后 '
           '分割并准备');
     }
-    // 看过图片 / 音频 / 视频后，先思考再回答
-    dbExtraBody = dbThinkingEnableParam(model);
-    if (dbExtraBody != null) {
-      logp('🧠 启用豆包深度思考（理解媒体后思考再回答）');
-    }
+    // 看过图片 / 音频 / 视频后是否先思考，完全服从用户的深度思考开关。
+    // 旧实现无条件 enabled，导致用户明明关掉深度思考，一发图片又开始思考。
+    dbExtraBody = deepThink
+        ? dbThinkingEnableParam(model)
+        : dbThinkingDisableParam(model);
+    dbExtraBody ??= <String, dynamic>{
+      'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
+    };
+    logp('🧠 媒体输入后的思考状态: ${deepThink ? 'enabled' : 'disabled'}');
     // 工具模式的请求形式无法与 thinking 并用，因此
     // 仅在附带媒体时自动关闭（不默默忽略）。
     if (useTools) {
@@ -1375,7 +1427,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (stream && !longTextMode) {
     await handleDsChatSendStream(req, callKey, model, apiMessages, maxTokens,
         temperature, rounds, sessionID, content, fileIDs, useTools,
-        webSearch: webSearch || forcedSources.isNotEmpty,
+        webSearch: effectiveWebSearch,
         route: route,
         apiUrl: callUrl,
         extraBody: dbExtraBody,
@@ -1404,7 +1456,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     try {
       outcome = await callDsWithTools(callKey, model, agentMsgs, maxTokens,
           temperature, dbToolMaxIterFor(model, callUrl, rounds), usageAcc,
-          apiUrl: callUrl);
+          apiUrl: callUrl,
+          extraBody: dbExtraBody,
+          allowSearchTools: effectiveWebSearch);
     } catch (e) {
       await dsJSONErr(res, 500, '工具调用失败: $e');
       return;
@@ -1483,7 +1537,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   String reasoning;
   final wikiSrcFallback =
       useDoubao ? dbEffectiveSources(forcedSources) : const <String>[];
-  final wikiOkFallback = (webSearch || forcedSources.isNotEmpty) &&
+  final wikiOkFallback = effectiveWebSearch &&
       wikiSrcFallback.isNotEmpty &&
       fileCtx.videoFileIds.isEmpty &&
       dbWikiMediaSupported(dbMediaParts);

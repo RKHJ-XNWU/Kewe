@@ -90,18 +90,22 @@ class DsToolGate {
   static int _activeUntilMs = 0;
   static String _activeSession = '';
   static bool _activeToolsOn = false;
+  static bool _activeSearchOn = false;
   static int _activeSeq = 0;
   static const int _defaultLeaseMs = 30 * 60 * 1000;
+  static const Set<String> _searchTools = <String>{'web_search', 'fetch'};
 
   /// 启动一个请求租约。返回序号，可用于 [endRequest] 精确结束。
   static int beginRequest(String sessionId, bool toolsOn,
-      {int ttlMs = _defaultLeaseMs}) {
+      {int ttlMs = _defaultLeaseMs, bool searchOn = false}) {
     _activeSeq++;
     _activeSession = sessionId;
     _activeToolsOn = toolsOn;
+    _activeSearchOn = searchOn;
     _activeUntilMs = DateTime.now().millisecondsSinceEpoch + ttlMs;
     logp('🔓 [TOOL-GATE] 请求开始: session=$sessionId '
-        'tools=${toolsOn ? "ON" : "OFF"} lease=${ttlMs}ms');
+        'tools=${toolsOn ? "ON" : "OFF"} search=${searchOn ? "ON" : "OFF"} '
+        'lease=${ttlMs}ms');
     return _activeSeq;
   }
 
@@ -112,8 +116,14 @@ class DsToolGate {
     _activeUntilMs = 0;
     _activeSession = '';
     _activeToolsOn = false;
+    _activeSearchOn = false;
     logp('🔒 [TOOL-GATE] 请求结束（此后工具执行一律拒绝）');
   }
+
+  /// 本请求是否允许联网搜索工具。
+  /// 与工具模式分开授权：即使工具模式开着，没开搜索按钮 / 智能判定不需要，
+  /// web_search / fetch 也必须在执行层被拒绝，杜绝无脑乱搜与额度浪费。
+  static bool get searchAllowed => hasActiveRequest && _activeSearchOn;
 
   /// 续租：长时间工具调用期间保持租约有效。
   static void touchRequest() {
@@ -225,6 +235,13 @@ class DsToolGate {
           ? sessionId!
           : (_activeSession.isNotEmpty ? _activeSession : _boundSession);
 
+      // ★ 搜索工具独立授权：没有「本次请求允许联网」的租约标记，
+      //   web_search / fetch 一律拒绝，哪怕工具模式是开着的。
+      //   这样模型不能绕过搜索按钮和智能搜索判定偷偷消耗额度。
+      if (_searchTools.contains(toolName) && !_activeSearchOn) {
+        return _deny(toolName, sid, 'search-not-requested');
+      }
+
       // 通道一：正常工具模式（服务端权威状态）
       if (sid.isNotEmpty && modeOf(sid)) {
         _markPass(sid, toolName);
@@ -274,9 +291,15 @@ class DsToolGate {
   }
 
   /// 拒绝时返回给模型的文本：说明语义，并提示用户如何重新开启。
-  static String denyText(String toolName) =>
-      '🚫 工具模式已关闭，工具「$toolName」未被执行。'
-      '（执行层已拦截 · 无任何副作用。只有用户开启工具模式后才会执行）';
+  static String denyText(String toolName) {
+    if (_searchTools.contains(toolName) &&
+        lastDeniedReason == 'search-not-requested') {
+      return '🚫 本次请求未开启联网搜索，或智能搜索判定不需要联网，'
+          '工具「$toolName」未被执行（不会消耗搜索额度）。';
+    }
+    return '🚫 工具模式已关闭，工具「$toolName」未被执行。'
+        '（执行层已拦截 · 无任何副作用。只有用户开启工具模式后才会执行）';
+  }
 
   /// 自检：前端 / 运维可通过该结构确认闸门状态
   static Map<String, dynamic> diag() => <String, dynamic>{

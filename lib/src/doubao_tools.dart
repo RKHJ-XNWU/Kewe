@@ -313,6 +313,17 @@ List<Map<String, dynamic>> buildDbTools(String model) {
     return '${fn['name'] ?? ''}'.startsWith(retiredPrefix);
   });
 
+  // ★ 搜索工具维度隔离：web_search / fetch 的实现走 DeepSeek 官方接口。
+  //   豆包维度下暴露它们就等于允许「用豆包额度的话题却烧 DeepSeek 搜索」，
+  //   与商品需求（豆包维度只用豆包搜索）冲突，故从豆包工具集永久移除。
+  //   豆包的联网能力统一由 web_search_options（方舟原生搜索）提供。
+  const blockedSearchTools = <String>{'web_search', 'fetch'};
+  out.removeWhere((t) {
+    final fn = t['function'];
+    if (fn is! Map) return false;
+    return blockedSearchTools.contains('${fn['name'] ?? ''}');
+  });
+
   if (out.length > p.maxTools) {
     return out.sublist(0, p.maxTools);
   }

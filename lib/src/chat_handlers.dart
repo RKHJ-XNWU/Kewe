@@ -105,8 +105,7 @@ Future<void> handleDsChatOutputLimit(HttpRequest req) async {
   final raw = body.containsKey('tokens') ? body['tokens'] : body['maxOutput'];
   final tokens = dbParseOutputLimit(raw);
   if (tokens == null) {
-    await dsJSONErr(
-        res, 400, '最大出力は 64K / 128K / 256K / 384K から選択してください');
+    await dsJSONErr(res, 400, '最大出力は 64K / 128K / 256K / 384K から選択してください');
     return;
   }
   if (!saveDbOutputLimit(tokens)) {
@@ -143,7 +142,8 @@ int _dsEstimateTextTokens(String text) {
 
 /// 上下文快照缓存：只要「消息条数 / 末条 id / 末条内容长度 / usage」没变，
 /// 就直接返回上一次统计结果，避免 1 秒轮询反复遍历全部正文。
-final Map<String, Map<String, dynamic>> _dsCtxSnapshotCache = <String, Map<String, dynamic>>{};
+final Map<String, Map<String, dynamic>> _dsCtxSnapshotCache =
+    <String, Map<String, dynamic>>{};
 
 Future<void> handleDsChatContext(HttpRequest req) async {
   final res = req.response;
@@ -210,7 +210,10 @@ Future<void> handleDsChatContext(HttpRequest req) async {
     'updatedAt': rfc3339(DateTime.now()),
     ...dbOutputLimitInfo(),
   };
-  _dsCtxSnapshotCache[cacheKey] = <String, dynamic>{'sig': sig, 'data': payload};
+  _dsCtxSnapshotCache[cacheKey] = <String, dynamic>{
+    'sig': sig,
+    'data': payload
+  };
   // 只保留最近 64 个会话快照，防止长期运行后内存膨胀。
   if (_dsCtxSnapshotCache.length > 64) {
     final firstKey = _dsCtxSnapshotCache.keys.first;
@@ -439,9 +442,8 @@ Future<void> handleDsChatMessages(HttpRequest req) async {
     }
     page = all.sublist(start, idx);
   }
-  final pageOut = page
-      .map((m) => _msgWithReasoningPreview(m, sessionID))
-      .toList();
+  final pageOut =
+      page.map((m) => _msgWithReasoningPreview(m, sessionID)).toList();
   await dsJSONOk(res, 200, {
     'messages': pageOut.map((m) => m.toJson()).toList(),
     'hasMore': hasMore,
@@ -513,9 +515,16 @@ Future<void> handleDsChatTest(HttpRequest req) async {
     return;
   }
   try {
-    final r = await callDsChatAPI(apiKey, model, [
-      {'role': 'user', 'content': '你好'}
-    ], 8192, 1.0, null, apiUrl: callUrl);
+    final r = await callDsChatAPI(
+        apiKey,
+        model,
+        [
+          {'role': 'user', 'content': '你好'}
+        ],
+        8192,
+        1.0,
+        null,
+        apiUrl: callUrl);
     await dsJSONOk(
         res, 200, {'success': true, 'reply': r.content, 'model': model});
   } catch (e) {
@@ -563,12 +572,14 @@ Future<void> handleDsGenerateImage(HttpRequest req) async {
   if (height <= 0) height = 1024;
 
   final seed = DateTime.now().microsecondsSinceEpoch % 999999;
-  final imgURL = 'https://image.pollinations.ai/prompt/${urlEncodeComponent(prompt)}'
+  final imgURL =
+      'https://image.pollinations.ai/prompt/${urlEncodeComponent(prompt)}'
       '?width=$width&height=$height&nologo=true&seed=$seed';
 
   List<int> imgData;
   try {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     final r = await client.getUrl(Uri.parse(imgURL));
     final resp = await r.close();
     if (resp.statusCode != 200) {
@@ -641,7 +652,8 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
   var voice = mStr(body, 'voice');
   // 为了能接受 'fr' / 'fr-FR' / 'ru-RU' 等，归一化为前 2 个字符
   final ttsLangRaw = mStr(body, 'lang').toLowerCase();
-  final ttsLang = ttsLangRaw.length >= 2 ? ttsLangRaw.substring(0, 2) : ttsLangRaw;
+  final ttsLang =
+      ttsLangRaw.length >= 2 ? ttsLangRaw.substring(0, 2) : ttsLangRaw;
   if (voice.isEmpty) {
     const defVoice = <String, String>{
       'ja': 'ja-JP-NanamiNeural',
@@ -665,7 +677,8 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
   final pitch = safeProsody(mStr(body, 'pitch'), 'Hz', '+0Hz');
   final rate = safeProsody(mStr(body, 'rate'), '%', '+0%');
 
-  final chunks = splitTextForTTS(text, DS_TTS_CHUNK_RUNES, DS_TTS_CHUNK_HARD_MAX);
+  final chunks =
+      splitTextForTTS(text, DS_TTS_CHUNK_RUNES, DS_TTS_CHUNK_HARD_MAX);
   if (chunks.isEmpty) {
     await dsJSONErr(res, 400, '文本为空');
     return;
@@ -681,7 +694,8 @@ Future<void> handleDsChatTTS(HttpRequest req) async {
   }
 
   final totalRunes = runeLen(text);
-  logp('🔊 TTS 请求: $totalRunes 字、${cleaned.length} 块、音色=$voice pitch=$pitch rate=$rate');
+  logp(
+      '🔊 TTS 请求: $totalRunes 字、${cleaned.length} 块、音色=$voice pitch=$pitch rate=$rate');
 
   res.statusCode = 200;
   res.headers.contentType = ContentType('audio', 'mpeg');
@@ -754,7 +768,21 @@ Future<void> handleDsChatSTT(HttpRequest req) async {
   try {
     File(inFile).writeAsBytesSync(audioData);
     final ff = await runProcess(
-        'ffmpeg', ['-y', '-loglevel', 'error', '-i', inFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wavFile],
+        'ffmpeg',
+        [
+          '-y',
+          '-loglevel',
+          'error',
+          '-i',
+          inFile,
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-c:a',
+          'pcm_s16le',
+          wavFile
+        ],
         timeout: const Duration(seconds: 120));
     if (ff.code != 0) {
       logp('❌ STT 音频转换失败: ${ff.out}');
@@ -900,7 +928,8 @@ Future<void> handleDsChatAbortSave(HttpRequest req) async {
     }
   }
 
-  logp('⏹ 已停止：session=$sessionID ai=${runeLen(aiContent)} 字（messageId=$messageID）');
+  logp(
+      '⏹ 已停止：session=$sessionID ai=${runeLen(aiContent)} 字（messageId=$messageID）');
   await dsJSONOk(res, 200, {
     'stopped': true,
     'userMessage': userMsg?.toJson(),
@@ -936,8 +965,8 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   }
   final cfg = getDsConfig();
   // 历史值（如 doubao-seed-2-1-pro-260628）统一到当前版本号，避免 404
-  final model = dbCanonicalModelValue(
-      trimOr(mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model));
+  final model = dbCanonicalModelValue(trimOr(
+      mStr(body, 'model'), cfg.model.isEmpty ? DS_DEFAULT_MODEL : cfg.model));
 
   // ★★★ 停用整改：中转站（st 维度）聊天入口硬拦截 ★★★
   //   无论前端如何传参，只要显式 dim=st 或模型命中中转站目录，一律 403 拒绝，
@@ -959,9 +988,7 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   final useDoubao = !useRelay && dbIsChatModel(model);
   if (useDoubao) {
     if (dbCfg.apiKey.trim().isEmpty) {
-      await dsJSONErr(
-          res,
-          400,
+      await dsJSONErr(res, 400,
           dbLocalized(dsRequestLang(req, body), 'keyMissingForModel'));
       return;
     }
@@ -974,18 +1001,34 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     await dsJSONErr(res, 400, '请先设置 DeepSeek API Key');
     return;
   }
-  final callKey = useDoubao
-      ? dbCfg.apiKey
-      : (useRelay ? relayCfg.apiKey : cfg.apiKey);
+  final callKey =
+      useDoubao ? dbCfg.apiKey : (useRelay ? relayCfg.apiKey : cfg.apiKey);
   final callUrl = useDoubao
       ? dbChatEndpoint()
       : (useRelay ? relayChatEndpoint() : DS_API_URL);
-  // 豆包模型继续生成时也保持"先想再写"
-  final extraBody = useDoubao ? dbThinkingEnableParam(model) : null;
+  // ★ 继续生成也严格服从深度思考开关：
+  //   开 → 真正请求思考链；关 → 显式 disabled，不显示、不继续思考。
+  Map<String, dynamic>? extraBody =
+      deepThink ? dbThinkingEnableParam(model) : dbThinkingDisableParam(model);
+  if (extraBody == null) {
+    extraBody = <String, dynamic>{
+      'thinking': <String, dynamic>{
+        'type': deepThink ? 'enabled' : 'disabled'
+      },
+    };
+  }
+  if (deepThink) {
+    final effort = dbReasoningEffortParam(model, level: level, mode: 'on');
+    if (effort != null) {
+      extraBody = <String, dynamic>{
+        ...extraBody,
+        'reasoning_effort': effort,
+      };
+    }
+  }
 
   // ★ 只把「同一维度」的历史发给模型，豆包与 DeepSeek 互不可见
-  final history = getDsMessages(sessionID,
-      dim: contDim);
+  final history = getDsMessages(sessionID, dim: contDim);
   var oldReasoning = '';
   if (messageID.isNotEmpty) {
     for (final m in history) {
@@ -1005,7 +1048,8 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   final params = levelToParams(level);
   var maxTokens = params.maxTokens;
   // Kimi 系列强制温度 1.0；其它模型沿用推理等级给出的原值。
-  final contTemp = dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : params.temperature;
+  final contTemp =
+      dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : params.temperature;
   final contForcedOut = dbForcedMaxOutput(model);
   if (contForcedOut > 0) {
     if (maxTokens != contForcedOut) {
@@ -1075,18 +1119,19 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
   final merged = mergeContinuation(base, addBuf.toString());
   var finalReasoning = oldReasoning;
   final rsn = reasoningBuf.toString();
-  if (rsn.isNotEmpty) {
+  if (deepThink && rsn.isNotEmpty) {
     if (finalReasoning.trim().isEmpty) {
       finalReasoning = rsn;
     } else {
-      finalReasoning = '${finalReasoning.replaceAll(RegExp(r'\n+$'), '')}\n$rsn';
+      finalReasoning =
+          '${finalReasoning.replaceAll(RegExp(r'\n+$'), '')}\n$rsn';
     }
   }
 
   DsMessage? aiMsg;
   if (messageID.isNotEmpty) {
-    final upd = updateDsMessageContent(sessionID, messageID, merged,
-        finalReasoning, usageAcc.snapshot(),
+    final upd = updateDsMessageContent(
+        sessionID, messageID, merged, finalReasoning, usageAcc.snapshot(),
         dim: contDim);
     if (upd != null) {
       aiMsg = upd;
@@ -1110,7 +1155,8 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     aiMsg = a;
   }
 
-  logp('✅ 継続生成完了: 追加 ${runeLen(addBuf.toString())} 文字、結合後 ${runeLen(merged)} 文字');
+  logp(
+      '✅ 継続生成完了: 追加 ${runeLen(addBuf.toString())} 文字、結合後 ${runeLen(merged)} 文字');
   await sse.send('done', {
     'aiMessage': aiMsg?.toJson(),
     'content': merged,
@@ -1136,8 +1182,7 @@ String dsSanitizeTranslatedMarkdown(String raw) {
   s = s.trim();
 
   // 去除开头标签（"翻译："、"译文："、"訳文："…）
-  final label = RegExp(
-      r'^(?:翻訳|翻譯|訳文|译文|譯文|中文翻译|中文翻譯|翻訳結果|译文如下)\s*[:：]\s*');
+  final label = RegExp(r'^(?:翻訳|翻譯|訳文|译文|譯文|中文翻译|中文翻譯|翻訳結果|译文如下)\s*[:：]\s*');
   s = s.replaceFirst(label, '').trim();
 
   // 仅当整个输出被 1 个代码围栏包裹时才剥除
@@ -1160,10 +1205,7 @@ String dsSanitizeTranslatedMarkdown(String raw) {
   if (fences.isOdd) s = '$s\n```';
 
   // 去除行尾空白，把 3 个以上连续空行压缩为 2 个
-  s = s
-      .split('\n')
-      .map((l) => l.replaceAll(RegExp(r'[ \t]+$'), ''))
-      .join('\n');
+  s = s.split('\n').map((l) => l.replaceAll(RegExp(r'[ \t]+$'), '')).join('\n');
   s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n');
   return s.trim();
 }
@@ -1253,11 +1295,13 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
       final srcT = cnt(text, r'^\s*\|');
       final dstT = cnt(clean, r'^\s*\|');
       if (srcH != dstH || srcF != dstF || srcT != dstT) {
-        logp('⚠️ 翻译后 Markdown 结构差异: 标题 $srcH→$dstH / 围栏 $srcF→$dstF / 表行 $srcT→$dstT');
+        logp(
+            '⚠️ 翻译后 Markdown 结构差异: 标题 $srcH→$dstH / 围栏 $srcF→$dstF / 表行 $srcT→$dstT');
       }
     } catch (_) {}
     final usage = usageAcc.snapshot();
-    logp('🌐 翻訳完了: ${runeLen(text)} → ${runeLen(clean)} 文字 (model=$model, stream=$streamed)');
+    logp(
+        '🌐 翻訳完了: ${runeLen(text)} → ${runeLen(clean)} 文字 (model=$model, stream=$streamed)');
     await dsJSONOk(res, 200, {
       'translation': clean,
       'model': model,
@@ -1268,6 +1312,7 @@ Future<void> handleDsChatTranslate(HttpRequest req) async {
   } catch (e) {
     logp('❌ 翻訳失敗: $e');
     // ★ 不返回日语：只传详情（HTTP 402 等），文案由 UI 侧决定
-    await dsJSONOk(res, 502, {'error': 'translate_failed', 'detail': e.toString()});
+    await dsJSONOk(
+        res, 502, {'error': 'translate_failed', 'detail': e.toString()});
   }
 }

@@ -94,6 +94,11 @@ const List<String> _dbThinkingCapablePrefixes = <String>[
   'doubao-pro',
   'doubao-lite',
   'deepseek-v4',
+  // DeepSeek 官方/别名：deepseek-flash、deepseek-chat、deepseek-reasoner
+  // 必须与“深度思考”按钮联动；不支持时由 API 层 400 回退自动摘除参数。
+  'deepseek-flash',
+  'deepseek-chat',
+  'deepseek-reasoner',
   'glm-5-2',
   'glm-5-3',
 ];
@@ -122,6 +127,9 @@ const List<String> _dbEffortFamilies = <String>[
   'doubao-seed-translation',
   'kimi-k3',
   'deepseek-v4',
+  'deepseek-flash',
+  'deepseek-chat',
+  'deepseek-reasoner',
 ];
 
 /// 生成模型能力档案。
@@ -183,7 +191,10 @@ DbThinkingProfile dbThinkingProfileOf(String rawModel) {
     def = 'max';
   } else if (m.startsWith('glm-5-2')) {
     def = 'high';
-  } else if (m.startsWith('deepseek-v4')) {
+  } else if (m.startsWith('deepseek-v4') ||
+      m.startsWith('deepseek-flash') ||
+      m.startsWith('deepseek-chat') ||
+      m.startsWith('deepseek-reasoner')) {
     def = 'high';
   }
 

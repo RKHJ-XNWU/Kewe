@@ -374,6 +374,7 @@
     gate: null,
     built: false,
     checking: true,
+    authReady: false,
     shown404: false
   };
 
@@ -822,6 +823,9 @@
     });
 
     state.gate = gate;
+    // 认证状态返回前不显示登录表单，避免刷新/切换语言时“登录页一闪而过”。
+    // showGate() 会在确认未登录后把它切回 flex。
+    gate.style.display = 'none';
     state.inputs = {
       user: userInput, pass: passInput, confirm: confirmInput,
       submit: submit, err: err, rules: rules, boot: boot
@@ -1119,6 +1123,7 @@
     return fetch('/api/auth/status', { credentials: 'same-origin', cache: 'no-store' })
       .then(function (res) {
         return res.json().catch(function () { return {}; }).then(function (data) {
+          state.authReady = true;
           if (res.ok && data && data.authenticated) {
             state.authenticated = true;
             state.user = data.user || null;
@@ -1126,11 +1131,14 @@
             setTimeout(injectAccountMenu, 50);
             setTimeout(injectAccountMenu, 900);
           } else {
+            state.authenticated = false;
             showGate();
           }
         });
       })
       .catch(function () {
+        state.authReady = true;
+        state.authenticated = false;
         showGate();
       });
   }
@@ -1139,15 +1147,18 @@
     state.lang = readLang();
     patchFetch();
     try { document.documentElement.classList.add('kewe-auth-locked'); } catch (e) {}
-    // 首屏先挡住应用，等 status 返回再决定是否解密显示。
+    // 首屏先挡住应用，但登录表单保持隐藏：等 /api/auth/status 返回后再决定。
+    // 这样已登录用户刷新时不会看到登录页闪一下。
     if (document.body) buildGate();
     checkSession();
     document.addEventListener('DOMContentLoaded', function () {
-      if (state.authenticated) {
-        if (state.gate) hideGate();
-      } else {
-        if (!state.gate) buildGate();
-        showGate();
+      // 认证请求可能还没返回；不要在这里抢跑 showGate()。
+      if (state.authReady) {
+        if (state.authenticated) {
+          if (state.gate) hideGate();
+        } else {
+          showGate();
+        }
       }
       injectAccountMenu();
     });

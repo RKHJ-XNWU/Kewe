@@ -220,6 +220,32 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Le modèle sélectionné ne comprend pas l’audio : une transcription a été faite '
         'avant l’analyse.',
   },
+  'dimModelMismatchDb': <String, String>{
+    'zh': '当前为豆包维度，但所选模型不属于豆包。已拒绝请求，避免搜索工具跨维度串联。',
+    'ja': '現在は豆包（Doubao）次元ですが、選択したモデルは豆包に属していません。'
+        '検索ツールの次元またぎを防ぐため、リクエストを拒否しました。',
+    'en': 'You are in the Doubao dimension, but the selected model is not a Doubao model. '
+        'The request was rejected to prevent cross-dimension search tools.',
+    'ko': '현재 더우바오 차원이지만 선택한 모델은 더우바오 모델이 아닙니다. '
+        '검색 도구의 차원 간 혼용을 막기 위해 요청을 거부했습니다.',
+    'ru': 'Выбрано измерение Doubao, но выбранная модель не относится к Doubao. '
+        'Запрос отклонён, чтобы поисковые инструменты не смешивались между измерениями.',
+    'fr': 'Vous êtes en dimension Doubao, mais le modèle sélectionné n’en fait pas partie. '
+        'La requête a été refusée pour éviter tout mélange d’outils de recherche.',
+  },
+  'dimModelMismatchDs': <String, String>{
+    'zh': '当前为 DeepSeek 维度，但所选模型属于豆包。已拒绝请求，避免搜索工具跨维度串联。',
+    'ja': '現在は DeepSeek 次元ですが、選択したモデルは豆包に属しています。'
+        '検索ツールの次元またぎを防ぐため、リクエストを拒否しました。',
+    'en': 'You are in the DeepSeek dimension, but the selected model is a Doubao model. '
+        'The request was rejected to prevent cross-dimension search tools.',
+    'ko': '현재 DeepSeek 차원이지만 선택한 모델은 더우바오 모델입니다. '
+        '검색 도구의 차원 간 혼용을 막기 위해 요청을 거부했습니다.',
+    'ru': 'Выбрано измерение DeepSeek, но выбранная модель относится к Doubao. '
+        'Запрос отклонён, чтобы поисковые инструменты не смешивались между измерениями.',
+    'fr': 'Vous êtes en dimension DeepSeek, mais le modèle sélectionné appartient à Doubao. '
+        'La requête a été refusée pour éviter tout mélange d’outils de recherche.',
+  },
 };
 
 /// 取得指定语言的文案；args 依次替换 {0} {1} …

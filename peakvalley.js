@@ -49,6 +49,13 @@
     var editingChannel = null;   // 正在編集的渠道
     var channelMsg = '';
 
+    // ★ 开关类设置即时持久化（防抖 280ms）。
+    //   旧实现只有底部「保存」按钮会写服务端，主开关/提醒开关改完直接关闭面板
+    //   就会被 closeSettings() 丢弃；刷新浏览器后仍是旧状态。
+    var autoSaveTimer = null;
+    var workRev = 0;
+    var autoSaveSeq = 0;
+
     // ============================================================ 基本ユーティリティ
 
     function $(id) {
@@ -869,10 +876,12 @@
     }
 
     function closeSettings() {
+        // 关闭面板前把未落盘的开关改动立刻提交，避免“关了再开又变回开启”。
+        flushAutoSave();
         if (modal) { modal.classList.remove('pv-open'); }
         stopCountdown();
         editingChannel = null;
-        // 放弃未保存的改动，回到保存済み状态
+        // 关闭面板后回到服务端已保存状态（未保存的文本/高级项仍按旧规则丢弃）
         work = null;
         applyOverlay(status);
     }
@@ -891,12 +900,67 @@
         }
     }
 
-    function saveConfig() {
-        if (!work) { return; }
-        api('save', { config: work }).then(function (v) {
+    function markWorkDirty() {
+        workRev += 1;
+        return workRev;
+    }
+
+    /** 真正写服务端；quiet=true 时不做全量重绘，避免开关被重建。 */
+    function persistConfig(quiet) {
+        if (!work) { return Promise.resolve(false); }
+        var rev = workRev;
+        var payload = clone(work);
+        var seq = ++autoSaveSeq;
+        return api('save', { config: payload }).then(function (v) {
             cfg = v.config;
             status = v.status;
-            work = clone(cfg);
+            // 只有期间没有新的本地改动，才用服务端规范化后的配置回填草稿。
+            // 否则保留本地最新值，由下一次防抖保存继续提交。
+            if (work && workRev === rev && seq === autoSaveSeq) {
+                work = clone(cfg);
+            }
+            applyOverlay(status);
+            ensureFlowLoop();
+            startPolling(cfg.pollSeconds);
+            return true;
+        }).catch(function (e) {
+            // 自动保存失败不弹 toast（避免每次切换都打断用户），
+            // 保留本地草稿，用户仍可点「保存」重试。
+            try { console.warn('[peakvalley] auto-save failed:', e && e.message ? e.message : e); } catch (e2) {}
+            return false;
+        });
+    }
+
+    function autoSaveConfig() {
+        if (!work) { return; }
+        markWorkDirty();
+        if (autoSaveTimer !== null) { clearTimeout(autoSaveTimer); }
+        autoSaveTimer = setTimeout(function () {
+            autoSaveTimer = null;
+            persistConfig(true);
+        }, 280);
+    }
+
+    function flushAutoSave() {
+        if (autoSaveTimer !== null) {
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = null;
+            persistConfig(true);
+        }
+    }
+
+    function saveConfig() {
+        if (!work) { return; }
+        markWorkDirty();
+        if (autoSaveTimer !== null) {
+            clearTimeout(autoSaveTimer);
+            autoSaveTimer = null;
+        }
+        var rev = workRev;
+        api('save', { config: clone(work) }).then(function (v) {
+            cfg = v.config;
+            status = v.status;
+            if (work && workRev === rev) { work = clone(cfg); }
             renderBody();
             applyOverlay(status);
             ensureFlowLoop();
@@ -951,6 +1015,7 @@
             mkSwitch(work.enabled, function (v) {
                 work.enabled = v;
                 refreshPreview();
+                autoSaveConfig();
             })));
 
         c.appendChild(row('適用範囲', '既定では DeepSeek チャット画面のみで有効になり、他のページに影響しません。',
@@ -1171,6 +1236,7 @@
             mkSwitch(work.edge.enabled, function (v) {
                 work.edge.enabled = v;
                 refreshPreview();
+                autoSaveConfig();
             })));
         c.appendChild(buildVisualControls(work.edge, 'edge'));
         var actions = ce('div', 'pv-btn-row');
@@ -1190,6 +1256,7 @@
                 work.composer.enabled = v;
                 refreshPreview();
                 positionComposer();
+                autoSaveConfig();
             })));
         c.appendChild(buildVisualControls(work.composer, 'composer'));
         var actions = ce('div', 'pv-btn-row');
@@ -1220,6 +1287,7 @@
                 work.badge.enabled = v;
                 refreshPreview();
                 updateBadgePositionOnly();
+                autoSaveConfig();
             })));
 
         ['desktop', 'mobile'].forEach(function (key) {
@@ -1264,6 +1332,7 @@
         c.appendChild(row('ローカル通知を有効化', '',
             mkSwitch(work.localNotify.enabled, function (v) {
                 work.localNotify.enabled = v;
+                autoSaveConfig();
             })));
 
         c.appendChild(row('フェーズ転換時に通知', 'ピーク／オフピークの切替時に通知します。',
@@ -1492,7 +1561,7 @@
             '到達' + (isPeak ? 'ピーク' : 'オフピーク') + '前に（または到達時に）プッシュチャネルでリマインダーを送信します。スケジューリングはサーバー側で実行されるため、ページを閉じても届きます。');
 
         c.appendChild(row('通知を有効化', '',
-            mkSwitch(r.enabled, function (v) { r.enabled = v; })));
+            mkSwitch(r.enabled, function (v) { r.enabled = v; autoSaveConfig(); })));
 
         c.appendChild(row('事前通知', '0 は時間帯が始まる瞬間に送信することを意味します。',
             mkSelect([

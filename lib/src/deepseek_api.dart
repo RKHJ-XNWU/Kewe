@@ -227,7 +227,23 @@ bool dsIsDbModel(String model) {
 
 /// 解析本次请求该用哪套工具 schema。
 /// 豆包通道优先用专属集；专属集为空（非豆包模型）时回落到全量集。
-List<Map<String, dynamic>> dsResolveTools(String model, String apiUrl) {
+///
+/// [allowSearchTools] 为 false 时移除 web_search / fetch：
+/// 这两个工具的实现走 DeepSeek 官方搜索接口，只有用户开启联网搜索且
+/// 智能搜索判定需要联网时才允许暴露，避免模型自主“无脑乱搜”。
+List<Map<String, dynamic>> dsResolveTools(String model, String apiUrl,
+    {bool allowSearchTools = true}) {
+  final all = _dsResolveAllTools(model, apiUrl);
+  if (allowSearchTools) return all;
+  return all.where((t) {
+    final fn = t['function'];
+    if (fn is! Map) return true;
+    final name = '${fn['name'] ?? ''}';
+    return name != 'web_search' && name != 'fetch';
+  }).toList();
+}
+
+List<Map<String, dynamic>> _dsResolveAllTools(String model, String apiUrl) {
   if (apiUrl != DS_API_URL) {
     final dbp = dsDbToolSchemaProvider;
     if (dbp != null) {
@@ -327,13 +343,18 @@ Future<
   void Function(String)? onContent,
   DsUsageAcc? usageAcc,
   String apiUrl = DS_API_URL,
+  Map<String, dynamic>? extraBody,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temperature0 = dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
+  var temperature0 =
+      dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
 
   // 豆包"快速模式"启用时禁用深度思考
   // （实测：到首段正文的等待时间 16.83s → 0.86s）
   final thinkParam = apiUrl == DS_API_URL ? null : dbThinkingParam(model);
+  final explicitThink = extraBody != null &&
+      (extraBody.containsKey('thinking') ||
+          extraBody.containsKey('reasoning_effort'));
   final body = <String, dynamic>{
     'model': model,
     'messages': messages,
@@ -342,7 +363,8 @@ Future<
     'temperature': temperature0,
     // ★ 也让豆包（方舟）返回 usage（原因见 callDsChatAPIStream 侧的注释）
     'stream_options': dsUsageStreamOptions(),
-    if (thinkParam != null) 'thinking': thinkParam,
+    if (extraBody != null && extraBody.isNotEmpty) ...extraBody,
+    if (thinkParam != null && !explicitThink) 'thinking': thinkParam,
   };
   if (tools != null && tools.isNotEmpty) {
     body['tools'] = tools;
@@ -353,7 +375,10 @@ Future<
 
   Future<HttpClientResponse> sendOnce(bool withThinking) async {
     final b = Map<String, dynamic>.from(body);
-    if (!withThinking) b.remove('thinking');
+    if (!withThinking) {
+      b.remove('thinking');
+      b.remove('reasoning_effort');
+    }
     final r = await client.postUrl(Uri.parse(apiUrl));
     r.headers.set('Content-Type', 'application/json');
     r.headers.set('Authorization', 'Bearer $apiKey');
@@ -368,13 +393,15 @@ Future<
     return r.close();
   }
 
-  var resp = await sendOnce(thinkParam != null);
+  final hasThinking = thinkParam != null || explicitThink;
+  var resp = await sendOnce(hasThinking);
   // ★ 400 是"参数不支持"的典型。看正文只移除导致问题的参数
   //   重试（仅 stream_options / thinking 两种，各最多 1 次）。
   //   正文只能读一次，故在此读完再判定。
   var droppedStreamOpts = false;
   var droppedThinking = false;
-  for (var attempt = 0; resp.statusCode == 400 && attempt < 3; attempt++) {
+  var droppedEffort = false;
+  for (var attempt = 0; resp.statusCode == 400 && attempt < 5; attempt++) {
     final txt = utf8.decode(
         await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
@@ -385,13 +412,26 @@ Future<
       logp('⚠️ 方舟拒绝了 stream_options。移除后重试');
       body.remove('stream_options');
       droppedStreamOpts = true;
-      resp = await sendOnce(thinkParam != null && !droppedThinking);
+      resp = await sendOnce(body.containsKey('thinking') ||
+          body.containsKey('reasoning_effort'));
       continue;
     }
-    if (!droppedThinking && thinkParam != null && low.contains('thinking')) {
-      logp('⚠️ 方舟拒绝了 thinking 参数。移除参数后重试');
+    if (!droppedThinking &&
+        body.containsKey('thinking') &&
+        (low.contains('thinking') || low.contains('unknown field'))) {
+      logp('⚠️ 上游拒绝了 thinking 参数。移除参数后重试');
+      body.remove('thinking');
       droppedThinking = true;
       resp = await sendOnce(false);
+      continue;
+    }
+    if (!droppedEffort &&
+        body.containsKey('reasoning_effort') &&
+        low.contains('reasoning_effort')) {
+      logp('⚠️ 上游拒绝了 reasoning_effort。移除参数后重试');
+      body.remove('reasoning_effort');
+      droppedEffort = true;
+      resp = await sendOnce(body.containsKey('thinking'));
       continue;
     }
     throw Exception('HTTP 400: ${truncateBytes(txt, 400)}');
@@ -492,11 +532,16 @@ Future<({String content, String reasoning})> callDsChatAPI(
     else if (thinkParam != null)
       'thinking': thinkParam,
   };
+  final hasThinking =
+      body.containsKey('thinking') || body.containsKey('reasoning_effort');
   final client = globalHTTPClientWithTimeout;
 
   Future<HttpClientResponse> sendOnce(bool withThinking) async {
     final b = Map<String, dynamic>.from(body);
-    if (!withThinking) b.remove('thinking');
+    if (!withThinking) {
+      b.remove('thinking');
+      b.remove('reasoning_effort');
+    }
     final r = await client.postUrl(Uri.parse(apiUrl));
     r.headers.set('Content-Type', 'application/json');
     r.headers.set('Authorization', 'Bearer $apiKey');
@@ -504,13 +549,17 @@ Future<({String content, String reasoning})> callDsChatAPI(
     return r.close();
   }
 
-  var resp = await sendOnce(thinkParam != null);
+  var resp = await sendOnce(hasThinking);
   var rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
   var txt = utf8.decode(rawBytes, allowMalformed: true);
   if (resp.statusCode == 400 &&
-      thinkParam != null &&
-      txt.toLowerCase().contains('thinking')) {
-    logp('⚠️ 方舟拒绝了 thinking 参数。移除参数后重试');
+      hasThinking &&
+      (txt.toLowerCase().contains('thinking') ||
+          txt.toLowerCase().contains('reasoning_effort') ||
+          txt.toLowerCase().contains('unknown field'))) {
+    logp('⚠️ 上游拒绝了 thinking / reasoning_effort。移除参数后重试');
+    body.remove('thinking');
+    body.remove('reasoning_effort');
     resp = await sendOnce(false);
     rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
@@ -523,7 +572,8 @@ Future<({String content, String reasoning})> callDsChatAPI(
         logp('⚠️ 上游拒绝 max_tokens=$mt（上限 $providerCap），'
             '按十进制规则收敛到 $decimalCap 后重试');
         body['max_tokens'] = decimalCap;
-        resp = await sendOnce(thinkParam != null);
+        resp = await sendOnce(body.containsKey('thinking') ||
+            body.containsKey('reasoning_effort'));
         rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
         txt = utf8.decode(rawBytes, allowMalformed: true);
       }
@@ -570,9 +620,12 @@ Future<DsRawResponse> callDsChatAPIRaw(
   bool withTools,
   DsUsageAcc? usageAcc, {
   String apiUrl = DS_API_URL,
+  Map<String, dynamic>? extraBody,
+  bool allowSearchTools = true,
 }) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  final temp = dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
+  final temp =
+      dbEffectiveTemperature(model, temperature < 0 ? 0.0 : temperature);
 
   final body = <String, dynamic>{
     'model': model,
@@ -580,21 +633,51 @@ Future<DsRawResponse> callDsChatAPIRaw(
     'stream': false,
     'max_tokens': mt,
     'temperature': temp,
+    if (extraBody != null && extraBody.isNotEmpty) ...extraBody,
   };
   if (withTools) {
-    body['tools'] = dsResolveTools(model, apiUrl);
+    body['tools'] = dsResolveTools(model, apiUrl,
+        allowSearchTools: allowSearchTools);
     body['tool_choice'] = 'auto';
   }
   final client = globalHTTPClient;
-  final req = await client.postUrl(Uri.parse(apiUrl));
-  req.headers.set('Content-Type', 'application/json');
-  req.headers.set('Authorization', 'Bearer $apiKey');
-  req.add(utf8.encode(jsonEncode(body)));
-  final resp = await req.close();
-  final rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
-  final txt = utf8.decode(rawBytes, allowMalformed: true);
-  if (resp.statusCode != 200) {
-    throw Exception('HTTP ${resp.statusCode}: ${truncateBytes(txt, 400)}');
+  var resp = await client.postUrl(Uri.parse(apiUrl));
+  resp.headers.set('Content-Type', 'application/json');
+  resp.headers.set('Authorization', 'Bearer $apiKey');
+  resp.add(utf8.encode(jsonEncode(body)));
+  var rawResp = await resp.close();
+  var rawBytes =
+      await rawResp.fold<List<int>>([], (a, b) => a..addAll(b));
+  var txt = utf8.decode(rawBytes, allowMalformed: true);
+  // 400 多为 thinking / reasoning_effort 不被该上游接受：逐项降级重试。
+  var droppedThinking = false;
+  var droppedEffort = false;
+  for (var attempt = 0; rawResp.statusCode == 400 && attempt < 2; attempt++) {
+    final low = txt.toLowerCase();
+    if (!droppedThinking &&
+        body.containsKey('thinking') &&
+        (low.contains('thinking') || low.contains('unknown field'))) {
+      body.remove('thinking');
+      droppedThinking = true;
+    } else if (!droppedEffort &&
+        body.containsKey('reasoning_effort') &&
+        low.contains('reasoning_effort')) {
+      body.remove('reasoning_effort');
+      droppedEffort = true;
+    } else {
+      break;
+    }
+    logp('⚠️ 非流式请求被拒绝思考参数，降级后重试');
+    final retry = await client.postUrl(Uri.parse(apiUrl));
+    retry.headers.set('Content-Type', 'application/json');
+    retry.headers.set('Authorization', 'Bearer $apiKey');
+    retry.add(utf8.encode(jsonEncode(body)));
+    rawResp = await retry.close();
+    rawBytes = await rawResp.fold<List<int>>([], (a, b) => a..addAll(b));
+    txt = utf8.decode(rawBytes, allowMalformed: true);
+  }
+  if (rawResp.statusCode != 200) {
+    throw Exception('HTTP ${rawResp.statusCode}: ${truncateBytes(txt, 400)}');
   }
   final result = asMap(jsonDecode(txt));
   final choices = asList(result['choices']);
@@ -677,7 +760,9 @@ Future<void> callDsChatAPIStream(
   var droppedStreamOpts = false;
   var droppedWebSearch = false;
   var droppedMaxTokens = false;
-  for (var attempt = 0; resp.statusCode == 400 && attempt < 3; attempt++) {
+  var droppedThinking = false;
+  var droppedEffort = false;
+  for (var attempt = 0; resp.statusCode == 400 && attempt < 6; attempt++) {
     final txt = utf8.decode(
         await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
@@ -707,6 +792,24 @@ Future<void> callDsChatAPIStream(
       logp('⚠️ 方舟拒绝了 web_search_options。移除后重试');
       body.remove('web_search_options');
       droppedWebSearch = true;
+      resp = await resend();
+      continue;
+    }
+    if (!droppedThinking &&
+        body.containsKey('thinking') &&
+        (low.contains('thinking') || low.contains('unknown field'))) {
+      logp('⚠️ 上游拒绝了 thinking 参数。移除后重试');
+      body.remove('thinking');
+      droppedThinking = true;
+      resp = await resend();
+      continue;
+    }
+    if (!droppedEffort &&
+        body.containsKey('reasoning_effort') &&
+        low.contains('reasoning_effort')) {
+      logp('⚠️ 上游拒绝了 reasoning_effort。移除后重试');
+      body.remove('reasoning_effort');
+      droppedEffort = true;
       resp = await resend();
       continue;
     }
@@ -853,12 +956,15 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
   void Function(String)? onReasoning,
   DsUsageAcc? usageAcc, {
   String apiUrl = DS_API_URL,
+  Map<String, dynamic>? extraBody,
+  bool allowSearchTools = true,
 }) async {
   var maxIter = maxIterations <= 0 ? DS_TOOL_MAX_ITERATIONS : maxIterations;
   var mt = dsResolveMaxTokens(model, maxTokens);
   // 工具模式默认温度 0（确定性输出）；Kimi 系列按用户规则强制 1.0。
   temperature = dbIsKimiModel(model) ? DB_KIMI_TEMPERATURE : 0.0;
-  final tools = dsResolveTools(model, apiUrl);
+  final tools = dsResolveTools(model, apiUrl,
+      allowSearchTools: allowSearchTools);
 
   final finalContent = StringBuffer();
   final finalReasoning = StringBuffer();
@@ -878,6 +984,7 @@ Future<ToolStreamOutcome> callDsWithToolsStream(
       onContent: onContent,
       usageAcc: usageAcc,
       apiUrl: apiUrl,
+      extraBody: extraBody,
     );
 
     if (r.reasoning.trim().isNotEmpty) finalReasoning.write(r.reasoning);
@@ -957,6 +1064,8 @@ Future<ToolStreamOutcome> callDsWithTools(
   int maxRounds,
   DsUsageAcc? usageAcc, {
   String apiUrl = DS_API_URL,
+  Map<String, dynamic>? extraBody,
+  bool allowSearchTools = true,
 }) async {
   final maxIter = maxRounds <= 0 ? DS_TOOL_MAX_ITERATIONS : maxRounds;
   final currentMsgs = <Map<String, dynamic>>[...messages];
@@ -967,7 +1076,9 @@ Future<ToolStreamOutcome> callDsWithTools(
   for (var round = 0; round < maxIter; round++) {
     final resp = await callDsChatAPIRaw(
         apiKey, model, currentMsgs, maxTokens, temperature, true, usageAcc,
-        apiUrl: apiUrl);
+        apiUrl: apiUrl,
+        extraBody: extraBody,
+        allowSearchTools: allowSearchTools);
     if (resp.reasoning.trim().isNotEmpty) reasoningParts.add(resp.reasoning);
     if (resp.toolCalls.isEmpty) {
       return ToolStreamOutcome(
@@ -1166,7 +1277,8 @@ Future<String> callDsVisionAPI(String apiKey, String textPrompt,
     String imageBase64, String mime, int maxTokens, double temperature,
     {String model = '', String apiUrl = ''}) async {
   final mt = dsResolveMaxTokens(model, maxTokens);
-  var temp = dbEffectiveTemperature(model, temperature <= 0 ? 1.0 : temperature);
+  var temp =
+      dbEffectiveTemperature(model, temperature <= 0 ? 1.0 : temperature);
   final content = <Map<String, dynamic>>[];
   if (imageBase64.isNotEmpty) {
     content.add({
