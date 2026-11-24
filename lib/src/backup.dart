@@ -492,6 +492,7 @@ Future<void> handleRestore(HttpRequest req) async {
     if (isFullBackup) {
       // 备份里的 master.key 已经替换 data/auth/master.key；必须丢掉旧 key 缓存。
       resetKeweSecretCaches();
+      resetKeweAuthStoreCache();
       final token = keweSessionTokenFromRequest(req);
       if (token != null && token.isNotEmpty) {
         try {

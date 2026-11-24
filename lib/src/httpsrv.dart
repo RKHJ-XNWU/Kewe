@@ -337,7 +337,7 @@ String contentDispositionValue(String name, bool attachment) {
 // 静态文件 + Range（等价 Go http.ServeFile/ServeContent）
 // ------------------------------------------------------------
 Future<void> serveFile(HttpRequest req, File file,
-    {String? downloadName, bool attachment = false}) async {
+    {String? downloadName, bool attachment = false, bool cache = false}) async {
   final res = req.response;
   if (!file.existsSync()) {
     await errJson(res, 404, '文件不存在');
@@ -357,9 +357,39 @@ Future<void> serveFile(HttpRequest req, File file,
         contentDispositionValue(downloadName, attachment));
   }
 
+  // 静态资源缓存：带 ?v= 的版本化资源可长期缓存；HTML 与无版本资源每次
+  // 用 ETag/Last-Modified 复验，避免频繁刷新时重复传输 2MB+ 的脚本。
+  final etag = '"${stat.size}-${stat.modified.millisecondsSinceEpoch}"';
+  final lastModified = HttpDate.format(stat.modified.toUtc());
+  if (cache) {
+    final isHtml = file.path.toLowerCase().endsWith('.html');
+    final versioned = req.uri.queryParameters.containsKey('v');
+    res.headers.set(HttpHeaders.cacheControlHeader,
+        isHtml
+            ? 'no-cache'
+            : (versioned ? 'public, max-age=31536000, immutable' : 'no-cache'));
+    res.headers.set(HttpHeaders.lastModifiedHeader, lastModified);
+    res.headers.set(HttpHeaders.etagHeader, etag);
+  }
+
+  if (cache && !_isRangeReq(req)) {
+    final inm = req.headers.value(HttpHeaders.ifNoneMatchHeader);
+    if (inm != null) {
+      final matched = inm.split(',').any((tag) {
+        final t = tag.trim();
+        return t == '*' || t == etag || t == 'W/$etag';
+      });
+      if (matched) {
+        res.statusCode = HttpStatus.notModified;
+        await res.close();
+        return;
+      }
+    }
+  }
+
   // If-Modified-Since（秒级）
   final ims = req.headers.value(HttpHeaders.ifModifiedSinceHeader);
-  if (ims != null && !_isRangeReq(req)) {
+  if (cache && ims != null && !_isRangeReq(req)) {
     try {
       final since = HttpDate.parse(ims);
       final mtime = stat.modified.toUtc();
@@ -453,10 +483,10 @@ Future<void> serveStatic(HttpRequest req, String path) async {
   }
   final f = File(normalized);
   if (!f.existsSync() || FileSystemEntity.isDirectorySync(normalized)) {
-    await serveFile(req, File('$BASE_DIR/index.html'));
+    await serveFile(req, File('$BASE_DIR/index.html'), cache: true);
     return;
   }
-  await serveFile(req, f);
+  await serveFile(req, f, cache: true);
 }
 
 /// 防目录穿越的路径拼接；越界返回 null

@@ -576,8 +576,13 @@
         };
     };
 
+    var mathJaxPromise = null;
+
     function loadMathJax() {
-        if (window.MathJax) return;
+        if (window.MathJax && window.MathJax.typesetPromise) {
+            return Promise.resolve(window.MathJax);
+        }
+        if (mathJaxPromise) return mathJaxPromise;
         window.MathJax = {
             tex: {
                 inlineMath: [['$', '$'], ['\\(', '\\)']],
@@ -588,10 +593,25 @@
                 skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
             }
         };
-        var script = document.createElement('script');
-        script.src = '/tex-chtml-full-speech.js';
-        script.async = true;
-        document.head.appendChild(script);
+        mathJaxPromise = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = '/tex-chtml-full-speech.js';
+            script.async = true;
+            script.onload = function () { resolve(window.MathJax); };
+            script.onerror = function () {
+                mathJaxPromise = null;
+                reject(new Error('MathJax load failed'));
+            };
+            document.head.appendChild(script);
+        });
+        return mathJaxPromise;
+    }
+
+    function hasMathText(txt) {
+        if (!txt) return false;
+        if (txt.indexOf('\\(') !== -1 || txt.indexOf('\\[') !== -1) return true;
+        if (/\$\$[\s\S]+?\$\$/.test(txt)) return true;
+        return /\$[^\n$]+\$/.test(txt);
     }
 
     // ★ 逐条排版：MathJax typesetPromise 会把传入容器的全部文本扫一遍，
@@ -599,7 +619,6 @@
     //   长会话打开时这是主线程卡顿的主因之一。改成只对「真正含公式的那几条」排版。
     function renderMathEach(root) {
         if (!root) return;
-        if (!window.MathJax || !window.MathJax.typesetPromise) return;
         var nodes = root.querySelectorAll ? root.querySelectorAll('.dsc-msg') : [];
         if (!nodes.length) { renderMath(root); return; }
         for (var i = 0; i < nodes.length; i++) {
@@ -609,11 +628,21 @@
 
     function renderMath(container) {
         if (!container) return;
-        if (!window.MathJax || !window.MathJax.typesetPromise) return;
         var txt = container.textContent || '';
-        if (txt.indexOf('$') === -1 && txt.indexOf('\\(') === -1 && txt.indexOf('\\[') === -1) return;
-        window.MathJax.typesetPromise([container]).catch(function (err) {
-            console.warn('[DSC] MathJax 失敗:', err);
+        if (!hasMathText(txt)) return;
+        var typeset = function () {
+            if (!window.MathJax || !window.MathJax.typesetPromise) return;
+            window.MathJax.typesetPromise([container]).catch(function (err) {
+                console.warn('[DSC] MathJax 失敗:', err);
+            });
+        };
+        if (window.MathJax && window.MathJax.typesetPromise) {
+            typeset();
+            return;
+        }
+        // 首页不再预加载 2.1MB MathJax；只有消息里真的出现公式时才按需加载。
+        loadMathJax().then(typeset).catch(function (err) {
+            console.warn('[DSC] MathJax 読み込み失敗:', err);
         });
     }
 
@@ -8522,7 +8551,6 @@ function highlightInElement(root, keyword) {
         var app = $('deepseekChatApp');
         if (!app) { console.error('[DSC] コンテナが見つかりません'); return; }
         try {
-            loadMathJax();
             ensureAdvancedBtn();
             ensureCallBtn();
             ensureLongTextBtn();

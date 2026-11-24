@@ -115,7 +115,23 @@ String? _readSecretFile(String path) {
   }
 }
 
+_AuthStore? _storeCache;
+int _storeCacheAt = 0;
+const int _AUTH_STORE_CACHE_MS = 30 * 1000;
+
+/// 登录/恢复后强制丢弃内存里的账号表缓存。
+void resetKeweAuthStoreCache() {
+  _storeCache = null;
+  _storeCacheAt = 0;
+}
+
 _AuthStore _loadStore() {
+  final cached = _storeCache;
+  if (cached != null &&
+      DateTime.now().millisecondsSinceEpoch - _storeCacheAt <
+          _AUTH_STORE_CACHE_MS) {
+    return cached;
+  }
   final users = <KeweUser>[];
   try {
     final raw = _readSecretFile(_usersFile);
@@ -150,7 +166,10 @@ _AuthStore _loadStore() {
   } catch (e) {
     logp('❌ 读取会话表失败: $e');
   }
-  return _AuthStore(users, sessions);
+  final store = _AuthStore(users, sessions);
+  _storeCache = store;
+  _storeCacheAt = DateTime.now().millisecondsSinceEpoch;
+  return store;
 }
 
 void _saveStore(List<KeweUser> users, Map<String, Map<String, dynamic>> sessions) {
@@ -167,6 +186,9 @@ void _saveStore(List<KeweUser> users, Map<String, Map<String, dynamic>> sessions
     _tokensFile,
     jsonEncode({'version': 1, 'sessions': sessions}),
   );
+  // 登录/注册/注销/恢复后直接刷新缓存，后续静态资源请求不再反复解密账号表。
+  _storeCache = _AuthStore(users, sessions);
+  _storeCacheAt = DateTime.now().millisecondsSinceEpoch;
 }
 
 // ------------------------------------------------------------
