@@ -10,7 +10,6 @@ I18N.add('fr',`
     フォーラム · 投稿広場|Forum · Place des publications
     日本語単語帳|Vocabulaire japonais
     ファイル管理|Gestion des fichiers
-    ピーク／オフピーク通知|Alertes heures pleines／creuses
     データ復元|Restauration des données
     設定|Paramètres
     セッション検索|Rechercher des sessions
@@ -440,13 +439,11 @@ I18N.add('fr',`
     ♻️ バックアップから復元|♻️ Restaurer depuis une sauvegarde
     （推奨：先に「📦 データバックアップ」ボタンで現在のデータをダウンロードしてください）|(Recommandé : téléchargez d'abord vos données actuelles avec le bouton « 📦 Sauvegarde des données »)
     リクエストに失敗|Échec de la requête
-    ピーク／オフピーク通知（タップで設定を開く）|Alertes heures pleines／creuses (touchez pour ouvrir les paramètres)
     DeepSeek オフピーク時間帯が開始|Les heures creuses DeepSeek ont commencé
     現在はピーク時間帯（09:00–12:00 / 14:00–18:00）|Actuellement heures pleines (09:00–12:00 / 14:00–18:00)
     現在はオフピーク時間帯（アイドル時間、料金はピークの約半額）|Actuellement heures creuses (période creuse, tarif environ moitié du plein)
     プッシュチャネルでピーク時間帯の通知を送信しました|Alerte heures pleines envoyée via le canal push
     プッシュチャネルでオフピーク時間帯の通知を送信しました|Alerte heures creuses envoyée via le canal push
-    DeepSeek ピーク／オフピーク時間帯 · 枠の光効果 · プッシュ通知|DeepSeek heures pleines／creuses · Lueur de bordure · Notifications push
     すべて既定に戻す|Tout réinitialiser
     すべての外観と通知の設定を既定値に戻します（プッシュチャネルは保持）。よろしいですか？|Réinitialiser tous les réglages d'apparence et de notification (les canaux push sont conservés). Confirmer ?
     既定に戻しました|Réinitialisé aux valeurs par défaut
@@ -454,7 +451,6 @@ I18N.add('fr',`
     （サービスが起動しているか確認してください）|(Vérifiez que le service est démarré)
     現在の状態|État actuel
     現在の時間帯、次の切替までのカウントダウン、手動上書き。|Tranche actuelle, compte à rebours avant le prochain changement, remplacement manuel.
-    ピーク／オフピーク通知を有効化|Activer les alertes heures pleines／creuses
     メインスイッチ。オフにすると枠・光効果・バッジ・プッシュ通知がすべて停止します。|Interrupteur principal. Désactivé, la bordure, la lueur, le badge et les notifications push s'arrêtent.
     適用範囲|Portée
     既定では DeepSeek チャット画面のみで有効になり、他のページに影響しません。|Actif uniquement sur l'écran de chat DeepSeek par défaut ; les autres pages ne sont pas affectées.
@@ -528,7 +524,6 @@ I18N.add('fr',`
     ブラウザのシステム通知：ページを開いている間に、時間帯の切替や予約リマインダーの発火時に通知します。|Notifications système du navigateur : tant que la page est ouverte, notifient les changements de tranche ou le déclenchement des rappels.
     ローカル通知を有効化|Activer les notifications locales
     フェーズ転換時に通知|Notifier au changement de phase
-    ピーク／オフピークの切替時に通知します。|Notifier lors du passage plein／creux.
     予約リマインダーの発火時に通知|Notifier au déclenchement d'un rappel
     サーバーがプッシュチャネルで通知を送るときに同期して通知します。|Notifier en synchronisation quand le serveur envoie via le canal push.
     通知権限をリクエスト|Demander l'autorisation de notification
@@ -537,7 +532,6 @@ I18N.add('fr',`
     権限を取得できませんでした：|Impossible d'obtenir l'autorisation :
     テスト通知を送信|Envoyer une notification de test
     先に通知を許可してください|Veuillez d'abord autoriser les notifications
-    ピーク／オフピーク通知テスト|Test des alertes heures pleines／creuses
     この通知が見えていれば、ローカル通知は利用可能です。|Si vous voyez cette notification, les notifications locales fonctionnent.
     このブラウザは Notification API に対応していません|Ce navigateur ne prend pas en charge l'API Notification
     通知権限：許可済み|Autorisation de notification : accordée

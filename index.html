@@ -11,7 +11,6 @@
     <link rel="stylesheet" href="ds-files.css?v=8">
     <link rel="stylesheet" href="dsc-realtime-video.css?v=20261124-vc3">
     <link rel="stylesheet" href="ds-devtools.css?v=3">
-    <link rel="stylesheet" href="peakvalley.css?v=3">
     <link rel="stylesheet" href="dsc-forum.css?v=1">
     <link rel="stylesheet" href="dsc-vocab.css?v=1">
     <link rel="stylesheet" href="dsc-doubao.css?v=20261124-videocall">
@@ -96,7 +95,6 @@
                     <button class="dsc-more-item" id="dscForumBtn" title="フォーラム · 投稿広場へ"><span class="ic">💬</span><span class="tx">フォーラム · 投稿広場</span></button>
                     <button class="dsc-more-item" id="dscVocabBtn" title="日本語単語帳"><span class="ic">📚</span><span class="tx">日本語単語帳</span></button>
                     <button class="dsc-more-item" id="dscFilesToggle" title="ファイル管理"><span class="ic">📁</span><span class="tx">ファイル管理</span></button>
-                    <button class="dsc-more-item" id="dscPeakValleyBtn" title="ピーク／オフピーク通知"><span class="ic">🏔️</span><span class="tx">ピーク／オフピーク通知</span></button>
                     <button class="dsc-more-item" id="dscBackupBtn" title="データバックアップ（現在のアカウントのみ）"><span class="ic">📦</span><span class="tx">データバックアップ</span></button>
                     <button class="dsc-more-item" id="dscRestoreBtn" title="バックアップから復元"><span class="ic">♻️</span><span class="tx">データ復元</span></button>
                     <button class="dsc-more-item" id="dscSettingsBtn" title="設定"><span class="ic">⚙️</span><span class="tx">設定</span></button>
@@ -743,12 +741,14 @@
     <script src="i18n/locales/ru-extra.js?v=2090-1"></script>
     <script src="i18n/locales/fr.js?v=2090-1"></script>
     <script src="i18n/locales/fr-extra.js?v=2090-1"></script>
+    <script src="i18n/locales/ds-devtools.js?v=20261124-1"></script>
+    <script src="i18n/locales/download.js?v=20261124-1"></script>
+    <script src="i18n/locales/dsc-doubao.js?v=20261124-1"></script>
     <script src="i18n/ai-prompts.js?v=20261123-1"></script>
-    <script src="ds-files.js?v=20261124-1"></script>
-    <script src="ds-devtools.js?v=20261123-1"></script>
-    <script src="deepseek-chat.js?v=20261124-mini128"></script>
+    <script src="ds-files.js?v=20261124-download3"></script>
+    <script src="ds-devtools.js?v=20261124-i18n1"></script>
+    <script src="deepseek-chat.js?v=20261124-i18n2"></script>
     <script src="dsc-control-center.js?v=20261124-ctxmono"></script>
-    <script src="peakvalley.js?v=20261124i18n15"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->
     <script>
@@ -1021,9 +1021,9 @@
 <script src="dsc-forum.js?v=3"></script>
 <script src="dsc-vocab.js?v=1"></script>
 <script src="dsc-model-route.js?v=1"></script>
-<script src="dsc-doubao.js?v=20261124-video-call2"></script>
+<script src="dsc-doubao.js?v=20261124-imagefix3"></script>
 <script src="dsc-realtime-video.js?v=20261124-vc4"></script>
-<script src="dsc-doubao-tools.js?v=11"></script>
+<script src="dsc-doubao-tools.js?v=12"></script>
     <script>
     /* ★ 停用整改：页面启动即强制清除任何残留的中转站(st)维度状态，
        保证刷新/历史 localStorage 也无法把用户带回 st 维度。 */
@@ -1045,9 +1045,9 @@
         });
     })();
     </script>
-    <script src="dsc-doubao-plugins.js?v=11"></script>
+    <script src="dsc-doubao-plugins.js?v=12"></script>
 <script src="dsc-ja-fix.js?v=20261123-perf1"></script>
 <script src="dsc-duplex.js?v=12"></script>
-<script src="kewe-empire.js?v=20261123-empire9"></script>
+<script src="kewe-empire.js?v=20261124-empire10"></script>
 </body>
 </html>

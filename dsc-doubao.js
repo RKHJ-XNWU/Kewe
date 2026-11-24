@@ -245,7 +245,7 @@
 //   播客是中文双人对谈，不支持 30+ 语种；30+ 语种是语音通话（Seeduplex）的能力。
 //   每项是一对发音人：女 + 男（官方播客模型仅支持 2 位发音人）。
 var PODCAST_VOICE_PAIRS = [
-    { value: 'mizai_dayi', label: '咪仔 + 大衣先生（既定）',
+    { value: 'mizai_dayi', label: '咪仔 + 大衣先生（デフォルト）',
       speakers: ['zh_female_mizaitongxue_v2_saturn_bigtts', 'zh_male_dayixiansheng_v2_saturn_bigtts'] },
     { value: 'liufei_xiaolei', label: '刘飞 + 潇磊',
       speakers: ['zh_male_liufei_v2_saturn_bigtts', 'zh_male_xiaolei_v2_saturn_bigtts'] }
@@ -460,9 +460,9 @@ var EDGE_VOICE_POOL = {
         { id: 'dscDbVideoBtn', ic: '🎬', label: '豆包で動画生成', tip: '豆包動画生成', open: function () { openVideoModal(); } },
         { id: 'dscDbPodcastBtn', ic: '🎧', label: '豆包ポッドキャスト', tip: '豆包ポッドキャスト', open: function () { openPodcastModal(); } },
         { id: 'dscDbCallBtn', ic: '📞', label: '豆包音声通話', tip: '豆包音声通話', open: function () { openCallModal(); } },
-        { id: 'dscDbVideoCallBtn', ic: '📹', label: '豆包实时视频通话', tip: '豆包实时视频通话', open: function () {
+        { id: 'dscDbVideoCallBtn', ic: '📹', label: '豆包リアルタイムビデオ通話', tip: '豆包リアルタイムビデオ通話', open: function () {
             if (window.dscVideoCall && window.dscVideoCall.open) window.dscVideoCall.open();
-            else toast(T('实时视频通话模块未加载'));
+            else toast(T('ビデオ通話モジュールが未読み込みです'));
         } },
         { id: 'dscDbAsrBtn', ic: '🎤', label: '録音ファイルを豆包で認識', tip: '録音ファイルを豆包で認識', open: function () { openAsrModal(); } },
         { id: 'dscDbTranslateBtn', ic: '🌐', label: '豆包機械翻訳', tip: '豆包機械翻訳', open: function () { openTranslateModal(); } },
@@ -1643,17 +1643,33 @@ var EDGE_VOICE_POOL = {
                 toast(T('ℹ️ {0} は利用不可のため {1} で生成しました', d.fallbackFrom, d.model || ''), 'info');
             }
             var f = d.file || {};
+            var previewUrl = (d.preview && String(d.preview).indexOf('data:') === 0) ? String(d.preview) : '';
             var box = $('dscDbImgResult');
             box.innerHTML = '';
             var img = document.createElement('img');
-            img.src = fileUrl(f) + '&_t=' + Date.now();
+            img.src = previewUrl || (fileUrl(f) + '&_t=' + Date.now());
             img.alt = f.name || 'doubao image';
             box.appendChild(img);
+            var reveal = function () {
+                try {
+                    img.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } catch (e) {
+                    try { img.scrollIntoView(); } catch (_) {}
+                }
+            };
+            img.addEventListener('load', reveal, { once: true });
+            setTimeout(reveal, 80);
             box.appendChild(el('div', 'dsc-db-filename', T('ファイル名：{0}', f.name || '')));
             var row = el('div', 'dsc-db-row');
             var dl = el('button', 'dsc-db-btn primary', T('ダウンロード'));
             dl.type = 'button';
-            dl.addEventListener('click', function () { openExternal(downloadUrl(f)); });
+            dl.addEventListener('click', function () {
+                if (typeof window.dscDownloadFile === 'function') {
+                    window.dscDownloadFile(f, previewUrl);
+                } else {
+                    openExternal(downloadUrl(f));
+                }
+            });
             var again = el('button', 'dsc-db-btn', T('もう一度生成'));
             again.type = 'button';
             again.addEventListener('click', function () { generateImage(); });
@@ -1835,17 +1851,33 @@ var EDGE_VOICE_POOL = {
                 toast(T('ℹ️ {0} は利用不可のため {1} で生成しました', d.fallbackFrom, d.model || ''), 'info');
             }
             var meta = d.file || {};
+            var previewUrl = (d.preview && String(d.preview).indexOf('data:') === 0) ? String(d.preview) : '';
             var box = $('dscDbEditResult');
             box.innerHTML = '';
             var img = document.createElement('img');
-            img.src = fileUrl(meta) + '&_t=' + Date.now();
+            img.src = previewUrl || (fileUrl(meta) + '&_t=' + Date.now());
             img.alt = meta.name || 'doubao edit';
             box.appendChild(img);
+            var revealEdit = function () {
+                try {
+                    img.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                } catch (e) {
+                    try { img.scrollIntoView(); } catch (_) {}
+                }
+            };
+            img.addEventListener('load', revealEdit, { once: true });
+            setTimeout(revealEdit, 80);
             box.appendChild(el('div', 'dsc-db-filename', T('ファイル名：{0}', meta.name || '')));
             var row = el('div', 'dsc-db-row');
             var dl = el('button', 'dsc-db-btn primary', T('ダウンロード'));
             dl.type = 'button';
-            dl.addEventListener('click', function () { openExternal(downloadUrl(meta)); });
+            dl.addEventListener('click', function () {
+                if (typeof window.dscDownloadFile === 'function') {
+                    window.dscDownloadFile(meta, previewUrl);
+                } else {
+                    openExternal(downloadUrl(meta));
+                }
+            });
             var again = el('button', 'dsc-db-btn', T('もう一度P图'));
             again.type = 'button';
             again.addEventListener('click', function () { editImage(); });
@@ -4371,7 +4403,7 @@ var EDGE_VOICE_POOL = {
     function flashCopied(btn) {
         if (!btn) return;
         var old = btn.innerHTML;
-        btn.innerHTML = '✅ 已复制';
+        btn.innerHTML = T('✅ コピーしました');
         btn.classList.add('is-copied');
         btn.disabled = true;
         setTimeout(function () {
@@ -4386,7 +4418,7 @@ var EDGE_VOICE_POOL = {
         return copyTextToClipboard(text).then(function (ok) {
             if (ok) {
                 flashCopied(btn);
-                toast(T('📋 已复制到剪贴板'), 'success');
+                toast(T('コピーしました'), 'success');
             } else {
                 toast(T('コピーに失敗：テキストを長押しして手動でコピーしてください'), 'error');
             }
@@ -4521,7 +4553,7 @@ var EDGE_VOICE_POOL = {
     /// 朗读翻译结果：合成落盘 → 下载播放（回退到稳定方案）
     window.dscSpeakTrans = function (btn, text, lang) {
         var orig = btn.innerHTML;
-        btn.innerHTML = '⏳ 播放中...';
+        btn.innerHTML = T('⏳ 読み込み中...');
         btn.classList.add('is-playing');
         btn.disabled = true;
         function restore() {
@@ -4535,7 +4567,7 @@ var EDGE_VOICE_POOL = {
             body: { text: text, voice: getTTSVoiceForLang(lang), lang: lang }
         }).then(function (d) {
             if (!d.audioUrl) {
-                toast('合成に失敗：バックエンドから音声 URL が返されませんでした', 'error');
+                toast(T('合成に失敗：バックエンドから音声 URL が返されませんでした'), 'error');
                 restore();
                 return;
             }
@@ -4543,13 +4575,13 @@ var EDGE_VOICE_POOL = {
             var audio = new Audio(d.audioUrl);
             TRANS_AUDIO.audio = audio;
             audio.onended = restore;
-            audio.onerror = function () { toast('音声の読み込みに失敗しました。しばらくしてから再試行してください', 'error'); restore(); };
+            audio.onerror = function () { toast(T('音声の読み込みに失敗しました。しばらくしてから再試行してください'), 'error'); restore(); };
             audio.play().catch(function () {
-                toast('ブラウザが再生をブロックしました。ページを一度タップしてから再試行してください', 'error');
+                toast(T('ブラウザが再生をブロックしました。ページを一度タップしてから再試行してください'), 'error');
                 restore();
             });
         }).catch(function (e) {
-            toast('语音服务错误：' + e.message, 'error');
+            toast(T('音声生成に失敗：{0}', e.message), 'error');
             restore();
         });
     };

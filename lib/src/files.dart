@@ -864,30 +864,127 @@ Future<File> dsDecryptFileToTemp(String absPath, {String? hintName}) async {
 
 Future<void> serveDsFile(HttpRequest req, DsFileMeta meta) async {
   final absPath = '$DSFilesBlobDir/${meta.relPath}';
+  if (!File(absPath).existsSync()) {
+    await errJson(req.response, 404, '文件不存在');
+    return;
+  }
   if (!dsIsEncryptedFile(absPath)) {
     await serveFile(req, File(absPath),
         downloadName: meta.name,
         attachment: req.uri.queryParameters['download'] == '1');
     return;
   }
-  File? tmp;
-  try {
-    tmp = await dsDecryptFileToTemp(absPath, hintName: meta.name);
-    await serveFile(req, tmp,
-        downloadName: meta.name,
-        attachment: req.uri.queryParameters['download'] == '1');
-  } catch (e) {
-    logp('❌ 文件解密发送失败: ${meta.id} ($e)');
-    try {
-      await errJson(req.response, 500, '文件解密失败');
-    } catch (_) {}
-  } finally {
-    if (tmp != null && tmp.path != absPath) {
-      try {
-        final parent = tmp.parent;
-        if (parent.existsSync()) parent.deleteSync(recursive: true);
-      } catch (_) {}
+  // 加密文件直接流式解密到 HTTP 响应，不再先落临时文件。
+  // 这样 HEAD / 图片预览 / 附件下载都能立即收到响应头，不会一直“加载中”。
+  await serveEncryptedDsFile(req, meta, absPath);
+}
+
+/// 加密文件流式下载：边解密边发送，支持 Range，且不产生明文临时文件。
+Future<void> serveEncryptedDsFile(
+    HttpRequest req, DsFileMeta meta, String absPath) async {
+  final res = req.response;
+  final total = meta.size;
+  final attachment = req.uri.queryParameters['download'] == '1';
+  final mime = meta.mimeType.isNotEmpty ? meta.mimeType : mimeByExt(meta.name);
+
+  res.headers.set(
+      HttpHeaders.contentTypeHeader,
+      attachment ? 'application/octet-stream' : mime);
+  res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+  res.headers.set('content-disposition',
+      contentDispositionValue(meta.name, attachment));
+  res.headers.set('cache-control',
+      attachment ? 'no-store' : 'private, max-age=60, must-revalidate');
+
+  var start = 0;
+  var end = total - 1;
+  final rangeHeader = req.headers.value(HttpHeaders.rangeHeader);
+  if (rangeHeader != null && rangeHeader.startsWith('bytes=')) {
+    final spec = rangeHeader.substring(6).split(',').first.trim();
+    final dash = spec.indexOf('-');
+    if (dash >= 0) {
+      final a = spec.substring(0, dash);
+      final b = spec.substring(dash + 1);
+      if (a.isEmpty) {
+        final suffix = int.tryParse(b);
+        if (suffix != null && suffix > 0) {
+          start = total - suffix;
+          if (start < 0) start = 0;
+        }
+      } else {
+        final s = int.tryParse(a);
+        if (s != null) start = s;
+        if (b.isNotEmpty) {
+          final e = int.tryParse(b);
+          if (e != null) end = e;
+        }
+      }
+      if (start < 0) start = 0;
+      if (end >= total) end = total - 1;
+      if (start > end || total == 0) {
+        res.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+        res.headers.set(HttpHeaders.contentRangeHeader, 'bytes */$total');
+        await res.close();
+        return;
+      }
+      res.statusCode = HttpStatus.partialContent;
+      res.headers.set(HttpHeaders.contentRangeHeader, 'bytes $start-$end/$total');
+      res.headers.contentLength = end - start + 1;
     }
+  } else {
+    res.headers.contentLength = total;
+  }
+
+  if (req.method == 'HEAD' || total == 0) {
+    await res.close();
+    return;
+  }
+
+  final want = end - start + 1;
+  var pos = 0;
+  var sent = 0;
+  var firstLine = true;
+  try {
+    if (currentUserId.isEmpty) throw StateError('加密文件需要登录账号密钥');
+    final lines = File(absPath)
+        .openRead()
+        .transform(utf8.decoder)
+        .transform(const LineSplitter());
+    await for (final raw in lines) {
+      var line = raw.trim();
+      if (firstLine) {
+        firstLine = false;
+        if (line.startsWith(KEWE_FILE_MAGIC)) continue;
+      }
+      if (line.isEmpty) continue;
+      Uint8List plain;
+      try {
+        plain = keweDecryptBytesForUser(currentUserId, base64.decode(line));
+      } catch (e) {
+        throw StateError('文件密文损坏: $e');
+      }
+      final chunkStart = pos;
+      final chunkEnd = pos + plain.length - 1;
+      pos += plain.length;
+      if (chunkEnd < start) continue;
+      final from = start > chunkStart ? start - chunkStart : 0;
+      final to = end < chunkEnd ? end - chunkStart + 1 : plain.length;
+      if (from < to) {
+        res.add(Uint8List.sublistView(plain, from, to));
+        sent += to - from;
+      }
+      if (sent >= want) break;
+    }
+    if (sent < want) {
+      logp('⚠️ 加密文件解密输出不足: ${meta.id} ($sent/$want)');
+    }
+    await res.flush();
+  } catch (e) {
+    logp('❌ 加密文件流式发送失败: ${meta.id} ($e)');
+  } finally {
+    try {
+      await res.close();
+    } catch (_) {}
   }
 }
 

@@ -10,7 +10,6 @@ I18N.add('en',`
     フォーラム · 投稿広場|Forum · Post Plaza
     日本語単語帳|Japanese Vocabulary
     ファイル管理|File Manager
-    ピーク／オフピーク通知|Peak / Off-peak Alerts
     データ復元|Data Restore
     設定|Settings
     セッション検索|Search Sessions
@@ -440,13 +439,11 @@ I18N.add('en',`
     ♻️ バックアップから復元|♻️ Restore from Backup
     （推奨：先に「📦 データバックアップ」ボタンで現在のデータをダウンロードしてください）|(Recommended: download your current data first with the "📦 Data Backup" button)
     リクエストに失敗|Request failed
-    ピーク／オフピーク通知（タップで設定を開く）|Peak / Off-peak Alerts (tap to open settings)
     DeepSeek オフピーク時間帯が開始|DeepSeek off-peak hours started
     現在はピーク時間帯（09:00–12:00 / 14:00–18:00）|Currently peak hours (09:00–12:00 / 14:00–18:00)
     現在はオフピーク時間帯（アイドル時間、料金はピークの約半額）|Currently off-peak hours (idle time, about half the peak price)
     プッシュチャネルでピーク時間帯の通知を送信しました|Sent a peak-hour alert via the push channel
     プッシュチャネルでオフピーク時間帯の通知を送信しました|Sent an off-peak alert via the push channel
-    DeepSeek ピーク／オフピーク時間帯 · 枠の光効果 · プッシュ通知|DeepSeek peak / off-peak hours · Border glow · Push notifications
     すべて既定に戻す|Reset All to Default
     すべての外観と通知の設定を既定値に戻します（プッシュチャネルは保持）。よろしいですか？|Reset all appearance and notification settings to their defaults (push channels are kept). Are you sure?
     既定に戻しました|Reset to defaults
@@ -454,7 +451,6 @@ I18N.add('en',`
     （サービスが起動しているか確認してください）|(Check whether the service is running)
     現在の状態|Current status
     現在の時間帯、次の切替までのカウントダウン、手動上書き。|Current slot, countdown to the next switch, manual override.
-    ピーク／オフピーク通知を有効化|Enable peak / off-peak alerts
     メインスイッチ。オフにすると枠・光効果・バッジ・プッシュ通知がすべて停止します。|Main switch. Turning it off stops the border, glow, badge and push notifications.
     適用範囲|Scope
     既定では DeepSeek チャット画面のみで有効になり、他のページに影響しません。|Enabled only on the DeepSeek chat screen by default; other pages are unaffected.
@@ -528,7 +524,6 @@ I18N.add('en',`
     ブラウザのシステム通知：ページを開いている間に、時間帯の切替や予約リマインダーの発火時に通知します。|Browser system notifications: while the page is open, notify on slot changes or scheduled reminders.
     ローカル通知を有効化|Enable local notifications
     フェーズ転換時に通知|Notify on phase change
-    ピーク／オフピークの切替時に通知します。|Notify when switching between peak and off-peak.
     予約リマインダーの発火時に通知|Notify when a scheduled reminder fires
     サーバーがプッシュチャネルで通知を送るときに同期して通知します。|Notify in sync when the server sends via the push channel.
     通知権限をリクエスト|Request notification permission
@@ -537,7 +532,6 @@ I18N.add('en',`
     権限を取得できませんでした：|Could not get permission:
     テスト通知を送信|Send test notification
     先に通知を許可してください|Please allow notifications first
-    ピーク／オフピーク通知テスト|Peak / Off-peak Notification Test
     この通知が見えていれば、ローカル通知は利用可能です。|If you can see this notification, local notifications work.
     このブラウザは Notification API に対応していません|This browser does not support the Notification API
     通知権限：許可済み|Notification permission: granted

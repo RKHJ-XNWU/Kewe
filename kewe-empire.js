@@ -26,6 +26,8 @@
       go: '执行',
       chipKnowledge: '知识库',
       kbMenu: '知识库状态',
+      loginRequired: '需要登录',
+      kbReadFailed: '读取失败',
       kbUnitEntries: '条',
       kbUnitDomains: '域',
       kbUnitChars: '字',
@@ -122,6 +124,8 @@
       go: 'Run',
       chipKnowledge: 'Knowledge',
       kbMenu: 'Knowledge status',
+      loginRequired: 'Login required',
+      kbReadFailed: 'Failed to read',
       kbUnitEntries: 'entries',
       kbUnitDomains: 'domains',
       kbUnitChars: 'chars',
@@ -218,6 +222,8 @@
       go: '実行',
       chipKnowledge: '知識ベース',
       kbMenu: '知識ベース状態',
+      loginRequired: 'ログインが必要です',
+      kbReadFailed: '読み込みに失敗しました',
       kbUnitEntries: '件',
       kbUnitDomains: '領域',
       kbUnitChars: '文字',
@@ -314,6 +320,8 @@
       go: '실행',
       chipKnowledge: '지식',
       kbMenu: '지식 상태',
+      loginRequired: '로그인이 필요합니다',
+      kbReadFailed: '읽기 실패',
       kbUnitEntries: '항목',
       kbUnitDomains: '영역',
       kbUnitChars: '자',
@@ -410,6 +418,8 @@
       go: 'Запуск',
       chipKnowledge: 'Знания',
       kbMenu: 'Статус знаний',
+      loginRequired: 'Требуется вход',
+      kbReadFailed: 'Не удалось прочитать',
       kbUnitEntries: 'записей',
       kbUnitDomains: 'доменов',
       kbUnitChars: 'символов',
@@ -506,6 +516,8 @@
       go: 'Lancer',
       chipKnowledge: 'Connaissances',
       kbMenu: 'État des connaissances',
+      loginRequired: 'Connexion requise',
+      kbReadFailed: 'Échec de la lecture',
       kbUnitEntries: 'entrées',
       kbUnitDomains: 'domaines',
       kbUnitChars: 'caractères',
@@ -907,7 +919,7 @@
   }
 
   function openKnowledge(initialQuery) {
-    if (!isAuthed()) { toast('404 · 需要登录'); openEmergency(); return; }
+    if (!isAuthed()) { toast('404 · ' + tr('loginRequired')); openEmergency(); return; }
     var layer = buildKnowledgeLayer();
     openLayer(layer);
     state.knowledgeOpen = true;
@@ -1216,7 +1228,7 @@
       .then(function (d) {
         var domains = d.collections && typeof d.collections === 'object' ? Object.keys(d.collections).length : 0;
         toast(tr('kbMenu') + ' · ' + (d.entries == null ? '—' : d.entries) + ' ' + tr('kbUnitEntries') + ' · ' + domains + ' ' + tr('kbUnitDomains') + ' · ' + (d.totalChars == null ? '—' : d.totalChars) + ' ' + tr('kbUnitChars'));
-      }).catch(function () { toast(tr('kbMenu') + ' · 读取失败'); });
+      }).catch(function () { toast(tr('kbMenu') + ' · ' + tr('kbReadFailed')); });
   }
 
   function injectHomeMenu() {

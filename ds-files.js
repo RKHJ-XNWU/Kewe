@@ -161,16 +161,67 @@
         });
     }
 
-    function downloadFile(fileId) {
-        var url = '/api/ds-files/download?id=' + encodeURIComponent(fileId) + '&download=1';
+    function dsDataUrlBlob(uri) {
+        var comma = uri.indexOf(',');
+        if (comma < 0) throw new Error('invalid data url');
+        var header = uri.substring(5, comma);
+        var mime = header.split(';')[0] || 'application/octet-stream';
+        var bin = atob(uri.substring(comma + 1));
+        var bytes = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
+    }
+
+    function dsTriggerDownload(href, name, revoke) {
         var a = document.createElement('a');
-        a.href = url;
-        var meta = dsFiles.find(function (f) { return f.id === fileId; });
-        a.download = meta ? meta.name : 'file';
+        a.href = href;
+        a.download = name || 'file';
+        a.style.display = 'none';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        dsToast('ダウンロードを開始...', 'info');
+        if (revoke) {
+            setTimeout(function () { try { URL.revokeObjectURL(href); } catch (e) {} }, 3000);
+        }
+    }
+
+    // 统一下载入口：
+    //   · 有生成预览时直接用预览 Blob 下载，不再走一次慢速解密；
+    //   · 普通文件走浏览器原生 attachment，服务端流式发送首字节；
+    //   · 不再把整个文件 fetch 进内存后再保存，避免大文件等待与内存峰值。
+    function dsDownloadFile(file, previewUrl) {
+        file = file || {};
+        var id = file.id || '';
+        var name = file.name || 'file';
+        var preview = previewUrl || file.preview || '';
+        var toastStart = dsT('ダウンロードを開始...');
+
+        if (preview && preview.indexOf('data:') === 0) {
+            dsToast(toastStart, 'info');
+            try {
+                dsTriggerDownload(URL.createObjectURL(dsDataUrlBlob(preview)), name, true);
+            } catch (e) {
+                dsToast(dsT('ダウンロードに失敗しました：{0}', (e && e.message) || ''), 'error');
+            }
+            return;
+        }
+
+        if (!id) {
+            dsToast(dsT('ダウンロードに失敗しました：{0}', 'missing file id'), 'error');
+            return;
+        }
+
+        // 服务端已经改为「边解密边流式发送」，响应头在 0.6 秒内就会到达。
+        // 这里直接用原生 attachment 下载，让浏览器立即显示下载进度，避免
+        // 先 fetch 整个大文件到内存、期间页面看起来像卡住。
+        dsToast(toastStart, 'info');
+        dsTriggerDownload('/api/ds-files/download?id=' + encodeURIComponent(id) + '&download=1', name, false);
+    }
+    window.dscDownloadFile = dsDownloadFile;
+
+    function downloadFile(fileId) {
+        var meta = dsFiles.find(function (f) { return f.id === fileId; });
+        dsDownloadFile(meta || { id: fileId, name: 'file' });
     }
 
     async function deleteFile(fileId) {

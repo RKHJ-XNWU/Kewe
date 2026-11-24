@@ -6985,7 +6985,7 @@
                 }
                 doneCount++;
                 if (btnElement && total > 1) {
-                    btnElement.textContent = '⏳ 加载 ' + doneCount + '/' + total;
+                    btnElement.textContent = '⏳ ' + dscT('読み込み中...') + ' ' + doneCount + '/' + total;
                 }
             }
         }

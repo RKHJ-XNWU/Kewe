@@ -32,7 +32,6 @@ import 'package:kewe/src/httpsrv.dart';
 import 'package:kewe/src/knowledge.dart';
 import 'package:kewe/src/kewe_auth.dart';
 import 'package:kewe/src/model_router.dart';
-import 'package:kewe/src/peakvalley.dart';
 import 'package:kewe/src/relay.dart';
 import 'package:kewe/src/search.dart';
 import 'package:kewe/src/session_ref.dart';
@@ -212,9 +211,6 @@ void registerRoutes() {
 
   // ---------- 知识库 / 数据库（账号级） ----------
   registerPrefixHandler('/api/knowledge/', handleKnowledgeApi);
-
-  // ---------- 峰谷提醒（前缀匹配） ----------
-  registerPrefixHandler('/api/peakvalley/', pvHandleAPI);
 }
 
 void registerPrefixHandler(String prefix, Handler h) {
@@ -370,9 +366,6 @@ Future<void> _serveMain(List<String> args) async {
   dsToolExecutor = (name, args) => executeDsTool(name, args);
 
   registerRoutes();
-
-  // 峰谷提醒调度
-  pvSchedulerLoop();
 
   // 上传会话清理定时器在 initDsFilesDir 内已启动
 

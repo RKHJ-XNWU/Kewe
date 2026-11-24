@@ -23,6 +23,8 @@
             'moji_on': '已开启墨迹天气插件',
             'toutiao_on': '已开启头条图文插件',
             'plugin_off': '已关闭该插件',
+            'moji_label': '墨迹天气',
+            'toutiao_label': '头条图文',
             'moji_title': '墨迹天气：点击开启，再点关闭（可与头条图文同时开启）',
             'toutiao_title': '头条图文：点击开启，再点关闭（可与墨迹天气同时开启）',
             'tool_locked': '墨迹天气/头条图文插件已开启，工具模式暂不可用'
@@ -32,33 +34,41 @@
             'moji_on': 'Moji Weather plugin enabled',
             'toutiao_on': 'Toutiao Article plugin enabled',
             'plugin_off': 'Plugin disabled',
+            'moji_label': 'Moji Weather',
+            'toutiao_label': 'Toutiao',
             'moji_title': 'Moji Weather: click to enable, click again to disable (can run together with Toutiao)',
             'toutiao_title': 'Toutiao Article: click to enable, click again to disable (can run together with Moji)',
             'tool_locked': 'Moji/Toutiao plugin is active, tool mode is locked'
         },
         'ja-JP': {
             'plugin_only_db': 'このプラグインは豆包モードでのみ利用可能です',
-            'moji_on': '墨迹天気プラグインを有効化しました',
-            'toutiao_on': '頭条記事プラグインを有効化しました',
+            'moji_on': 'Moji天気プラグインを有効化しました',
+            'toutiao_on': 'Toutiao記事プラグインを有効化しました',
             'plugin_off': 'プラグインを無効化しました',
-            'moji_title': '墨迹天気：クリックで有効化、もう一度クリックで無効化（頭条記事と同時に有効化できます）',
-            'toutiao_title': '頭条記事：クリックで有効化、もう一度クリックで無効化（墨迹天気と同時に有効化できます）',
-            'tool_locked': '墨迹天気/頭条記事プラグインが有効中のため、ツールモードは利用できません'
+            'moji_label': 'Moji天気',
+            'toutiao_label': 'Toutiao記事',
+            'moji_title': 'Moji天気：クリックで有効化、もう一度クリックで無効化（Toutiao記事と同時に有効化できます）',
+            'toutiao_title': 'Toutiao記事：クリックで有効化、もう一度クリックで無効化（Moji天気と同時に有効化できます）',
+            'tool_locked': 'Moji天気/Toutiao記事プラグインが有効中のため、ツールモードは利用できません'
         },
         'ko-KR': {
             'plugin_only_db': '이 플러그인은 두바오 모드에서만 사용 가능합니다',
-            'moji_on': '墨迹 날씨 플러그인이 켜졌습니다',
+            'moji_on': 'Moji 날씨 플러그인이 켜졌습니다',
             'toutiao_on': '헤드라인 기사 플러그인이 켜졌습니다',
             'plugin_off': '플러그인이 꺼졌습니다',
-            'moji_title': '墨迹 날씨: 클릭으로 켜기, 다시 클릭으로 끄기 (헤드라인 기사와 함께 켤 수 있습니다)',
-            'toutiao_title': '헤드라인 기사: 클릭으로 켜기, 다시 클릭으로 끄기 (墨迹 날씨와 함께 켤 수 있습니다)',
-            'tool_locked': '墨迹 날씨/헤드라인 기사 플러그인이 켜져 있어 도구 모드를 사용할 수 없습니다'
+            'moji_label': 'Moji 날씨',
+            'toutiao_label': 'Toutiao 기사',
+            'moji_title': 'Moji 날씨: 클릭으로 켜기, 다시 클릭으로 끄기 (Toutiao 기사와 함께 켤 수 있습니다)',
+            'toutiao_title': 'Toutiao 기사: 클릭으로 켜기, 다시 클릭으로 끄기 (Moji 날씨와 함께 켤 수 있습니다)',
+            'tool_locked': 'Moji 날씨/Toutiao 기사 플러그인이 켜져 있어 도구 모드를 사용할 수 없습니다'
         },
         'fr-FR': {
             'plugin_only_db': 'Ce plugin n\'est disponible qu\'en mode Doubao',
             'moji_on': 'Plugin Moji Weather activé',
             'toutiao_on': 'Plugin Article Toutiao activé',
             'plugin_off': 'Plugin désactivé',
+            'moji_label': 'Moji Weather',
+            'toutiao_label': 'Toutiao',
             'moji_title': 'Moji Weather : cliquez pour activer, recliquez pour désactiver (mode outils verrouillé)',
             'toutiao_title': 'Article Toutiao : cliquez pour activer, recliquez pour désactiver (mode outils verrouillé)',
             'tool_locked': 'Plugin Moji/Toutiao actif, mode outils verrouillé'
@@ -68,6 +78,8 @@
             'moji_on': 'Плагин погоды Moji включён',
             'toutiao_on': 'Плагин статей Toutiao включён',
             'plugin_off': 'Плагин отключён',
+            'moji_label': 'Moji Погода',
+            'toutiao_label': 'Toutiao',
             'moji_title': 'Погода Moji: нажмите для включения, нажмите ещё раз для отключения (режим инструментов заблокирован)',
             'toutiao_title': 'Статьи Toutiao: нажмите для включения, нажмите ещё раз для отключения (режим инструментов заблокирован)',
             'tool_locked': 'Плагин Moji/Toutiao активен, режим инструментов заблокирован'
@@ -359,14 +371,14 @@
         if (!$(MOJI_ID)) {
             panel.appendChild(makeBtn(
                 MOJI_ID, MOJI_SVG,
-                '墨迹天气', 'moji',
+                T('moji_label'), 'moji',
                 T('moji_title')
             ));
         }
         if (!$(TOUJI_ID)) {
             panel.appendChild(makeBtn(
                 TOUJI_ID, TOUJIAO_SVG,
-                '头条图文', 'toutiao',
+                T('toutiao_label'), 'toutiao',
                 T('toutiao_title')
             ));
         }

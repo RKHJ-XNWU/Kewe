@@ -59,7 +59,7 @@
         if (body) opts.body = JSON.stringify(body);
         return fetch(url, opts).then(function (res) {
             return res.json().catch(function () { return {}; }).then(function (data) {
-                if (!res.ok) throw new Error(data.error || ('リクエスト失敗 ' + res.status));
+                if (!res.ok) throw new Error(data.error || T('リクエストに失敗しました：{0}', res.status));
                 return data;
             });
         });
@@ -136,14 +136,14 @@
         overlay.innerHTML =
             '<div class="dsdt-modal">' +
                 '<div class="dsdt-header">' +
-                    '<div class="dsdt-title"><span>🛠️</span><span>開発者ツール</span></div>' +
-                    '<button class="dsdt-close" id="dsdtClose" type="button" title="閉じる">✕</button>' +
+                    '<div class="dsdt-title"><span>🛠️</span><span>' + T('開発者ツール') + '</span></div>' +
+                    '<button class="dsdt-close" id="dsdtClose" type="button" title="' + T('閉じる') + '">✕</button>' +
                 '</div>' +
                 '<div class="dsdt-warn">' +
                     '<span class="ic">⚠️</span>' +
-                    '<div><b>警告：これは開発者ツールであり、開発環境でのみ使用できます。</b><br>' +
-                    '注入したプロンプトは送信メッセージの前に付加されて DeepSeek に送られます。' +
-                    'チャット画面とセッション履歴には表示されません。</div>' +
+                    '<div><b>' + T('警告：これは開発者ツールであり、開発環境でのみ使用できます。') + '</b><br>' +
+                    T('注入したプロンプトは送信メッセージの前に付加されて DeepSeek に送られます。') +
+                    T('チャット画面とセッション履歴には表示されません。') + '</div>' +
                 '</div>' +
                 '<div class="dsdt-body" id="dsdtBody"></div>' +
             '</div>';
@@ -175,25 +175,24 @@
             banner =
                 '<div class="dsdt-active-banner">' +
                     '<span class="ic">💉</span>' +
-                    '<div>現在注入中 <b>' + activeCount + '</b> 件のプロンプト、' +
-                    '次回メッセージ送信時に反映されます</div>' +
+                    '<div>' + T('現在注入中 {0} 件のプロンプト、次回メッセージ送信時に反映されます', activeCount) + '</div>' +
                 '</div>';
         }
 
         body.innerHTML =
             banner +
             '<button class="dsdt-enter-btn" id="dsdtEnterBtn" type="button">' +
-                '<span class="ic">💉</span><span>プロンプトを注入</span>' +
+                '<span class="ic">💉</span><span>' + T('プロンプトを注入') + '</span>' +
             '</button>' +
             '<button class="dsdt-enter-btn" id="dsdtInjectAllTopBtn" type="button" style="margin-top:8px;">' +
-                '<span class="ic">⚡</span><span>一键注入全部提示词</span>' +
+                '<span class="ic">⚡</span><span>' + T('すべてのプロンプトを注入') + '</span>' +
             '</button>' +
             '<button class="dsdt-enter-btn" id="dsdtClearInjectTopBtn" type="button" style="margin-top:8px;">' +
-                '<span class="ic">🚫</span><span>一键取消全部提示词注入</span>' +
+                '<span class="ic">🚫</span><span>' + T('すべてのプロンプト注入を解除') + '</span>' +
             '</button>' +
             '<div class="dsdt-hint">' +
-                '開いたあとプロンプトをタップで注入／もう一度タップで解除<br>' +
-                '追加・編集・削除・一括削除・すべて削除・一键注入全部・一键取消全部に対応' +
+                T('開いたあとプロンプトをタップで注入／もう一度タップで解除') + '<br>' +
+                T('追加・編集・削除・一括削除・すべて削除・すべて注入・すべて解除に対応') +
             '</div>';
 
         var btn = $('dsdtEnterBtn');
@@ -217,15 +216,15 @@
         api('GET', API_BASE + '/prompts').then(function (data) {
             state.prompts = data.prompts || [];
             state.loaded = true;
-            if (state.prompts.length === 0) { toast('プロンプトなし', 'info'); return; }
+            if (state.prompts.length === 0) { toast(T('プロンプトがありません'), 'info'); return; }
             state.prompts.forEach(function (p) { state.activeIds[p.id] = true; });
             pruneActiveIds();
             saveActiveIds();
-            toast('💉 已一键注入全部 ' + state.prompts.length + ' 条提示词', 'success');
+            toast(T('💉 すべてのプロンプトを注入しました（{0} 件）', state.prompts.length), 'success');
             state.inListMode = true;
             renderList();
         }).catch(function (e) {
-            toast('注入失败: ' + e.message, 'error');
+            toast(T('注入に失敗しました：{0}', e.message), 'error');
         });
     }
 
@@ -236,14 +235,14 @@
     function clearAllInjections(fromEntry) {
         var activeCount = Object.keys(state.activeIds || {}).length;
         if (activeCount === 0) {
-            toast('取消する注入はありません', 'info');
+            toast(T('解除する注入はありません'), 'info');
             if (fromEntry) renderEntry(); else renderList();
             return;
         }
         state.activeIds = {};
         saveActiveIds();
         if (fromEntry) renderEntry(); else renderList();
-        toast('🚫 已一键取消全部提示词注入（' + activeCount + ' 条）', 'success');
+        toast(T('🚫 すべてのプロンプト注入を解除しました（{0} 件）', activeCount), 'success');
     }
 
     // ============================================================
@@ -278,30 +277,30 @@
         if (activeCount > 0) {
             html += '<div class="dsdt-active-banner">' +
                         '<span class="ic">💉</span>' +
-                        '<div>注入済み <b>' + activeCount + '</b> 件。次回メッセージ送信時に反映されます</div>' +
+                        '<div>' + T('注入済み {0} 件。次回メッセージ送信時に反映されます', activeCount) + '</div>' +
                     '</div>';
         }
 
         html += '<div class="dsdt-toolbar">';
-        html += '<button class="dsdt-btn primary" id="dsdtAddBtn" type="button">＋ 追加</button>';
-        html += '<button class="dsdt-btn primary" id="dsdtInjectAllBtn" type="button">💉 一键注入全部</button>';
-        html += '<button class="dsdt-btn" id="dsdtClearInjectBtn" type="button">🚫 一键取消全部注入' +
+        html += '<button class="dsdt-btn primary" id="dsdtAddBtn" type="button">' + T('＋ 追加') + '</button>';
+        html += '<button class="dsdt-btn primary" id="dsdtInjectAllBtn" type="button">' + T('💉 すべて注入') + '</button>';
+        html += '<button class="dsdt-btn" id="dsdtClearInjectBtn" type="button">' + T('🚫 すべての注入を解除') +
                     (activeCount > 0 ? '（' + activeCount + '）' : '') + '</button>';
         html += '<button class="dsdt-btn" id="dsdtSelectBtn" type="button">' +
-                    (state.selectMode ? '✕ 複数選択を終了' : '☑️ 複数選択') + '</button>';
+                    (state.selectMode ? T('✕ 複数選択を終了') : T('☑️ 複数選択')) + '</button>';
         if (state.selectMode) {
             html += '<button class="dsdt-btn danger" id="dsdtBatchDelBtn" type="button" ' +
                         (checkedCount === 0 ? 'disabled' : '') +
-                    '>🗑️ 選択を削除(' + checkedCount + ')</button>';
+                    '>' + T('🗑️ 選択を削除（{0}）', checkedCount) + '</button>';
         }
-        html += '<button class="dsdt-btn danger" id="dsdtClearAllBtn" type="button">🧹 すべて削除</button>';
-        html += '<button class="dsdt-btn ghost" id="dsdtBackBtn" type="button">← 戻る</button>';
+        html += '<button class="dsdt-btn danger" id="dsdtClearAllBtn" type="button">' + T('🧹 すべて削除') + '</button>';
+        html += '<button class="dsdt-btn ghost" id="dsdtBackBtn" type="button">' + T('← 戻る') + '</button>';
         html += '</div>';
 
         if (state.prompts.length === 0) {
             html += '<div class="dsdt-empty">' +
                         '<span class="emoji">📭</span>' +
-                        'プロンプトがありません。「＋ 追加」から追加してください' +
+                        T('プロンプトがありません。「＋ 追加」から追加してください') +
                     '</div>';
         } else {
             html += '<div class="dsdt-list">';
@@ -319,16 +318,16 @@
                     html += '<div class="dsdt-check" data-check="1"></div>';
                     html += '<div class="dsdt-item-main">' +
                                 '<div class="dsdt-item-title">#' + (i + 1) + ' · ' +
-                                    escapeHtml(p.title || '無題') + '</div>' +
+                                    escapeHtml(p.title || T('無題')) + '</div>' +
                                 '<div class="dsdt-item-content">' +
                                     escapeHtml(p.content || '') + '</div>' +
                             '</div>';
                 } else {
                     html += '<div class="dsdt-item-main">' +
                                 '<div class="dsdt-item-title">#' + (i + 1) + ' · ' +
-                                    escapeHtml(p.title || '無題');
+                                    escapeHtml(p.title || T('無題'));
                     if (isActive) {
-                        html += '<span class="dsdt-badge">💉 注入済み</span>';
+                        html += '<span class="dsdt-badge">' + T('💉 注入済み') + '</span>';
                     }
                     html += '</div>' +
                             '<div class="dsdt-item-content">' +
@@ -337,8 +336,8 @@
                                 escapeHtml(formatTime(p.createdAt)) + '</div>' +
                         '</div>' +
                         '<div class="dsdt-item-actions">' +
-                            '<button class="dsdt-icon-btn" data-act="edit" title="編集">✏️</button>' +
-                            '<button class="dsdt-icon-btn danger" data-act="del" title="削除">✕</button>' +
+                            '<button class="dsdt-icon-btn" data-act="edit" title="' + T('編集') + '">✏️</button>' +
+                            '<button class="dsdt-icon-btn danger" data-act="del" title="' + T('削除') + '">✕</button>' +
                         '</div>';
                 }
 
@@ -358,11 +357,11 @@
         // ★ 一键注入全部：把当前列表里的所有提示词全部标记为「注入済み」
         var injectAllBtn = $('dsdtInjectAllBtn');
         if (injectAllBtn) injectAllBtn.addEventListener('click', function () {
-            if (!state.prompts || state.prompts.length === 0) { toast('プロンプトなし', 'info'); return; }
+            if (!state.prompts || state.prompts.length === 0) { toast(T('プロンプトがありません'), 'info'); return; }
             state.prompts.forEach(function (p) { state.activeIds[p.id] = true; });
             saveActiveIds();
             renderList();
-            toast('💉 已一键注入全部 ' + state.prompts.length + ' 条提示词', 'success');
+            toast(T('💉 すべてのプロンプトを注入しました（{0} 件）', state.prompts.length), 'success');
         });
 
         // ★ 一键取消全部注入（列表视图）
@@ -382,25 +381,24 @@
         var batchDel = $('dsdtBatchDelBtn');
         if (batchDel) batchDel.addEventListener('click', function () {
             var ids = Object.keys(state.checkedIds);
-            if (ids.length === 0) { toast('先にプロンプトを選択してください', 'info'); return; }
-            if (!window.confirm('選択した ' + ids.length + ' 件のプロンプトですか？')) return;
+            if (ids.length === 0) { toast(T('先にプロンプトを選択してください'), 'info'); return; }
+            if (!window.confirm(T('選択した {0} 件のプロンプトですか？', ids.length))) return;
 
             api('POST', API_BASE + '/prompts/batch-delete', { ids: ids })
                 .then(function (data) {
                     state.checkedIds = {};
-                    toast('✅ 削除しました：' + (data.deleted || ids.length) + ' 件', 'success');
+                    toast(T('✅ 削除しました：{0} 件', (data.deleted || ids.length)), 'success');
                     loadPrompts();
                 })
                 .catch(function (e) {
-                    toast('一括削除に失敗: ' + e.message, 'error');
+                    toast(T('一括削除に失敗しました：{0}', e.message), 'error');
                 });
         });
 
         var clearAll = $('dsdtClearAllBtn');
         if (clearAll) clearAll.addEventListener('click', function () {
-            if (state.prompts.length === 0) { toast('プロンプトなし', 'info'); return; }
-            if (!window.confirm('すべての ' + state.prompts.length +
-                ' 件のプロンプトですか？この操作は元に戻せません！')) return;
+            if (state.prompts.length === 0) { toast(T('プロンプトがありません'), 'info'); return; }
+            if (!window.confirm(T('すべての {0} 件のプロンプトですか？この操作は元に戻せません！', state.prompts.length))) return;
 
             api('DELETE', API_BASE + '/prompts?all=true')
                 .then(function () {
@@ -408,11 +406,11 @@
                     state.selectMode = false;
                     state.activeIds = {};
                     saveActiveIds();
-                    toast('✅ すべてのプロンプトを消去しました', 'success');
+                    toast(T('✅ すべてのプロンプトを削除しました'), 'success');
                     loadPrompts();
                 })
                 .catch(function (e) {
-                    toast('消去に失敗: ' + e.message, 'error');
+                    toast(T('削除に失敗しました：{0}', e.message), 'error');
                 });
         });
 
@@ -439,12 +437,12 @@
                     delete state.activeIds[id];
                     saveActiveIds();
                     renderList();
-                    toast('注入を解除：' + (p.title || '無題'), 'info');
+                    toast(T('注入を解除：{0}', (p.title || T('無題'))), 'info');
                 } else {
                     state.activeIds[id] = true;
                     saveActiveIds();
                     renderList();
-                    toast('💉 注入済み：' + (p.title || '無題'), 'success');
+                    toast(T('💉 注入済み：{0}', (p.title || T('無題'))), 'success');
                 }
             });
 
@@ -460,7 +458,7 @@
                 e.stopPropagation();
                 var p = state.prompts.find(function (x) { return x.id === id; });
                 if (!p) return;
-                if (!window.confirm('「' + (p.title || '無題') + '」を削除しますか？')) return;
+                if (!window.confirm(T('「{0}」を削除しますか？', (p.title || T('無題'))))) return;
 
                 api('DELETE', API_BASE + '/prompts?id=' + encodeURIComponent(id))
                     .then(function () {
@@ -468,11 +466,11 @@
                             delete state.activeIds[id];
                             saveActiveIds();
                         }
-                        toast('✅ 削除しました', 'success');
+                        toast(T('✅ 削除しました'), 'success');
                         loadPrompts();
                     })
                     .catch(function (err) {
-                        toast('削除に失敗: ' + err.message, 'error');
+                        toast(T('削除に失敗しました：{0}', err.message), 'error');
                     });
             });
         });
@@ -490,21 +488,21 @@
 
         body.innerHTML =
             '<div class="dsdt-field">' +
-                '<label>📌 タイトル</label>' +
+                '<label>' + T('📌 タイトル') + '</label>' +
                 '<input type="text" id="dsdtEditTitle" maxlength="80" ' +
-                    'placeholder="例：第一項 / 挨拶" ' +
+                    'placeholder="' + T('例：第一項 / 挨拶') + '" ' +
                     'value="' + escapeHtml(isEdit ? (prompt.title || '') : '') + '">' +
             '</div>' +
             '<div class="dsdt-field">' +
-                '<label>💬 プロンプト内容（送信メッセージの前に付加されます）</label>' +
+                '<label>' + T('💬 プロンプト内容（送信メッセージの前に付加されます）') + '</label>' +
                 '<textarea id="dsdtEditContent" maxlength="8000" ' +
-                    'placeholder="例：こんにちは / 皆さんこんにちは">' +
+                    'placeholder="' + T('例：こんにちは / 皆さんこんにちは') + '">' +
                     escapeHtml(isEdit ? (prompt.content || '') : '') +
                 '</textarea>' +
             '</div>' +
             '<div class="dsdt-footer">' +
-                '<button class="dsdt-btn ghost" id="dsdtEditCancel" type="button">キャンセル</button>' +
-                '<button class="dsdt-btn primary" id="dsdtEditSave" type="button">💾 保存</button>' +
+                '<button class="dsdt-btn ghost" id="dsdtEditCancel" type="button">' + T('キャンセル') + '</button>' +
+                '<button class="dsdt-btn primary" id="dsdtEditSave" type="button">' + T('💾 保存') + '</button>' +
             '</div>';
 
         var cancelBtn = $('dsdtEditCancel');
@@ -521,22 +519,22 @@
             var content = (contentEl ? contentEl.value : '').trim();
 
             if (!content) {
-                toast('プロンプト内容を入力してください', 'info');
+                toast(T('プロンプト内容を入力してください'), 'info');
                 if (contentEl) contentEl.focus();
                 return;
             }
 
-            var payload = { title: title || '無題', content: content };
+            var payload = { title: title || T('無題'), content: content };
             if (state.editingId) payload.id = state.editingId;
 
             api('POST', API_BASE + '/prompts', payload)
                 .then(function () {
-                    toast(isEdit ? '✅ 保存しました' : '✅ 追加しました', 'success');
+                    toast(T(isEdit ? '✅ 保存しました' : '✅ 追加しました'), 'success');
                     state.editingId = null;
                     loadPrompts();
                 })
                 .catch(function (e) {
-                    toast('保存に失敗: ' + e.message, 'error');
+                    toast(T('保存に失敗しました：{0}', e.message), 'error');
                 });
         });
 
@@ -585,8 +583,8 @@
         btn.innerHTML =
             '<span class="menu-icon">🛠️</span>' +
             '<div class="menu-info">' +
-                '<div class="menu-title">開発者ツール</div>' +
-                '<div class="menu-desc">プロンプト注入 · 開発環境限定</div>' +
+                '<div class="menu-title">' + T('開発者ツール') + '</div>' +
+                '<div class="menu-desc">' + T('プロンプト注入 · 開発環境限定') + '</div>' +
             '</div>';
 
         // 捕捉段階で遮断し、ファイル選択の発火を防ぐ

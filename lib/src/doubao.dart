@@ -978,6 +978,15 @@ Map<String, dynamic>? _fileJson(DsFileMeta? m) {
   return j;
 }
 
+/// 生成图立即回显用的内联预览（仅限图片本体，不落盘、不进历史）。
+/// 大图不做 base64 回传，避免把移动端内存和接口响应撑爆。
+String? _imagePreviewDataUrl(List<int> bytes, String mime,
+    {int maxBytes = 10 * 1024 * 1024}) {
+  if (bytes.isEmpty || bytes.length > maxBytes) return null;
+  final safeMime = mime.startsWith('image/') ? mime : 'image/png';
+  return 'data:$safeMime;base64,${base64.encode(bytes)}';
+}
+
 // ------------------------------------------------------------
 // 图片尺寸：按比例计算合法像素（Seedream 显式尺寸模式）
 // ------------------------------------------------------------
@@ -1171,6 +1180,7 @@ Future<Map<String, dynamic>> dbGenerateImage({
   return {
     'success': true,
     'file': _fileJson(meta),
+    'preview': _imagePreviewDataUrl(bytes, meta.mimeType),
     'model': usedModel,
     'fallbackFrom': usedModel == useModel ? '' : useModel,
     'size': '$size',
@@ -1283,6 +1293,7 @@ Future<Map<String, dynamic>> dbEditImage({
   return {
     'success': true,
     'file': _fileJson(meta),
+    'preview': _imagePreviewDataUrl(outBytes, 'image/png'),
     'model': usedModel,
     'fallbackFrom': usedModel == useModel ? '' : useModel,
     'prompt': p,

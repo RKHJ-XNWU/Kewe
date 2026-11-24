@@ -315,6 +315,24 @@ String mimeByExt(String name) {
       'application/octet-stream';
 }
 
+String contentDispositionValue(String name, bool attachment) {
+  final safe = name
+      .replaceAll('"', '')
+      .replaceAll('\n', '')
+      .replaceAll('\r', '');
+  final isAscii = safe.codeUnits.every((c) => c < 128);
+  final dispo = attachment ? 'attachment' : 'inline';
+  if (isAscii) {
+    // HTTP header 只能是 ASCII（Go 允许原始字节，Dart 严格校验）
+    return '$dispo; filename="$safe"';
+  }
+  // RFC 5987：filename 用 ASCII 占位，filename* 给 UTF-8 真实名
+  final fallback = String.fromCharCodes(
+      safe.codeUnits.map((c) => c < 128 ? c : 0x5F));
+  final encoded = Uri.encodeComponent(safe);
+  return '$dispo; filename="$fallback"; filename*=UTF-8\'\'$encoded';
+}
+
 // ------------------------------------------------------------
 // 静态文件 + Range（等价 Go http.ServeFile/ServeContent）
 // ------------------------------------------------------------
@@ -329,26 +347,14 @@ Future<void> serveFile(HttpRequest req, File file,
   final total = stat.size;
   final mime = mimeByExt(file.path);
 
-  res.headers.set(HttpHeaders.contentTypeHeader, mime);
+  // 附件下载强制使用 octet-stream，避免内嵌浏览器/Android WebView
+  // 把 Content-Disposition: attachment 的图片当成内联图片一直转圈。
+  res.headers.set(HttpHeaders.contentTypeHeader,
+      attachment ? 'application/octet-stream' : mime);
   res.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
   if (downloadName != null) {
-    final safe = downloadName
-        .replaceAll('"', '')
-        .replaceAll('\n', '')
-        .replaceAll('\r', '');
-    final dispo = attachment ? 'attachment' : 'inline';
-    final isAscii = safe.codeUnits.every((c) => c < 128);
-    if (isAscii) {
-      // HTTP header 只能是 ASCII（Go 允许原始字节，Dart 严格校验）
-      res.headers.set('content-disposition', '$dispo; filename="$safe"');
-    } else {
-      // RFC 5987：filename 用 ASCII 占位，filename* 给 UTF-8 真实名
-      final fallback = String.fromCharCodes(
-          safe.codeUnits.map((c) => c < 128 ? c : 0x5F));
-      final encoded = Uri.encodeComponent(safe);
-      res.headers.set('content-disposition',
-          '$dispo; filename="$fallback"; filename*=UTF-8\'\'$encoded');
-    }
+    res.headers.set('content-disposition',
+        contentDispositionValue(downloadName, attachment));
   }
 
   // If-Modified-Since（秒级）
