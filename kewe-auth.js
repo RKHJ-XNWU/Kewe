@@ -1031,12 +1031,17 @@
     }
   }
 
-  function clearLocalKeepLang() {
+  function clearLocalKeepLang(purgeAll) {
     try {
       var keepLang = localStorage.getItem(LANG_KEY);
-      localStorage.clear();
+      // 普通“退出登录”只结束会话，不清浏览器里的个人设置；
+      // 否则 dsc_reasoningLevel、dsdt_active_inject_ids 等会被误清成默认值。
+      // 只有“注销账号”这种不可逆操作才清空整个 localStorage。
+      if (purgeAll) {
+        localStorage.clear();
+        if (keepLang) localStorage.setItem(LANG_KEY, keepLang);
+      }
       sessionStorage.clear();
-      if (keepLang) localStorage.setItem(LANG_KEY, keepLang);
     } catch (e) {}
   }
 
@@ -1068,8 +1073,8 @@
       confirm.textContent = opts.busy;
       api(opts.endpoint, {}).then(function (r) {
         if (r.status >= 200 && r.status < 300) {
-          // 服务端已清 Cookie；这里只清本机缓存，不触碰任何账号数据。
-          clearLocalKeepLang();
+          // 服务端已清 Cookie；普通退出只清会话状态，注销账号才清本机数据。
+          clearLocalKeepLang(!!opts.purgeLocal);
           global.location.reload();
         } else {
           overlay.remove();
@@ -1090,6 +1095,7 @@
     openConfirm({
       id: 'keweSignOutOverlay',
       tone: 'safe',
+      purgeLocal: false,
       icon: '👤',
       endpoint: '/api/auth/logout',
       title: lm('signOutTitle'),
@@ -1105,6 +1111,7 @@
     openConfirm({
       id: 'keweLogoutOverlay',
       tone: 'danger',
+      purgeLocal: true,
       icon: '⚠️',
       endpoint: '/api/auth/delete',
       title: lm('logoutTitle'),
