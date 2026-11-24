@@ -71,6 +71,9 @@
         userDeltaCumulative: false,
         liveUserTurn: null,
         liveAiTurn: null,
+        userItemId: '',
+        userStarted: false,
+        userOpen: false,
         subsTimer: null,
         audioText: '',
         audioFinal: '',
@@ -581,6 +584,9 @@
         V.userDeltaCumulative = false;
         V.liveUserTurn = null;
         V.liveAiTurn = null;
+        V.userItemId = '';
+        V.userStarted = false;
+        V.userOpen = false;
         if (V.subsTimer) { clearTimeout(V.subsTimer); V.subsTimer = null; }
         V.audioText = '';
         V.audioFinal = '';
@@ -997,8 +1003,13 @@
             return;
         }
         if (t === 'response.created') {
-            // 上一轮若因网络/取消没有收到 done，先把残留的实时气泡收口。
-            if (V.liveUserTurn) closeLiveTurn('liveUserTurn');
+            // 用户最终转写有可能比 response.created 更晚到，不能提前丢掉用户
+            // 气泡引用；只把光标收掉，等 completed 到达后就地替换成最终文本。
+            if (V.liveUserTurn) {
+                V.liveUserTurn.live = false;
+                renderSubs();
+            }
+            // 上一轮豆包若因网络/取消没有收到 done，先把残留的实时气泡收口。
             if (V.liveAiTurn) closeLiveTurn('liveAiTurn');
             V.speaking = true;
             V.responseSeen = true;
@@ -1067,6 +1078,7 @@
             // 优先实际播报的语音字幕；语音字幕为空时才回退文本流。
             var spoken = String(V.audioFinal || V.audioText || '').trim();
             if (!spoken) spoken = String(V.textFinal || V.curText || '').trim();
+            if (!spoken && V.liveAiTurn) spoken = String(V.liveAiTurn.text || '').trim();
             if (spoken) {
                 if (V.liveAiTurn) finalizeLiveTurn('liveAiTurn', spoken);
                 else addTurn('assistant', spoken);
@@ -1100,12 +1112,19 @@
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.started') {
-            // 新一句开始：上一句若还没收到 completed，先把已识别部分收口。
-            if (V.liveUserTurn) closeLiveTurn('liveUserTurn', V.liveUserTurn.text);
+            // 新一句开始：上一句只撤掉流式光标，保留气泡引用，
+            // 迟到的 completed 仍能就地更新上一句，而不是在末尾再追加一条。
+            if (V.liveUserTurn) {
+                V.liveUserTurn.live = false;
+                renderSubs();
+            }
             V.curUserText = '';
             V.lastUserFinal = '';
             V.lastUserDelta = '';
             V.userDeltaCumulative = false;
+            V.userItemId = '';
+            V.userStarted = true;
+            V.userOpen = false;
             setCenterStatus('');
             return;
         }
@@ -1129,7 +1148,7 @@
                     }
                 }
                 // 用户还在说话时就把识别结果放进字幕气泡，和豆包语音通话一致。
-                showLiveUser(V.curUserText);
+                showLiveUser(V.curUserText, m.item_id || m.itemId || '');
             }
             return;
         }
@@ -1140,20 +1159,9 @@
             var ut;
             if (typeof m.transcript === 'string' && m.transcript.trim()) {
                 ut = m.transcript;
-                // 有些服务端的 completed transcript 会把多段累计结果再拼一遍；
-                // 若已确认是累计式 delta，且最后一段完整句就在 transcript 内，
-                // 取最后一段，避免出现「豆包你好…豆包你好…」的重复原文。
-                if (V.userDeltaCumulative && V.lastUserDelta) {
-                    var kT = transcriptKey(ut);
-                    var kD = transcriptKey(V.lastUserDelta);
-                    // transcript 自身干净且与最后一段等价时保留官方标点；
-                    // 只有 transcript 明显把最后一段又包在前面时才取最后一段。
-                    if (kD && kT && kT !== kD &&
-                        ((kT.indexOf(kD) >= 0 && kT.length > kD.length + 2) ||
-                         kD.indexOf(kT) >= 0)) {
-                        ut = V.lastUserDelta;
-                    }
-                }
+                // 完成事件是服务端最终、修正后的整句；中途 delta 只是临时
+                // 识别结果，绝不能用它反向覆盖最终 transcript，否则就会出现
+                // “显示的字和用户实际说的不一致”。
             } else {
                 // 累计式转写时，最后一个 delta 才是完整原句；增量式才用拼接结果。
                 ut = V.userDeltaCumulative ? V.lastUserDelta : V.curUserText;
@@ -1163,26 +1171,43 @@
             if (ut) {
                 var kFinal = transcriptKey(ut);
                 var kLast = transcriptKey(V.lastUserFinal);
-                var lastTurn = V.turns.length ? V.turns[V.turns.length - 1] : null;
-                if (V.liveUserTurn) {
-                    // 流式气泡已经存在：直接收口为最终文本，不再新建一条。
-                    closeLiveTurn('liveUserTurn', ut);
-                } else if (kLast && kFinal && kFinal.indexOf(kLast) >= 0 &&
-                    lastTurn && lastTurn.role === 'user') {
-                    // 同一句话的多个 completed 事件：用最新完整版替换上一段，
-                    // 不再生成多条“豆包你好…豆包你好…”气泡。
-                    lastTurn.text = ut.length > 2000 ? ut.slice(0, 2000) : ut;
-                    lastTurn.at = Date.now();
+                var iid = m.item_id || m.itemId || '';
+                var target = iid ? findUserTurnByItem(iid) : null;
+                if (!target) target = V.liveUserTurn;
+                if (target) {
+                    // 就地把同一句的流式气泡替换成最终 transcript。
+                    // 即使 completed 比 response.created / response.done 晚到，
+                    // 也只更新原来那一条，绝不能在豆包回答后再追加一条。
+                    target.text = ut.length > 2000 ? ut.slice(0, 2000) : ut;
+                    target.at = Date.now();
+                    target.live = false;
+                    if (iid) target.itemId = iid;
                     renderSubs();
                 } else {
-                    addTurn('user', ut);
+                    var prevUser = lastUserTurn();
+                    if (kLast && kFinal && kFinal.indexOf(kLast) >= 0 && prevUser) {
+                        // 同一句话的多个 completed 事件兜底：更新最后一条用户气泡。
+                        prevUser.text = ut.length > 2000 ? ut.slice(0, 2000) : ut;
+                        prevUser.at = Date.now();
+                        prevUser.live = false;
+                        renderSubs();
+                    } else {
+                        addTurn('user', ut);
+                    }
                 }
                 V.lastUserFinal = ut;
             }
+            V.userStarted = false;
+            V.userOpen = false;
             return;
         }
         if (t === 'conversation.item.input_audio_transcription.failed') {
-            if (V.liveUserTurn) closeLiveTurn('liveUserTurn', V.liveUserTurn.text);
+            if (V.liveUserTurn) {
+                V.liveUserTurn.live = false;
+                renderSubs();
+            }
+            V.userStarted = false;
+            V.userOpen = false;
             setCenterStatus('');
             return;
         }
@@ -1240,7 +1265,7 @@
         }, 36);
     }
 
-    function ensureLiveTurn(role) {
+    function ensureLiveTurn(role, itemId) {
         var key = role === 'user' ? 'liveUserTurn' : 'liveAiTurn';
         var t = V[key];
         if (t && V.turns.indexOf(t) >= 0) return t;
@@ -1250,11 +1275,28 @@
             text: '',
             seq: ++V.seq,
             lang: curLang(),
+            itemId: itemId || '',
             live: true
         };
         V.turns.push(t);
         V[key] = t;
         return t;
+    }
+
+    function findUserTurnByItem(itemId) {
+        if (!itemId) return null;
+        for (var i = V.turns.length - 1; i >= 0; i--) {
+            var t = V.turns[i];
+            if (t.role === 'user' && t.itemId === itemId) return t;
+        }
+        return null;
+    }
+
+    function lastUserTurn() {
+        for (var i = V.turns.length - 1; i >= 0; i--) {
+            if (V.turns[i].role === 'user') return V.turns[i];
+        }
+        return null;
     }
 
     function applyLiveText(t, text) {
@@ -1265,8 +1307,28 @@
         scheduleRenderSubs();
     }
 
-    function showLiveUser(text) {
-        var t = ensureLiveTurn('user');
+    function showLiveUser(text, itemId) {
+        var cur = V.liveUserTurn;
+        var forceNew = false;
+        if (cur) {
+            if (itemId && cur.itemId && cur.itemId !== itemId) forceNew = true;
+            if (V.userStarted) forceNew = true;
+            else if (!V.userOpen && !cur.live) {
+                // 没有 started 事件时，用文本包含关系兜底区分“新一句”和
+                // “同一句迟到的累计 delta”。
+                var a = transcriptKey(cur.text);
+                var b = transcriptKey(text);
+                if (a && b && !(b.indexOf(a) >= 0 || a.indexOf(b) >= 0)) forceNew = true;
+            }
+            if (forceNew) {
+                cur.live = false;
+                V.liveUserTurn = null;
+            }
+        }
+        V.userStarted = false;
+        V.userOpen = true;
+        if (itemId) V.userItemId = itemId;
+        var t = ensureLiveTurn('user', itemId || V.userItemId);
         applyLiveText(t, text);
     }
 
