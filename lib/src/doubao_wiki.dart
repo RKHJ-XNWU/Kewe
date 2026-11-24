@@ -877,12 +877,24 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
 
   // 这里只需要「非 DeepSeek 通道」这一信息，故直接传 ark 标记，
   // 避免在 doubao_wiki 里反向依赖 doubao.dart（会造成循环 import）。
-  final fnTools = dbWikiToolsFromChat(dsResolveTools(model, 'ark'));
+  //
+  // ★ 2026-11-24 严重修复：必须剔除 function 版的 `web_search`。
+  //   Responses API 的 tools 数组同时包含内置
+  //     {"type":"web_search","sources":[...]}
+  //   与 function
+  //     {"type":"function","name":"web_search",...}
+  //   时会出现同名冲突：模型可能选中 function 版，而该工具受「联网搜索」
+  //   闸门约束，被拒绝后反复重试，前端就表现为「调用超时」。
+  //   插件模式下只保留内置插件负责检索，function 工具集不再提供同名项。
+  final fnTools = dbWikiToolsFromChat(dsResolveTools(model, 'ark'))
+      .where((t) => '${t['name'] ?? ''}' != 'web_search')
+      .toList();
   final tools = <Map<String, dynamic>>[
     {'type': 'web_search', 'sources': src},
     ...fnTools,
   ];
-  logp('🔧🌐 工具混用模式: web_search(${src.join(",")}) + function ${fnTools.length} 个');
+  logp('🔧🌐 工具混用模式: web_search(${src.join(",")}) + function ${fnTools.length} 个'
+      '（已剔除同名 function web_search）');
 
   final input = <Map<String, dynamic>>[...built.input];
   final allContent = StringBuffer();

@@ -163,7 +163,9 @@
         if (box) box.checked = want;   // 开总闸即勾上信源；关总闸即强制取消
         syncWikiBtnUI();
         syncWikiSwitchUI();
-        // 抖音百科与工具模式支持同时开启：不再自动关闭工具模式。
+        // 抖音百科是 Responses API 的联网内容插件，必须独占本轮请求；
+        // 后端会在插件可用时自动暂停工具模式，避免与 function web_search
+        // 同名冲突导致调用超时。这里只负责保存总闸与信源状态。
         persistWikiState().catch(function (e) {
             console.log('[DB] wiki state save failed:', e && e.message);
         });

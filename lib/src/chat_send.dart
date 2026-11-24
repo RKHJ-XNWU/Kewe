@@ -39,10 +39,10 @@ import 'tool_gate.dart';
 // ------------------------------------------------------------
 /// 本次请求真正生效的插件信源。
 ///
-/// 【为什么不能再直接调 dbResolveSources】
-///   doubao_intent.dart 已被停用，dbResolveSources 恒返回 configSources，
-///   导致「按钮强制调用某插件」的意图被丢弃。这里把显式强制源放最前，
-///   再与配置源去重合并；没有强制源时行为与旧实现完全一致。
+/// 【为什么还要在这里合并】
+///   doubao_intent.dart 只负责识别「抖音百科：」等显式前缀并给出 forcedSources；
+///   插件总开关与单信源配置仍由 dbWikiEffectiveSources() 管理。
+///   这里把「前缀强制源」放最前，再与配置源去重合并，任何一方启用都不会丢。
 List<String> dbEffectiveSources(List<String> forcedSources) {
   final cfg = dbWikiEffectiveSources();
   if (forcedSources.isEmpty) return cfg;
@@ -961,15 +961,29 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         '→ 強制 sources=${forcedSources.join(',')}');
   }
 
+  // ★★ 抖音百科插件的有效信源：总开关 / 单信源 / 显式前缀三者统一口径。
+  //    只要这里非空，就说明用户确实启用了百科插件，本次必须联网。
+  //    不能再让「智能搜索判定不需要联网」把它拦掉。
+  final dbWikiSourcesNow =
+      useDoubao ? dbEffectiveSources(forcedSources) : const <String>[];
+  final dbWikiActiveNow = useDoubao && dbWikiSourcesNow.isNotEmpty;
+
   // ★★ 智能搜索总闸：联网按钮只代表“允许搜索”，不代表每条消息都必须搜。
   //    纯问候 / 定义 / 闲聊 / 创作 / 代码等内部知识可答的内容一律跳过，
   //    只有明确要求来源、时效性事实或外部信息时才真正调用搜索。
   //    显式信源前缀 / 插件视为用户已明确要求，必须检索。
+  //    ★ 2026-11-24 严重修复：抖音百科信源非空时，无条件强制联网。
+  //      否则「百科总开关开着、联网按钮开着，但插件仍被判定不联网」。
   final searchIntent =
       dbWebSearchIntent(content, forced: forcedSources.isNotEmpty);
   final effectiveWebSearch = content.isNotEmpty &&
-      (forcedSources.isNotEmpty || (webSearch && searchIntent.need));
-  if (webSearch && !effectiveWebSearch) {
+      (forcedSources.isNotEmpty ||
+          dbWikiSourcesNow.isNotEmpty ||
+          (webSearch && searchIntent.need));
+  if (dbWikiSourcesNow.isNotEmpty) {
+    logp('🧭 智能搜索：抖音百科插件启用，强制联网'
+        '（信源=${dbWikiSourcesNow.join(",")}）');
+  } else if (webSearch && !effectiveWebSearch) {
     logp('🧭 智能搜索：跳过联网（${searchIntent.reason}）');
   } else if (effectiveWebSearch) {
     logp('🧭 智能搜索：允许联网（${searchIntent.reason}）');
@@ -1033,9 +1047,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // ========== 多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
   // 1) 反思只由前端「多轮反思」开关的 reflectionRounds(1~10) 触发；
   //    工具模式独立走 function-calling 分支、不进入反思循环；长文模式保持单轮。
-  // 2) 抖音百科（联网内容插件，仅 Responses API）与工具模式可以并存：
-  //    流式链路使用「web_search 内容插件 + function tools」的官方混用通道；
-  //    非流式链路仍可用工具模式，搜索则由 function web_search/fetch 兜底。
+  // 2) 抖音百科（联网内容插件，仅 Responses API）启用期间强制暂停工具模式：
+  //    混用通道里内置 web_search 与 function web_search 同名，会互相抢占，
+  //    模型被闸门拒绝后反复重试，表现为「调用超时」。插件必须独占本轮。
   if (!longTextMode) {
     if (reflectionRounds > 0 && rounds > 1) {
       logp(
@@ -1044,21 +1058,15 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('➡️ 单轮直接回答: model=$model, Lv.$level（等级不触发反思）');
     }
   }
-  // 抖音百科（含前缀强制）不再强制关闭工具模式：
-  // 流式工具链路会走「web_search 内容插件 + function tools」的混用通道，
-  // 非流式链路则由工具模式自己处理；搜索与工具可以同时开启。
-  final dbWikiActiveNow =
-      useDoubao && dbEffectiveSources(forcedSources).isNotEmpty;
-  // ★ 单一可信来源：本请求最终的 enableTools 就是服务端闸门的模式状态。
-  //   之后所有工具执行（含插件混用通道）都以这里为准，前端状态不再能「带私货」。
-  DsToolGate.bind(sessionID);
-  // ★ 请求租约：只有处在正在处理的聊天请求里，工具才可能被执行。
-  //   请求外 / 租约过期后，任何残留绑定一律 fail-closed。
-  //   searchOn 对豆包同样放行：豆包工具模式通过 DeepSeek 官方搜索/抓取工具
-  //   联网，搜索按钮与工具按钮可以同时打开。
-  DsToolGate.beginRequest(sessionID, enableTools,
-      searchOn: effectiveWebSearch);
-  DsToolGate.syncMode(sessionID, enableTools);
+  // ★★★ 2026-11-24 严重修复：抖音百科启用期间，工具模式必须让路。
+  //   原因：Responses API 混用通道里，内置插件也叫 web_search，而豆包工具集
+  //   里还有一个同名 function web_search。两者同时下发会造成同名冲突，
+  //   模型可能反复调用 function web_search，被搜索闸门拒绝后表现为
+  //   「调用超时 / 请稍后再试」，百科插件却从未真正执行。
+  //   因此百科可用时只走 Responses API 插件通道（callDbWikiResponsesStream），
+  //   不再混用 function tools。
+  //   音视频输入插件不保证可用，此时保留工具模式，由工具链自行处理。
+  //   （文件上下文在下方构建，故本次判定与工具闸门绑定也移到 fileCtx 之后。）
 
   // 注入提示词（system 角色）
   // 本机开发者工具（devtools）功能，按所有者要求恢复启用。
@@ -1071,6 +1079,27 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
 
   final fileCtx = buildFileContext(fileIDs);
+
+  // ★ 抖音百科插件可用性判定：插件不支持音频/视频输入，此类请求保留工具模式。
+  //   纯文本 / 图片可以走插件，此时暂停工具模式，避免 web_search 同名冲突。
+  final dbWikiPluginUsableNow = dbWikiActiveNow &&
+      fileCtx.audioFileIds.isEmpty &&
+      fileCtx.videoFileIds.isEmpty;
+  if (useDoubao && enableTools && dbWikiPluginUsableNow) {
+    enableTools = false;
+    logp('🛑 抖音百科已启用：本次暂停工具模式，'
+        '只走 Responses API 联网内容插件（避免 web_search 同名冲突）');
+  }
+  // ★ 单一可信来源：本请求最终的 enableTools 就是服务端闸门的模式状态。
+  //   之后所有工具执行（含插件混用通道）都以这里为准，前端状态不再能「带私货」。
+  DsToolGate.bind(sessionID);
+  // ★ 请求租约：只有处在正在处理的聊天请求里，工具才可能被执行。
+  //   请求外 / 租约过期后，任何残留绑定一律 fail-closed。
+  //   searchOn 对豆包同样放行：豆包工具模式通过 DeepSeek 官方搜索/抓取工具
+  //   联网，搜索按钮与工具按钮可以同时打开。
+  DsToolGate.beginRequest(sessionID, enableTools,
+      searchOn: effectiveWebSearch);
+  DsToolGate.syncMode(sessionID, enableTools);
 
   // ========== 豆包通道：音频 / 视频理解能力校验 ==========
   // 豆包模式下媒体附件必须由具备对应能力的豆包模型直接理解：
@@ -1138,10 +1167,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   这样「工具模式」和「联网搜索」两个按钮可以同时打开，不会互相强制关闭。
   var dbNativeSearch = false;
   if (effectiveWebSearch) {
-    final wikiOn = useDoubao && dbWikiActiveNow;
+    final wikiOn = dbWikiPluginUsableNow;
     if (wikiOn) {
-      // 插件负责搜索；流式工具链路会通过 web_search + function tools 混用。
-      logp('🔍 豆包模式：联网内容插件负责搜索，工具模式保持开启');
+      // 插件负责搜索；工具模式已在上面暂停，避免 web_search 同名冲突。
+      logp('🔍 豆包模式：联网内容插件负责搜索，工具模式暂停');
     } else if (useDoubao) {
       dbNativeSearch = true;
       logp('🔍 豆包模式：启用联网搜索（工具模式时改走 web_search/fetch 工具）');
