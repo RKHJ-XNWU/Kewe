@@ -376,8 +376,9 @@ Future<
   Future<HttpClientResponse> sendOnce(bool withThinking) async {
     final b = Map<String, dynamic>.from(body);
     if (!withThinking) {
+      // 只摘除被拒的 thinking；reasoning_effort 仍可单独开启思考
+      // （DeepSeek/方舟文档：省略 thinking 时 effort 决定思考模式）。
       b.remove('thinking');
-      b.remove('reasoning_effort');
     }
     final r = await client.postUrl(Uri.parse(apiUrl));
     r.headers.set('Content-Type', 'application/json');
@@ -557,10 +558,15 @@ Future<({String content, String reasoning})> callDsChatAPI(
       (txt.toLowerCase().contains('thinking') ||
           txt.toLowerCase().contains('reasoning_effort') ||
           txt.toLowerCase().contains('unknown field'))) {
-    logp('⚠️ 上游拒绝了 thinking / reasoning_effort。移除参数后重试');
-    body.remove('thinking');
-    body.remove('reasoning_effort');
-    resp = await sendOnce(false);
+    final low = txt.toLowerCase();
+    logp('⚠️ 上游拒绝了思考参数，逐项降级重试');
+    if (low.contains('thinking') || low.contains('unknown field')) {
+      body.remove('thinking');
+    }
+    if (low.contains('reasoning_effort')) {
+      body.remove('reasoning_effort');
+    }
+    resp = await sendOnce(body.containsKey('reasoning_effort'));
     rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
   }

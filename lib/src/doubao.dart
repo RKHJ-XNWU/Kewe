@@ -691,8 +691,33 @@ String? dbReasoningEffortParam(String model,
   final cfg = getDbConfig();
   // 快速模式 = 明确不思考，再传 effort 没有意义
   if (mode == 'off' || (mode == 'auto' && cfg.fastMode)) return null;
-  final e = dbEffortFromLevel(level, prof);
-  return e.isEmpty ? null : e;
+  var e = dbEffortFromLevel(level, prof);
+  if (e.isEmpty) return null;
+  // ★ 深度思考按钮已经开启时，minimal / none 在方舟和 DeepSeek 文档里
+  //   都表示「关闭思考、直接回答」。用户明确开启深度思考后，低推理等级
+  //   也不能把思考关掉，最低必须落到 low（真正开启思考）。
+  if (mode == 'on' && (e == 'minimal' || e == 'none')) e = 'low';
+  return e;
+}
+
+/// Responses API 的思考参数：thinking.type + reasoning.effort。
+/// Chat Completions 用 reasoning_effort；Responses API 必须用 reasoning 对象，
+/// 两者不能混用，否则会被方舟判为未知字段。
+Map<String, dynamic> dbResponsesThinkingBody(
+  String model, {
+  required bool deepThink,
+  int level = 30,
+}) {
+  final out = <String, dynamic>{
+    'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
+  };
+  if (deepThink) {
+    // 未知 / 自定义模型没有能力表时也要给出 effort；上游不支持会在
+    // doubao_wiki 的 400 降级里自动摘除，不能因此静默不思考。
+    final effort = dbReasoningEffortParam(model, level: level, mode: 'on') ?? 'high';
+    out['reasoning'] = <String, dynamic>{'effort': effort};
+  }
+  return out;
 }
 
 /// 该模型是否属于豆包（方舟）目录 —— 用于普通聊天里的自动路由判定

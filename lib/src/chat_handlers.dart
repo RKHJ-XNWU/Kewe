@@ -1015,13 +1015,12 @@ Future<void> handleDsChatContinue(HttpRequest req) async {
     };
   }
   if (deepThink) {
-    final effort = dbReasoningEffortParam(model, level: level, mode: 'on');
-    if (effort != null) {
-      extraBody = <String, dynamic>{
-        ...extraBody,
-        'reasoning_effort': effort,
-      };
-    }
+    final effort = dbReasoningEffortParam(model, level: level, mode: 'on') ??
+        'high';
+    extraBody = <String, dynamic>{
+      ...extraBody,
+      'reasoning_effort': effort,
+    };
   }
 
   // ★ 只把「同一维度」的历史发给模型，豆包与 DeepSeek 互不可见

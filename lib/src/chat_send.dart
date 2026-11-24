@@ -141,6 +141,13 @@ Future<void> handleDsChatSendStream(
   /// 前缀强制的系统规则。工具模式有自己的系统提示词，必须把这条规则并进去，
   /// 否则前缀被剥离后模型只看到正文，会误判「没有前缀、不需要检索」。
   String intentRule = '',
+
+  /// ★ 深度思考开关。插件与工具混用通道不能只靠 Chat API 的 extraBody；
+  ///   Responses API 需要单独下发 thinking + reasoning。
+  bool deepThink = false,
+
+  /// ★ 推理等级（1–999）。深度思考开启时映射为 reasoning.effort。
+  int reasoningLevel = 30,
 }) async {
   final sse = Sse(req.response);
   // 气泡/标题/落库使用原始输入；插件与模型仍使用剥掉前缀的 content。
@@ -301,6 +308,11 @@ Future<void> handleDsChatSendStream(
           },
           usageAcc,
           baseUrl: dbBaseUrl(null),
+          extraBody: dbResponsesThinkingBody(
+            model,
+            deepThink: deepThink,
+            level: reasoningLevel,
+          ),
           mediaParts: mediaParts,
           forceWikiSearch: forcedSources.isNotEmpty,
           onSources: (list) {
@@ -486,6 +498,11 @@ Future<void> handleDsChatSendStream(
         },
         usageAcc: usageAcc,
         baseUrl: dbBaseUrl(null),
+        extraBody: dbResponsesThinkingBody(
+          model,
+          deepThink: deepThink,
+          level: reasoningLevel,
+        ),
         mediaParts: mediaParts,
         forceSearch: forcedSources.isNotEmpty,
         onSources: (list) {
@@ -953,9 +970,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
     logp('⚠️ 豆包维度 + 非豆包模型：保留所选模型，前缀改走当前通道联网检索');
   }
   if (dimOverride == DS_DIM_DS && useDoubao) {
-    await dsJSONErr(
-        res, 400, dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDs'));
-    return;
+    // ★ 2026-11-25 用户要求：维度与模型彼此独立。
+    //   DeepSeek 维度里也可以选择豆包/自定义模型；不能再 400 拒绝，
+    //   否则用户切到 ds 维度后开启深度思考也拿不到任何思考链。
+    //   模型仍走它自己的 Ark 通道，消息只按用户选中的维度隔离。
+    logp('⚠️ DeepSeek 维度 + 豆包/自定义模型：保留所选模型，思考与工具按其通道执行');
   }
   if (useDoubao) {
     if (dbCfg.apiKey.isEmpty) {
@@ -1318,15 +1337,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // ★ 思考长度旋钮：只在用户明确开启深度思考时下发。
   //   关闭时连 reasoning_effort 都不能留，否则部分上游会按 effort 重新思考。
   if (deepThink) {
-    final effort = dbReasoningEffortParam(model, level: level, mode: 'on');
-    if (effort != null) {
-      dbExtraBody = <String, dynamic>{
-        ...dbExtraBody,
-        'reasoning_effort': effort,
-      };
-      logp('🧠 调整思考长度: reasoning_effort=$effort'
-          '（推理级别 $level / ${dbThinkingProfileOf(model)}）');
-    }
+    final effort = dbReasoningEffortParam(model, level: level, mode: 'on') ??
+        'high';
+    dbExtraBody = <String, dynamic>{
+      ...dbExtraBody,
+      'reasoning_effort': effort,
+    };
+    logp('🧠 调整思考长度: reasoning_effort=$effort'
+        '（推理级别 $level / ${dbThinkingProfileOf(model)}）');
   }
   if (useDoubao) {
     logp('🧠 豆包思考开关: ${deepThink ? 'enabled' : 'disabled'} / model=$model');
@@ -1393,22 +1411,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('🎬 ${fileCtx.videoFileIds.length} 个视频将在 SSE 连接后 '
           '分割并准备');
     }
-    // 看过图片 / 音频 / 视频后是否先思考，服从深度思考开关；
-    // 但工具模式优先：保留工具，只让 thinking 让路，
-    // 绝不因为“优先思考”反过来关掉用户已经开启的工具模式。
-    if (useTools) {
-      final disableThink = dbThinkingDisableParam(model);
-      if (disableThink != null) dbExtraBody = disableThink;
-      logp('🧠 媒体输入 + 工具模式：保留工具模式，thinking 让路');
-    } else {
-      dbExtraBody = deepThink
-          ? dbThinkingEnableParam(model)
-          : dbThinkingDisableParam(model);
-      dbExtraBody ??= <String, dynamic>{
-        'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
-      };
-      logp('🧠 媒体输入后的思考状态: ${deepThink ? 'enabled' : 'disabled'}');
-    }
+    // ★ 2026-11-25 修复：工具模式与思考必须并存。
+    //   旧实现只要“媒体输入 + 工具模式”就强制 thinking:disabled，
+    //   用户开启深度思考后仍看不到任何思考链；现在两者正交，
+    //   工具模式只影响 tools，深度思考只影响 thinking。
+    //   ★ 不再在这里重建 dbExtraBody：上面的 deepThink 分支已经写入
+    //   thinking + reasoning_effort，这里若只写 thinking 会把 effort 丢掉。
+    logp('🧠 媒体/工具思考状态: ${deepThink ? 'enabled' : 'disabled'}'
+        '，保留 reasoning_effort=${dbExtraBody['reasoning_effort'] ?? '未设置'}');
   }
   // ★ 最终决定联网方式：工具模式与 web_search_options 互斥。
   //   工具模式开着时不附加 web_search_options（避免方舟拒绝），
@@ -1542,6 +1552,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         displayContent: displayContent,
         userPrompt: deferVideoPrepare ? userPrompt : '',
         intentRule: toolIntentRule,
+        deepThink: deepThink,
+        reasoningLevel: level,
         mediaParts: dbMediaParts,
         pendingVideoIds:
             deferVideoPrepare ? fileCtx.videoFileIds : const <String>[]);
@@ -1685,6 +1697,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         (s) => cb.write(s),
         usageAcc: usageAcc,
         baseUrl: dbBaseUrl(null),
+        extraBody: dbResponsesThinkingBody(
+          model,
+          deepThink: deepThink,
+          level: level,
+        ),
         mediaParts: dbMediaParts,
         forceSearch: forcedSources.isNotEmpty,
       );

@@ -240,6 +240,10 @@ Future<void> callDbWikiResponsesStream(
   DsUsageAcc? usageAcc,
   String baseUrl = '',
 
+  /// Responses API 的思考参数（thinking.type + reasoning.effort）。
+  /// 不能塞 Chat API 的 reasoning_effort：字段名不同，方舟会判未知字段。
+  Map<String, dynamic>? extraBody,
+
   /// 与最后一条 user 消息一同提交的图片（Chat 风格片段，内部自动转码）
   List<Map<String, dynamic>> mediaParts = const <Map<String, dynamic>>[],
 
@@ -282,6 +286,7 @@ Future<void> callDbWikiResponsesStream(
       }
     ],
     'max_output_tokens': mt,
+    if (extraBody != null && extraBody.isNotEmpty) ...extraBody,
   };
   if (built.instructions.isNotEmpty) {
     body['instructions'] = built.instructions;
@@ -310,30 +315,41 @@ Future<void> callDbWikiResponsesStream(
   }
 
   var resp = await send(body);
-  if (resp.statusCode != 200) {
+  // ★ 兼容性兜底：部分模型/网关不支持 tool_choice / max_tool_calls /
+  //   thinking / reasoning。逐项摘除并重试；思考字段被摘除只发生在上游
+  //   明确拒绝时，不能因为怕 400 就默认不发送。
+  for (var attempt = 0; resp.statusCode != 200 && attempt < 4; attempt++) {
     final txt =
         utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
     logp('❌ Responses API HTTP ${resp.statusCode}: $txt');
-    // ★ 兼容性兜底：部分模型/网关不支持 tool_choice 或 max_tool_calls。
-    //   去掉强制字段重试一次，保持原来的插件能力，绝不因“强制”反而整轮失败。
-    final unsupported = resp.statusCode == 400 &&
-        (txt.contains('tool_choice') || txt.contains('max_tool_calls'));
-    if (forceSearch && unsupported) {
+    final low = txt.toLowerCase();
+    if (forceSearch &&
+        resp.statusCode == 400 &&
+        (low.contains('tool_choice') || low.contains('max_tool_calls'))) {
       logp('⚠️ 当前模型不支持强制工具选择，回退为普通插件请求');
       body.remove('tool_choice');
       body.remove('max_tool_calls');
       resp = await send(body);
-      if (resp.statusCode != 200) {
-        final txt2 =
-            utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
-        logp('❌ Responses API HTTP ${resp.statusCode}: $txt2');
-        throw Exception(
-            '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：${_dbWikiErrorMessage(txt2)}');
-      }
-    } else {
-      throw Exception(
-          '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：${_dbWikiErrorMessage(txt)}');
+      continue;
     }
+    if (body.containsKey('thinking') &&
+        (low.contains('thinking') || low.contains('unknown field'))) {
+      logp('⚠️ 插件上游拒绝了 thinking，移除 thinking 后重试（保留 reasoning.effort）');
+      body.remove('thinking');
+      resp = await send(body);
+      continue;
+    }
+    if (body.containsKey('reasoning') && low.contains('reasoning')) {
+      logp('⚠️ 插件上游拒绝了 reasoning，移除后重试');
+      body.remove('reasoning');
+      resp = await send(body);
+      continue;
+    }
+    throw Exception(
+        '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：${_dbWikiErrorMessage(txt)}');
+  }
+  if (resp.statusCode != 200) {
+    throw Exception('豆包联网内容插件请求失败（HTTP ${resp.statusCode}）');
   }
 
   final errBuf = StringBuffer();
@@ -642,6 +658,7 @@ Future<DbWikiRound> _dbWikiStreamRound({
   void Function(String)? onReasoning,
   DsUsageAcc? usageAcc,
   String baseUrl = '',
+  Map<String, dynamic>? extraBody,
   void Function(List<Map<String, dynamic>> sources)? onSources,
   bool forceSearch = false,
 }) async {
@@ -655,6 +672,7 @@ Future<DbWikiRound> _dbWikiStreamRound({
     'input': input,
     'tools': tools,
     'max_output_tokens': mt,
+    if (extraBody != null && extraBody.isNotEmpty) ...extraBody,
   };
   if (instructions.isNotEmpty) body['instructions'] = instructions;
   if (forceSearch) {
@@ -677,37 +695,48 @@ Future<DbWikiRound> _dbWikiStreamRound({
   }
 
   var resp = await sendRound();
-  if (resp.statusCode != 200) {
+  // ★ 同上：tool_choice / thinking / reasoning 分别做兼容降级。
+  //   深度思考开启时优先保留 thinking，只有上游明确拒绝才摘除。
+  for (var attempt = 0; resp.statusCode != 200 && attempt < 4; attempt++) {
     final txt = utf8.decode(
         await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
         allowMalformed: true);
     logp('❌ Responses API（工具混用）HTTP ${resp.statusCode}: $txt');
-    // 兼容性兜底：部分模型/网关不支持 tool_choice 或 max_tool_calls。
-    final unsupported = forceSearch &&
+    final low = txt.toLowerCase();
+    if (forceSearch &&
         resp.statusCode == 400 &&
-        (txt.contains('tool_choice') || txt.contains('max_tool_calls'));
-    if (unsupported) {
+        (low.contains('tool_choice') || low.contains('max_tool_calls'))) {
       logp('⚠️ 当前模型不支持强制工具选择，回退为普通工具混用请求');
       body.remove('tool_choice');
       body.remove('max_tool_calls');
       resp = await sendRound();
+      continue;
     }
-    if (resp.statusCode != 200) {
-      final txt2 = utf8.decode(
-          await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
-          allowMalformed: true);
-      logp('❌ Responses API（工具混用）HTTP ${resp.statusCode}: $txt2');
-      String msg = txt2;
-      try {
-        final j = jsonDecode(txt2);
-        if (j is Map && j['error'] is Map) {
-          final m = '${(j['error'] as Map)['message'] ?? ''}';
-          if (m.isNotEmpty) msg = m;
-        }
-      } catch (_) {}
-      throw Exception(
-          '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：$msg');
+    if (body.containsKey('thinking') &&
+        (low.contains('thinking') || low.contains('unknown field'))) {
+      logp('⚠️ 工具混用上游拒绝了 thinking，移除 thinking 后重试（保留 reasoning.effort）');
+      body.remove('thinking');
+      resp = await sendRound();
+      continue;
     }
+    if (body.containsKey('reasoning') && low.contains('reasoning')) {
+      logp('⚠️ 工具混用上游拒绝了 reasoning，移除后重试');
+      body.remove('reasoning');
+      resp = await sendRound();
+      continue;
+    }
+    String msg = txt;
+    try {
+      final j = jsonDecode(txt);
+      if (j is Map && j['error'] is Map) {
+        final m = '${(j['error'] as Map)['message'] ?? ''}';
+        if (m.isNotEmpty) msg = m;
+      }
+    } catch (_) {}
+    throw Exception('豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：$msg');
+  }
+  if (resp.statusCode != 200) {
+    throw Exception('豆包联网内容插件请求失败（HTTP ${resp.statusCode}）');
   }
 
   final contentBuf = StringBuffer();
@@ -929,6 +958,7 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
   void Function(String)? onReasoning,
   DsUsageAcc? usageAcc, {
   String baseUrl = '',
+  Map<String, dynamic>? extraBody,
   List<Map<String, dynamic>> mediaParts = const <Map<String, dynamic>>[],
   void Function(List<Map<String, dynamic>> sources)? onSources,
 
@@ -991,6 +1021,7 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
       onReasoning: onReasoning,
       usageAcc: usageAcc,
       baseUrl: baseUrl,
+      extraBody: extraBody,
       onSources: onSources,
       forceSearch: forceThisRound,
     );
