@@ -446,6 +446,7 @@ Future<void> handleDsChatSendStream(
         usageAcc: usageAcc,
         baseUrl: dbBaseUrl(null),
         mediaParts: mediaParts,
+        forceSearch: forcedSources.isNotEmpty,
         onSources: (list) {
           sse.send('sources', {'items': list, 'channel': 'wiki'});
         },
@@ -902,13 +903,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   豆包维度只走豆包搜索，DeepSeek 维度只走 DeepSeek 搜索；
   //   若前端维度与模型路由不一致，直接拒绝，避免把搜索额度花到错误通道。
   if (dimOverride == DS_DIM_DB && !useDoubao) {
-    await dsJSONErr(res, 400,
-        dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDb'));
+    await dsJSONErr(
+        res, 400, dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDb'));
     return;
   }
   if (dimOverride == DS_DIM_DS && useDoubao) {
-    await dsJSONErr(res, 400,
-        dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDs'));
+    await dsJSONErr(
+        res, 400, dbLocalized(dsRequestLang(req, body), 'dimModelMismatchDs'));
     return;
   }
   if (useDoubao) {
@@ -958,8 +959,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   「抖音百科：」「抖音百科搜索：」「百科：」→ 强制 douyin
   //   「墨迹天气：」「天气：」            → 强制 moji
   //   判定范围是消息任意位置；前缀本身从正文里剥掉，不进入模型与标题。
-  //   DeepSeek 通道不解析（那套插件只存在于方舟），行为零变化。
-  var dbIntent = useDoubao ? dbParseIntent(content) : DbIntent.none;
+  //   ★ 2026-11-24 修复：解析不再限定豆包通道。
+  //     旧实现 useDoubao ? dbParseIntent(content) : DbIntent.none 会在
+  //     DeepSeek 维度把「抖音百科：Agent」静默吞成「Agent」，模型既不知道
+  //     用户要求检索，也不会走任何搜索，表现就是“发了前缀但完全没反应”。
+  //     现在所有通道都解析：豆包走联网内容插件；非豆包走该通道自己的联网搜索，
+  //     并在系统提示里明确告知真实来源，绝不假装调用了抖音百科插件。
+  var dbIntent = dbParseIntent(content);
   final List<String> forcedSources = explicitSources.isNotEmpty
       ? explicitSources
       : (dbIntent.forced ? dbIntent.sources : const <String>[]);
@@ -969,7 +975,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (dbIntent.forced) {
     content = dbIntent.cleaned;
     logp('📌 检测到信源前缀: ${dbIntent.hits.join(' / ')} '
-        '→ 強制 sources=${forcedSources.join(',')}');
+        '→ 強制 sources=${forcedSources.join(',')} '
+        '（通道=${useDoubao ? '豆包/方舟' : '非豆包'}）');
   }
 
   // ★★ 抖音百科插件的有效信源：总开关 / 单信源 / 显式前缀三者统一口径。
@@ -1091,6 +1098,15 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   final fileCtx = buildFileContext(fileIDs);
 
+  // ★ 非豆包通道没有抖音百科插件：前缀场景改为「该通道自己的联网搜索」。
+  //   若同时开着工具模式，模型可能只调用 function web_search 而跳过预检索；
+  //   这里显式暂停工具模式，让 buildWebSearchContext 在送模前完成检索，
+  //   保证「前缀」一定产生联网结果，而不是又被模型自由裁量。
+  if (!useDoubao && dbIntent.forced && enableTools) {
+    enableTools = false;
+    logp('🛑 非豆包通道检测到信源前缀：暂停工具模式，改走本通道联网搜索');
+  }
+
   // ★ 抖音百科插件可用性判定：插件不支持音频/视频输入，此类请求保留工具模式。
   //   纯文本 / 图片可以走插件，此时暂停工具模式，避免 web_search 同名冲突。
   final dbWikiPluginUsableNow = dbWikiActiveNow &&
@@ -1108,8 +1124,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   请求外 / 租约过期后，任何残留绑定一律 fail-closed。
   //   searchOn 对豆包同样放行：豆包工具模式通过 DeepSeek 官方搜索/抓取工具
   //   联网，搜索按钮与工具按钮可以同时打开。
-  DsToolGate.beginRequest(sessionID, enableTools,
-      searchOn: effectiveWebSearch);
+  DsToolGate.beginRequest(sessionID, enableTools, searchOn: effectiveWebSearch);
   DsToolGate.syncMode(sessionID, enableTools);
 
   // ========== 豆包通道：音频 / 视频理解能力校验 ==========
@@ -1406,7 +1421,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   //   否则模型只看到 body 里的「QQ」，就会回答“你只发了 QQ 两个字”，
   //   既不知道用户要求百科检索，也会误判意图。
   if (dbIntent.forced) {
-    final rule = dbIntentSystemRule(dbIntent, uiLang);
+    final rule = useDoubao
+        ? dbIntentSystemRule(dbIntent, uiLang)
+        : dbIntentFallbackSearchRule(dbIntent, uiLang);
     if (rule.isNotEmpty) sysParts.add(rule);
   }
   if (deepThink) {
@@ -1595,6 +1612,7 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         usageAcc: usageAcc,
         baseUrl: dbBaseUrl(null),
         mediaParts: dbMediaParts,
+        forceSearch: forcedSources.isNotEmpty,
       );
       reply = cb.toString();
       reasoning = rb.toString();

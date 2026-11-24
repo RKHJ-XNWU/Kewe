@@ -176,6 +176,44 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
   return zh;
 }
 
+/// 非豆包通道（DeepSeek / 中转站）使用的前缀检索约束。
+///
+/// 抖音百科内容插件只存在于火山方舟 Responses API；DeepSeek 通道无法调用它。
+/// 但「用户写了前缀」这件事不能被静默丢弃，因此明确要求模型使用当前通道
+/// 真正可用的联网搜索，并如实注明来源，禁止假装成抖音百科插件。
+String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
+  if (!intent.forced) return '';
+  final zh = <String>[
+    '【强制检索规则】',
+    '用户消息中出现了「抖音百科」信源前缀（${intent.hits.join('、')}），'
+        '但当前模型通道不是豆包/方舟，无法调用抖音百科联网内容插件。',
+    '本次必须执行以下条款：',
+    '1. 必须使用当前通道可用的联网搜索先检索，再作答；禁止跳过检索直接凭记忆回答。',
+    '2. 回答中必须标明实际使用的搜索来源，并明确说明本次不是抖音百科插件检索。',
+    '3. 若检索返回为空或失败，必须如实说明「检索无结果／检索失败」及具体原因。',
+    '4. 禁止向用户索要链接或要求用户自行搜索。',
+  ].join('\n');
+  final c = lang.trim().toLowerCase();
+  if (c.isEmpty || c == 'ja' || c == 'zh') return zh;
+  if (c == 'en') {
+    return <String>[
+      '[MANDATORY RETRIEVAL RULE]',
+      'The user message carried a Douyin Wiki source prefix '
+          '(${intent.hits.join(', ')}), but this channel is not Doubao/Ark, '
+          'so the Douyin Wiki web-content plugin is unavailable.',
+      'For this request you MUST:',
+      '1. Use the web search available on the current channel BEFORE answering; '
+          'answering from memory is forbidden.',
+      '2. State the actual search source and clearly say this is not the '
+          'Douyin Wiki plugin.',
+      '3. If retrieval returns nothing or fails, report the empty result or '
+          'failure with its actual cause.',
+      '4. Never ask the user for links or ask the user to search manually.',
+    ].join('\n');
+  }
+  return zh;
+}
+
 /// 前端提示用文案键（保留给已有调用方，当前聊天主链路不使用）。
 String dbIntentToastKey(DbIntent intent) {
   if (!intent.forced) return '';

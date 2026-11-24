@@ -17,6 +17,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'deepseek_api.dart';
 import 'ds_usage.dart';
@@ -54,6 +55,20 @@ String dbWikiEndpoint(String baseUrl) {
     b = b.substring(0, b.length - 1);
   }
   return '$b/responses';
+}
+
+/// 从 Responses API 的错误响应里提取可读信息。
+String _dbWikiErrorMessage(String txt) {
+  String msg = txt;
+  try {
+    final j = jsonDecode(txt);
+    if (j is Map && j['error'] is Map) {
+      final e = j['error'] as Map;
+      final m = '${e['message'] ?? ''}';
+      if (m.isNotEmpty) msg = m;
+    }
+  } catch (_) {}
+  return msg;
 }
 
 /// 判断这批 Chat 风格媒体片段能否在 Responses API 通道里原样使用。
@@ -104,8 +119,7 @@ List<Map<String, dynamic>> dbWikiMediaToInput(
 /// · system → instructions（多条时用换行拼接）
 /// · user   → {type: "message", role: user, content: [{type: input_text, text}]}
 /// · assistant → {type: "message", role: assistant, content: [{type: output_text, text}]}
-({String instructions, List<Map<String, dynamic>> input})
-    dbWikiBuildInput(
+({String instructions, List<Map<String, dynamic>> input}) dbWikiBuildInput(
   List<Map<String, dynamic>> messages, {
   /// 需要与「最后一条 user 消息」一起提交的图片片段（已转成 Responses 格式）
   List<Map<String, dynamic>> mediaParts = const <Map<String, dynamic>>[],
@@ -122,7 +136,8 @@ List<Map<String, dynamic>> dbWikiMediaToInput(
     } else if (rawContent is List) {
       final buf = <String>[];
       for (final part in rawContent) {
-        if (part is Map && (part['type'] == 'text' || part['type'] == 'input_text')) {
+        if (part is Map &&
+            (part['type'] == 'text' || part['type'] == 'input_text')) {
           buf.add('${part['text'] ?? ''}');
         }
       }
@@ -230,6 +245,13 @@ Future<void> callDbWikiResponsesStream(
 
   /// 联网引用（交互式卡片数据源）：流结束前回调一次
   void Function(List<Map<String, dynamic>> sources)? onSources,
+
+  /// ★ 用户显式写了「抖音百科：」等前缀时为 true。
+  ///   此时不能只把 web_search 挂在 tools 里让模型“自觉调用”：
+  ///   「Agent」「QQ」这类短词很容易被模型判定为无需检索，直接凭记忆回答。
+  ///   因此下发 tool_choice=required，强制本轮至少调用一次 web_search。
+  ///   若模型/接口不支持 tool_choice，会自动去掉该字段重试一次，绝不因强反而失败。
+  bool forceSearch = false,
 }) async {
   final src = dbWikiNormalizeSources(sources);
   if (src.isEmpty) {
@@ -264,34 +286,54 @@ Future<void> callDbWikiResponsesStream(
   if (built.instructions.isNotEmpty) {
     body['instructions'] = built.instructions;
   }
+  if (forceSearch) {
+    // 显式前缀 = 用户已经明确要求检索，不允许模型自行判断“不需要搜”。
+    // 仅 web_search 一个工具时，required 等价于「必须调用联网内容插件」。
+    body['tool_choice'] = 'required';
+    body['max_tool_calls'] = 1;
+    logp('🎯 前缀强制检索：tool_choice=required（必须调用 web_search）');
+  }
 
   final url = dbWikiEndpoint(baseUrl);
   logp('🌐 豆包联网内容插件：$url（信源=${src.join(",")}）');
 
   final client = globalHTTPClient;
-  final req = await client.postUrl(Uri.parse(url));
-  req.headers.set('Content-Type', 'application/json');
-  req.headers.set('Authorization', 'Bearer $apiKey');
-  req.headers.set('Accept', 'text/event-stream');
-  // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
-  req.headers.set('Accept-Encoding', 'identity');
-  req.add(utf8.encode(jsonEncode(body)));
+  Future<HttpClientResponse> send(Map<String, dynamic> payload) async {
+    final req = await client.postUrl(Uri.parse(url));
+    req.headers.set('Content-Type', 'application/json');
+    req.headers.set('Authorization', 'Bearer $apiKey');
+    req.headers.set('Accept', 'text/event-stream');
+    // ★ 禁用上游压缩（防止思考链若干帧攒在一起到达）
+    req.headers.set('Accept-Encoding', 'identity');
+    req.add(utf8.encode(jsonEncode(payload)));
+    return req.close();
+  }
 
-  final resp = await req.close();
+  var resp = await send(body);
   if (resp.statusCode != 200) {
-    final txt = utf8
-        .decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
+    final txt =
+        utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
     logp('❌ Responses API HTTP ${resp.statusCode}: $txt');
-    String msg = txt;
-    try {
-      final j = jsonDecode(txt);
-      if (j is Map && j['error'] is Map) {
-        final e = j['error'] as Map;
-        final m = '${e['message'] ?? ''}';
-        if (m.isNotEmpty) msg = m;
+    // ★ 兼容性兜底：部分模型/网关不支持 tool_choice 或 max_tool_calls。
+    //   去掉强制字段重试一次，保持原来的插件能力，绝不因“强制”反而整轮失败。
+    final unsupported = resp.statusCode == 400 &&
+        (txt.contains('tool_choice') || txt.contains('max_tool_calls'));
+    if (forceSearch && unsupported) {
+      logp('⚠️ 当前模型不支持强制工具选择，回退为普通插件请求');
+      body.remove('tool_choice');
+      body.remove('max_tool_calls');
+      resp = await send(body);
+      if (resp.statusCode != 200) {
+        final txt2 =
+            utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)));
+        logp('❌ Responses API HTTP ${resp.statusCode}: $txt2');
+        throw Exception(
+            '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：${_dbWikiErrorMessage(txt2)}');
       }
-    } catch (_) {}
-    throw Exception('豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：$msg');
+    } else {
+      throw Exception(
+          '豆包联网内容插件请求失败（HTTP ${resp.statusCode}）：${_dbWikiErrorMessage(txt)}');
+    }
   }
 
   final errBuf = StringBuffer();
@@ -474,7 +516,6 @@ int _asInt(Object? v) {
   return 0;
 }
 
-
 // ============================================================
 // 工具模式 × 联网内容插件：同一请求内混用 web_search 与 function
 //
@@ -628,9 +669,9 @@ Future<DbWikiRound> _dbWikiStreamRound({
 
   final resp = await req.close();
   if (resp.statusCode != 200) {
-    final txt =
-        utf8.decode(await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
-            allowMalformed: true);
+    final txt = utf8.decode(
+        await resp.fold<List<int>>([], (a, b) => a..addAll(b)),
+        allowMalformed: true);
     logp('❌ Responses API（工具混用）HTTP ${resp.statusCode}: $txt');
     String msg = txt;
     try {
@@ -893,7 +934,8 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
     {'type': 'web_search', 'sources': src},
     ...fnTools,
   ];
-  logp('🔧🌐 工具混用模式: web_search(${src.join(",")}) + function ${fnTools.length} 个'
+  logp(
+      '🔧🌐 工具混用模式: web_search(${src.join(",")}) + function ${fnTools.length} 个'
       '（已剔除同名 function web_search）');
 
   final input = <Map<String, dynamic>>[...built.input];
@@ -952,7 +994,6 @@ Future<DbWikiToolOutcome> callDbWikiWithToolsStream(
         'output': result,
       });
     }
-
   }
 
   return DbWikiToolOutcome(
