@@ -1202,3 +1202,42 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
     font-weight: 600;
 }
 .dsc-level-slider-head span:last-child { color: #0f766e; }
+
+/* ---------- 输入框焦点：不显示蓝色边框/焦点环（用户要求） ---------- */
+/* 说明：全局 :focus-visible 的 3px 浅蓝焦点环对文本输入框同样生效，
+   点击输入框（如“重命名会话”）时会被误看成蓝色边框。此处仅对输入类控件复位，
+   按钮等可聚焦控件的键盘焦点环保持不变，避免影响无障碍与键盘导航。 */
+#deepseekChatApp input:focus,
+#deepseekChatApp input:focus-visible,
+#deepseekChatApp textarea:focus,
+#deepseekChatApp textarea:focus-visible,
+#deepseekChatApp select:focus,
+#deepseekChatApp select:focus-visible,
+.dsc-cc-overlay input:focus,
+.dsc-cc-overlay input:focus-visible,
+.dsc-cc-overlay textarea:focus,
+.dsc-cc-overlay textarea:focus-visible,
+.dsc-cc-overlay select:focus,
+.dsc-cc-overlay select:focus-visible {
+    outline: none !important;
+    outline-offset: 0 !important;
+    box-shadow: none !important;
+    -webkit-focus-ring-color: transparent;
+}
+
+/* 聚焦时边框保持常态灰色，不再变成蓝色 */
+#deepseekChatApp .dsc-field input:focus,
+#deepseekChatApp .dsc-field select:focus,
+#deepseekChatApp .dsc-field textarea:focus,
+#deepseekChatApp .dsc-search-wrap input:focus,
+#deepseekChatApp .dsc-model-add-row input:focus,
+#deepseekChatApp .dsc-files-search input:focus,
+#deepseekChatApp .dsc-gen-row input:focus,
+#deepseekChatApp .dsc-vocab-field input:focus,
+#deepseekChatApp .dsc-vocab-field textarea:focus,
+#deepseekChatApp .dsc-vocab-field select:focus,
+#dscRenameOverlay .dsc-field input:focus,
+#dscRenameOverlay .dsc-field input:focus-visible {
+    border-color: var(--kewe-line-strong);
+    box-shadow: none;
+}
