@@ -366,6 +366,94 @@
     }
   };
 
+  // 登录页“从备份恢复”专用文案；与上面的登录文案分开，避免污染主字典。
+  var RESTORE_COPY = {
+    ja: {
+      btn: 'バックアップから復元',
+      title: 'バックアップから復元',
+      body: 'ログイン前に、Kewe の data ディレクトリ全体をバックアップから置換できます。',
+      note: '復元に成功すると現在の data は削除され、旧データは保持されません。バックアップ内のアカウントで再ログインしてください。',
+      cancel: 'キャンセル',
+      choose: 'ファイルを選択して復元',
+      wrong: '.tar.gz / .tgz のバックアップを選択してください',
+      uploading: 'バックアップをアップロード中…',
+      progress: 'アップロード中 {0}%（{1} / {2} MB）',
+      success: '復元に成功しました（{0} ファイル）。ページを更新します…',
+      failed: '復元に失敗しました：{0}',
+      busy: '復元中…'
+    },
+    zh: {
+      btn: '从备份恢复',
+      title: '从备份恢复',
+      body: '无需登录，可直接用备份包整体替换 Kewe 的 data 目录。',
+      note: '恢复成功后当前 data 会被删除，不保留旧数据；请用备份里的账号重新登录。',
+      cancel: '取消',
+      choose: '选择文件并恢复',
+      wrong: '请选择 .tar.gz / .tgz 备份文件',
+      uploading: '正在上传备份…',
+      progress: '正在上传 {0}%（{1} / {2} MB）',
+      success: '恢复成功，共展开 {0} 个文件。页面即将刷新…',
+      failed: '恢复失败：{0}',
+      busy: '正在恢复…'
+    },
+    en: {
+      btn: 'Restore from backup',
+      title: 'Restore from backup',
+      body: 'Replace the entire Kewe data directory from a backup without signing in.',
+      note: 'After a successful restore the current data is deleted; no old copy is kept. Sign in with an account from the backup.',
+      cancel: 'Cancel',
+      choose: 'Choose file & restore',
+      wrong: 'Select a .tar.gz / .tgz backup file.',
+      uploading: 'Uploading backup…',
+      progress: 'Uploading {0}% ({1} / {2} MB)',
+      success: 'Restore succeeded ({0} files). Reloading…',
+      failed: 'Restore failed: {0}',
+      busy: 'Restoring…'
+    },
+    ko: {
+      btn: '백업에서 복원',
+      title: '백업에서 복원',
+      body: '로그인 없이 백업으로 Kewe data 디렉터리 전체를 교체할 수 있습니다.',
+      note: '복원에 성공하면 현재 data는 삭제되며 이전 데이터는 보관되지 않습니다. 백업에 포함된 계정으로 다시 로그인하세요.',
+      cancel: '취소',
+      choose: '파일 선택 및 복원',
+      wrong: '.tar.gz / .tgz 백업 파일을 선택하세요.',
+      uploading: '백업 업로드 중…',
+      progress: '업로드 중 {0}% ({1} / {2} MB)',
+      success: '복원 성공({0}개 파일). 페이지를 새로 고칩니다…',
+      failed: '복원 실패: {0}',
+      busy: '복원 중…'
+    },
+    ru: {
+      btn: 'Восстановить из резервной копии',
+      title: 'Восстановить из резервной копии',
+      body: 'Заменить весь каталог data Kewe из резервной копии без входа в систему.',
+      note: 'После успешного восстановления текущие data удаляются, старая копия не сохраняется. Войдите с аккаунтом из резервной копии.',
+      cancel: 'Отмена',
+      choose: 'Выбрать файл и восстановить',
+      wrong: 'Выберите резервную копию .tar.gz / .tgz.',
+      uploading: 'Загрузка резервной копии…',
+      progress: 'Загрузка {0}% ({1} / {2} МБ)',
+      success: 'Восстановление успешно ({0} файлов). Страница будет обновлена…',
+      failed: 'Ошибка восстановления: {0}',
+      busy: 'Восстановление…'
+    },
+    fr: {
+      btn: 'Restaurer depuis une sauvegarde',
+      title: 'Restaurer depuis une sauvegarde',
+      body: 'Remplacez tout le répertoire data de Kewe depuis une sauvegarde, sans connexion.',
+      note: 'Après une restauration réussie, les données actuelles sont supprimées ; aucune ancienne copie n’est conservée. Connectez-vous avec un compte de la sauvegarde.',
+      cancel: 'Annuler',
+      choose: 'Choisir un fichier et restaurer',
+      wrong: 'Sélectionnez une sauvegarde .tar.gz / .tgz.',
+      uploading: 'Envoi de la sauvegarde…',
+      progress: 'Envoi {0}% ({1} / {2} Mo)',
+      success: 'Restauration réussie ({0} fichiers). Rechargement…',
+      failed: 'Échec de la restauration : {0}',
+      busy: 'Restauration…'
+    }
+  };
+
   var state = {
     lang: 'zh',
     mode: 'login',
@@ -381,6 +469,15 @@
   function lm(key) {
     var d = I18N[state.lang] || I18N.zh;
     return d[key] || I18N.en[key] || key;
+  }
+
+  function lrc(key) {
+    var d = RESTORE_COPY[state.lang] || RESTORE_COPY.zh;
+    var s = d[key] || RESTORE_COPY.en[key] || key;
+    for (var i = 1; i < arguments.length; i++) {
+      s = s.replace('{' + (i - 1) + '}', String(arguments[i]));
+    }
+    return s;
   }
 
   function readLang() {
@@ -790,6 +887,29 @@
     switchLine.appendChild(switchBtn);
     card.appendChild(switchLine);
 
+    // 登录页必须能直接从整库备份恢复，不能逼用户先注册一个空账号。
+    var restoreRow = el('div', 'kewe-auth-restore');
+    var restoreBtn = el('button', 'kewe-auth-restore-btn');
+    restoreBtn.type = 'button';
+    restoreBtn.id = 'keweAuthRestoreBtn';
+    restoreBtn.innerHTML = '<span class="ic">♻️</span><span class="tx"></span>';
+    restoreBtn.querySelector('.tx').textContent = lrc('btn');
+    restoreBtn.addEventListener('click', openRestoreDialog);
+    var restoreInput = document.createElement('input');
+    restoreInput.type = 'file';
+    restoreInput.id = 'keweAuthRestoreFile';
+    restoreInput.accept = '.tar.gz,.tgz,.gz,application/gzip';
+    restoreInput.style.display = 'none';
+    restoreInput.addEventListener('change', onRestoreFileSelected);
+    restoreRow.appendChild(restoreBtn);
+    restoreRow.appendChild(restoreInput);
+    card.appendChild(restoreRow);
+
+    var restoreStatus = el('div', 'kewe-auth-restore-status');
+    restoreStatus.id = 'keweAuthRestoreStatus';
+    restoreStatus.setAttribute('aria-live', 'polite');
+    card.appendChild(restoreStatus);
+
     var boot = el('div', 'kewe-auth-boot');
     boot.id = 'keweAuthBoot';
     boot.innerHTML = '<span class="ring"></span><span>' + lm('boot') + '</span>';
@@ -946,6 +1066,119 @@
       setBusy(false);
       showError(lm('errCrypto'));
     });
+  }
+
+  function setRestoreStatus(text, kind) {
+    var status = document.getElementById('keweAuthRestoreStatus');
+    if (!status) return;
+    status.textContent = text || '';
+    status.className = 'kewe-auth-restore-status' +
+      (text ? ' show' : '') + (kind ? ' ' + kind : '');
+  }
+
+  function openRestoreDialog() {
+    if (document.getElementById('keweAuthRestoreOverlay')) return;
+    var overlay = el('div', 'kewe-auth-restore-overlay');
+    overlay.id = 'keweAuthRestoreOverlay';
+    var modal = el('div', 'kewe-auth-restore-modal');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+
+    var icon = el('div', 'kewe-auth-restore-icon', '♻️');
+    var title = el('h3', '', lrc('title'));
+    var body = el('p', '', lrc('body'));
+    var note = el('div', 'kewe-auth-restore-note', lrc('note'));
+    var actions = el('div', 'kewe-auth-restore-actions');
+
+    var cancel = el('button', 'kewe-auth-restore-cancel', lrc('cancel'));
+    cancel.type = 'button';
+    var choose = el('button', 'kewe-auth-restore-choose', lrc('choose'));
+    choose.type = 'button';
+
+    function close() {
+      overlay.remove();
+    }
+    cancel.addEventListener('click', close);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) close();
+    });
+    choose.addEventListener('click', function () {
+      close();
+      var input = document.getElementById('keweAuthRestoreFile');
+      if (input) {
+        input.value = '';
+        input.click();
+      }
+    });
+
+    actions.appendChild(cancel);
+    actions.appendChild(choose);
+    modal.appendChild(icon);
+    modal.appendChild(title);
+    modal.appendChild(body);
+    modal.appendChild(note);
+    modal.appendChild(actions);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+  }
+
+  function onRestoreFileSelected(e) {
+    var input = e.target;
+    var file = input.files && input.files[0];
+    if (!file) return;
+    if (!/\.(tar\.gz|tgz|gz)$/i.test(file.name)) {
+      setRestoreStatus(lrc('wrong'), 'error');
+      input.value = '';
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024 * 1024 * 1024) {
+      setRestoreStatus(lrc('wrong'), 'error');
+      input.value = '';
+      return;
+    }
+    input.value = '';
+    doLoginRestore(file);
+  }
+
+  function doLoginRestore(file) {
+    var btn = document.getElementById('keweAuthRestoreBtn');
+    var status = document.getElementById('keweAuthRestoreStatus');
+    if (!btn || !status) return;
+
+    btn.disabled = true;
+    setRestoreStatus(lrc('uploading'), 'busy');
+
+    var lastPct = -1;
+    var form = new FormData();
+    form.append('backupFile', file, file.name);
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/restore?login=1', true);
+    xhr.upload.onprogress = function (ev) {
+      if (!ev.lengthComputable) return;
+      var pct = Math.floor((ev.loaded / ev.total) * 100);
+      if (pct === lastPct || pct % 5 !== 0) return;
+      lastPct = pct;
+      setRestoreStatus(lrc('progress', pct,
+        (ev.loaded / 1024 / 1024).toFixed(1),
+        (ev.total / 1024 / 1024).toFixed(1)), 'busy');
+    };
+    xhr.onload = function () {
+      var data = {};
+      try { data = JSON.parse(xhr.responseText || '{}'); } catch (e2) {}
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setRestoreStatus(lrc('success', data.extracted || 0), 'success');
+        setTimeout(function () { global.location.reload(); }, 1600);
+        return;
+      }
+      btn.disabled = false;
+      setRestoreStatus(lrc('failed', data.error || ('HTTP ' + xhr.status)), 'error');
+    };
+    xhr.onerror = function () {
+      btn.disabled = false;
+      setRestoreStatus(lrc('failed', lm('errNet')), 'error');
+    };
+    xhr.send(form);
   }
 
   function showGate(reason) {

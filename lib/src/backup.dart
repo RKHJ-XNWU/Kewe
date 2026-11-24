@@ -343,9 +343,11 @@ Future<void> handleRestore(HttpRequest req) async {
     return;
   }
 
+  final loginRestore = req.uri.queryParameters['login'] == '1' &&
+      (req.connectionInfo?.remoteAddress.isLoopback ?? false);
   final user = keweUserFromRequest(req);
   final uid = (user?.id ?? currentUserId).trim();
-  if (uid.isEmpty) {
+  if (uid.isEmpty && !loginRestore) {
     await errJson(res, 401, '请先登录后再恢复');
     return;
   }
@@ -406,6 +408,11 @@ Future<void> handleRestore(HttpRequest req) async {
     await errJson(res, 400,
         '这是旧版/不完整的单账号备份，缺少 data/auth/users.sts 或 master.key；'
         '为避免清空其他账号，拒绝按整库恢复');
+    return;
+  }
+  if (!isFullBackup && user == null) {
+    await errJson(res, 400,
+        '登录页只能恢复包含 data/auth 的整库备份；单账号备份请登录后恢复');
     return;
   }
 
@@ -493,12 +500,14 @@ Future<void> handleRestore(HttpRequest req) async {
       // 备份里的 master.key 已经替换 data/auth/master.key；必须丢掉旧 key 缓存。
       resetKeweSecretCaches();
       resetKeweAuthStoreCache();
-      final token = keweSessionTokenFromRequest(req);
-      if (token != null && token.isNotEmpty) {
-        try {
-          kewePreserveSessionForUser(token, uid);
-        } catch (e) {
-          logp('⚠️ 恢复后保留当前登录 token 失败: $e');
+      if (user != null) {
+        final token = keweSessionTokenFromRequest(req);
+        if (token != null && token.isNotEmpty) {
+          try {
+            kewePreserveSessionForUser(token, uid);
+          } catch (e) {
+            logp('⚠️ 恢复后保留当前登录 token 失败: $e');
+          }
         }
       }
     }
@@ -506,13 +515,45 @@ Future<void> handleRestore(HttpRequest req) async {
     invalidateAllDsSessionCaches();
     invalidateDsSearchCache();
 
-    logp('✅ ${isFullBackup ? '整库' : '单账号'}恢复完成: 已展开 $extracted 个文件；旧数据保留在 $oldPath');
+    // 恢复成功后不再保留 data.restore-old-*。旧目录只在换目录失败时用于回滚，
+    // 一旦新 data 已就位就立即删除，避免用户磁盘里堆积“旧备份”。
+    var oldDataDir = '';
+    try {
+      final oldDir = Directory(oldPath);
+      if (oldDir.existsSync()) oldDir.deleteSync(recursive: true);
+      oldDataDir = '';
+    } catch (e) {
+      oldDataDir = oldPath;
+      logp('⚠️ 恢复成功但旧数据删除失败: $oldPath ($e)');
+    }
+    try {
+      final parent = Directory(targetRoot).parent;
+      final base = targetRoot.split(Platform.pathSeparator).last;
+      if (parent.existsSync()) {
+        for (final entity in parent.listSync()) {
+          final name = entity.path.split(Platform.pathSeparator).last;
+          if (!name.startsWith('$base.restore-old-')) continue;
+          try {
+            if (entity is Directory) {
+              entity.deleteSync(recursive: true);
+            } else {
+              entity.deleteSync();
+            }
+            logp('🗑️ 清理历史恢复临时目录: ${entity.path}');
+          } catch (e) {
+            logp('⚠️ 清理历史恢复临时目录失败: ${entity.path} ($e)');
+          }
+        }
+      }
+    } catch (_) {}
+
+    logp('✅ ${isFullBackup ? '整库' : '单账号'}恢复完成: 已展开 $extracted 个文件；旧数据已删除');
     await dsJSONOk(res, 200, {
       'success': true,
       'message': isFullBackup ? '整库恢复成功' : '当前账号恢复成功',
       'mode': isFullBackup ? 'full' : 'account',
       'extracted': extracted,
-      'oldDataDir': oldPath,
+      'oldDataDir': oldDataDir,
     });
   } on FormatException catch (e) {
     await errJson(res, 400, e.message);

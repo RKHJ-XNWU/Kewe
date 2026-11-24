@@ -250,6 +250,15 @@ bool _isPrivateStaticPath(String path) {
       path == '/skill.md';
 }
 
+/// 登录页恢复：未登录时只允许本机回环地址发起，防止局域网其他设备
+/// 通过公开接口覆盖整个 data 目录。登录后的恢复仍走正常鉴权。
+bool _isLoginRestoreRequest(HttpRequest req) {
+  if (req.method != 'POST' || req.uri.path != '/api/restore') return false;
+  if (req.uri.queryParameters['login'] != '1') return false;
+  final addr = req.connectionInfo?.remoteAddress;
+  return addr != null && addr.isLoopback;
+}
+
 Future<void> _dispatchAuthed(HttpRequest req) async {
   final path = req.uri.path;
   final exact = _routes[path];
@@ -272,6 +281,13 @@ Future<void> dispatch(HttpRequest req) async {
   // 登录 / 注册 / 状态本身就是公开入口，但仍走统一的日志 + CORS 中间件。
   if (path == '/api/auth' || path.startsWith('/api/auth/')) {
     await loggerMiddleware(corsMiddleware(handleKeweAuthApi))(req);
+    return;
+  }
+
+  // 登录页的“从备份恢复”必须在未登录时可用；只放开本机回环请求，
+  // 且后续 handleRestore 还会校验备份必须是包含 auth 的整库备份。
+  if (_isLoginRestoreRequest(req)) {
+    await loggerMiddleware(corsMiddleware(handleRestore))(req);
     return;
   }
 

@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="dsc-forum.css?v=1">
     <link rel="stylesheet" href="dsc-vocab.css?v=1">
     <link rel="stylesheet" href="dsc-doubao.css?v=20261124-videocall">
-    <link rel="stylesheet" href="kewe-auth.css?v=20261124-auth6">
+    <link rel="stylesheet" href="kewe-auth.css?v=20261124-auth7">
     <link rel="stylesheet" href="kewe-toplang.css?v=20261123-auth1">
     <style>
         html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #ffffff; } #dscTopProbe { position: fixed; top: 0; left: 0; width: 100%; height: 6px; background: red; z-index: 99999; }
@@ -45,7 +45,7 @@
     </style>
     <link rel="stylesheet" href="kewe-ui.css?v=20261124-reflect1">
     <link rel="stylesheet" href="kewe-empire.css?v=20261123-empire11">
-    <script src="kewe-auth.js?v=20261124-auth8"></script>
+    <script src="kewe-auth.js?v=20261124-auth9"></script>
 </head>
 <body>
     <div id="dscTopProbe"></div>
@@ -729,18 +729,18 @@
     <!-- i18n：6 言語対応（既定＝簡体字中国語 zh）。コア→言語パック→AI 言語固定プロンプトの順で読み込む -->
     <script src="i18n/i18n.js?v=20261123-perf1"></script>
     <script src="kewe-toplang.js?v=20261123-auth1"></script>
-    <script src="i18n/locales/ja.js?v=2090-1"></script>
-    <script src="i18n/locales/ja-extra.js?v=2090-1"></script>
-    <script src="i18n/locales/zh.js?v=2090-1"></script>
-    <script src="i18n/locales/zh-extra.js?v=2090-1"></script>
-    <script src="i18n/locales/en.js?v=2090-1"></script>
-    <script src="i18n/locales/en-extra.js?v=2090-1"></script>
-    <script src="i18n/locales/ko.js?v=2090-1"></script>
-    <script src="i18n/locales/ko-extra.js?v=2090-1"></script>
-    <script src="i18n/locales/ru.js?v=2090-1"></script>
-    <script src="i18n/locales/ru-extra.js?v=2090-1"></script>
-    <script src="i18n/locales/fr.js?v=2090-1"></script>
-    <script src="i18n/locales/fr-extra.js?v=2090-1"></script>
+    <script src="i18n/locales/ja.js?v=2090-2"></script>
+    <script src="i18n/locales/ja-extra.js?v=2090-2"></script>
+    <script src="i18n/locales/zh.js?v=2090-2"></script>
+    <script src="i18n/locales/zh-extra.js?v=2090-2"></script>
+    <script src="i18n/locales/en.js?v=2090-2"></script>
+    <script src="i18n/locales/en-extra.js?v=2090-2"></script>
+    <script src="i18n/locales/ko.js?v=2090-2"></script>
+    <script src="i18n/locales/ko-extra.js?v=2090-2"></script>
+    <script src="i18n/locales/ru.js?v=2090-2"></script>
+    <script src="i18n/locales/ru-extra.js?v=2090-2"></script>
+    <script src="i18n/locales/fr.js?v=2090-2"></script>
+    <script src="i18n/locales/fr-extra.js?v=2090-2"></script>
     <script src="i18n/locales/ds-devtools.js?v=20261124-1"></script>
     <script src="i18n/locales/download.js?v=20261124-1"></script>
     <script src="i18n/locales/dsc-doubao.js?v=20261124-1"></script>
@@ -879,7 +879,7 @@
                 confirmDialog(
                     _t('♻️ バックアップから復元'),
                     _t('アップロードした .tar.gz バックアップで、Kewe の data ディレクトリ全体（全アカウント・ログインデータを含む）を置換します。') + '\n\n' +
-                    _t('現在の data は自動的に data.restore-old-* に退避され、復元後にログイン状態を保持します。') + '\n\n' +
+                    _t('復元に成功すると、現在の data は削除され、旧データは保持されません。') + '\n\n' +
                     _t('（推奨：先に「📦 データバックアップ」ボタンで現在のデータをダウンロードしてください）')
                 ).then(function (ok) {
                     if (!ok) return;

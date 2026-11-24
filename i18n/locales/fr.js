@@ -1055,7 +1055,7 @@ I18N.add('fr',`
     タイトルを入力|Saisir un titre
     本文を入力|Saisir le corps
     アップロードした .tar.gz バックアップで、Kewe の data ディレクトリ全体（全アカウント・ログインデータを含む）を置換します。|La sauvegarde .tar.gz téléversée remplace tout le répertoire Kewe data (tous les comptes et données de connexion inclus).
-    現在の data は自動的に data.restore-old-* に退避され、復元後にログイン状態を保持します。|Les données actuelles sont déplacées automatiquement vers data.restore-old-* et la connexion est conservée après la restauration.
+    復元に成功すると、現在の data は削除され、旧データは保持されません。|Après une restauration réussie, les données actuelles sont supprimées et aucune ancienne copie n’est conservée.
     この操作は元に戻せません。現在のデータのバックアップが済んでいるか確認してください！|Cette opération est irréversible. Vérifiez que les données actuelles ont bien été sauvegardées !
     .tar.gz バックアップファイルをアップロードしてください|Veuillez téléverser un fichier de sauvegarde .tar.gz
     プロンプト内容（送信メッセージの前に付加されます）|Contenu du prompt (ajouté avant le message envoyé)
