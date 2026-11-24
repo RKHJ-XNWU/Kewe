@@ -18,8 +18,8 @@
     var VIDEO_W = 720;
     var VIDEO_H = 1280;
     var VIDEO_FPS_MS = 500;          // 官方上限 2 FPS
-    var RATE_VIDEO = 0.252;          // 元/分钟（视频，2 毛 5 分 2 厘）
-    var RATE_VOICE = 0.007;          // 元/分钟（音频，7 厘）
+    var RATE_VIDEO = 0.4;            // 元/分钟（视频，4 毛）
+    var RATE_VOICE = 0.2;            // 元/分钟（音频，2 毛）
     var VOICES = [
         { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi 2.0', names: { zh:'Vivi 2.0', ja:'Vivi 2.0', en:'Vivi 2.0', ko:'Vivi 2.0', ru:'Vivi 2.0', fr:'Vivi 2.0' }, gender: 'female', def: true },
         { id: 'zh_female_xiaohe_uranus_bigtts', name: '小何 2.0', names: { zh:'小何 2.0', ja:'シャオホー 2.0', en:'Xiaohe 2.0', ko:'샤오허 2.0', ru:'Сяохэ 2.0', fr:'Xiaohe 2.0' }, gender: 'female', def: false },
@@ -49,7 +49,7 @@
         micOn: true,
         camStream: null,
         camOn: false,
-        camFacing: 'user',
+        camFacing: 'environment',
         camToken: 0,
         camTimer: null,
         frameSeq: 0,
@@ -96,7 +96,7 @@
         zh: {
             title: '豆包实时视频通话', subtitle: '端到端实时音视频 · 全屏 · 四种官方 2.0 音色',
             voiceTitle: '选择音色', female: '女声', male: '男声', defaultTag: '默认',
-            rate: '视频 ¥0.252/分钟 · 音频 ¥0.007/分钟', start: '开始视频通话',
+            rate: '视频 ¥0.40/分钟 · 音频 ¥0.20/分钟', start: '开始视频通话',
             history: '通话记录', close: '关闭', connecting: '正在连接…', connected: '已连接',
             listening: '正在聆听…', speaking: '豆包正在说话…', muted: '已静音',
             mic: '静音', unmute: '取消静音', camera: '摄像头', cameraOff: '摄像头已关闭',
@@ -121,7 +121,7 @@
         ja: {
             title: '豆包リアルタイム映像通話', subtitle: '端末間リアルタイム映像音声 · 全画面 · 公式 2.0 音色 4 種',
             voiceTitle: '音色を選択', female: '女性', male: '男性', defaultTag: '既定',
-            rate: '映像 ¥0.252/分 · 音声 ¥0.007/分', start: '映像通話を開始',
+            rate: '映像 ¥0.40/分 · 音声 ¥0.20/分', start: '映像通話を開始',
             history: '通話履歴', close: '閉じる', connecting: '接続中…', connected: '接続済み',
             listening: '聞き取り中…', speaking: '豆包が話しています…', muted: 'ミュート中',
             mic: 'ミュート', unmute: 'ミュート解除', camera: 'カメラ', cameraOff: 'カメラはオフです',
@@ -146,7 +146,7 @@
         en: {
             title: 'Doubao realtime video call', subtitle: 'End-to-end realtime audio & video · Full screen · Four official 2.0 voices',
             voiceTitle: 'Choose a voice', female: 'Female', male: 'Male', defaultTag: 'Default',
-            rate: 'Video ¥0.252/min · Audio ¥0.007/min', start: 'Start video call',
+            rate: 'Video ¥0.40/min · Audio ¥0.20/min', start: 'Start video call',
             history: 'Call history', close: 'Close', connecting: 'Connecting…', connected: 'Connected',
             listening: 'Listening…', speaking: 'Doubao is speaking…', muted: 'Muted',
             mic: 'Mute', unmute: 'Unmute', camera: 'Camera', cameraOff: 'Camera is off',
@@ -171,7 +171,7 @@
         ko: {
             title: '豆包 실시간 영상 통화', subtitle: '종단 간 실시간 영상·음성 · 전체 화면 · 공식 2.0 음색 4종',
             voiceTitle: '음색 선택', female: '여성', male: '남성', defaultTag: '기본',
-            rate: '영상 ¥0.252/분 · 음성 ¥0.007/분', start: '영상 통화 시작',
+            rate: '영상 ¥0.40/분 · 음성 ¥0.20/분', start: '영상 통화 시작',
             history: '통화 기록', close: '닫기', connecting: '연결 중…', connected: '연결됨',
             listening: '듣는 중…', speaking: '豆包가 말하고 있습니다…', muted: '음소거됨',
             mic: '음소거', unmute: '음소거 해제', camera: '카메라', cameraOff: '카메라가 꺼져 있습니다',
@@ -196,7 +196,7 @@
         ru: {
             title: 'Видеозвонок Doubao в реальном времени', subtitle: 'Сквозной обмен видео и аудио · Полный экран · Четыре официальных голоса 2.0',
             voiceTitle: 'Выберите голос', female: 'Женский', male: 'Мужской', defaultTag: 'По умолчанию',
-            rate: 'Видео ¥0.252/мин · Аудио ¥0.007/мин', start: 'Начать видеозвонок',
+            rate: 'Видео ¥0.40/мин · Аудио ¥0.20/мин', start: 'Начать видеозвонок',
             history: 'История звонков', close: 'Закрыть', connecting: 'Подключение…', connected: 'Подключено',
             listening: 'Слушаю…', speaking: 'Doubao говорит…', muted: 'Микрофон выключен',
             mic: 'Без звука', unmute: 'Вкл. звук', camera: 'Камера', cameraOff: 'Камера выключена',
@@ -221,7 +221,7 @@
         fr: {
             title: 'Appel vidéo Doubao en temps réel', subtitle: 'Audio et vidéo de bout en bout · Plein écran · Quatre voix officielles 2.0',
             voiceTitle: 'Choisir une voix', female: 'Féminine', male: 'Masculine', defaultTag: 'Par défaut',
-            rate: 'Vidéo ¥0.252/min · Audio ¥0.007/min', start: 'Démarrer l’appel vidéo',
+            rate: 'Vidéo ¥0.40/min · Audio ¥0.20/min', start: 'Démarrer l’appel vidéo',
             history: 'Historique des appels', close: 'Fermer', connecting: 'Connexion…', connected: 'Connecté',
             listening: 'Écoute…', speaking: 'Doubao parle…', muted: 'Micro coupé',
             mic: 'Micro', unmute: 'Micro', camera: 'Caméra', cameraOff: 'Caméra désactivée',
@@ -322,7 +322,7 @@
             '    <button class="dsc-vc-round" id="dscVcBack" type="button" title="关闭">‹</button>',
             '    <div class="dsc-vc-titlewrap">',
             '      <div class="dsc-vc-name">豆包</div>',
-            '      <div class="dsc-vc-meter"><span id="dscVcTime">00:00</span><span class="dot">·</span><span id="dscVcCost">¥0.000</span></div>',
+            '      <div class="dsc-vc-meter"><span id="dscVcTime">00:00</span><span class="dot">·</span><span id="dscVcCost">¥0.00</span></div>',
             '    </div>',
             '    <div class="dsc-vc-topright">',
             '      <button class="dsc-vc-round" id="dscVcHistIcon" type="button" title="通话记录">🕘</button>',
@@ -491,7 +491,7 @@
         $('dscVcStartBtn').disabled = true;
         $('dscVcStartBtn').textContent = tr('loading');
         $('dscVcTime').textContent = '00:00';
-        $('dscVcCost').textContent = '¥0.000';
+        $('dscVcCost').textContent = '¥0.00';
         loadSavedVoice();
         renderVoices();
         applyLang();
@@ -559,7 +559,7 @@
         V.seq = 0;
         V.micOn = true;
         V.camOn = false;
-        V.camFacing = 'user';
+        V.camFacing = 'environment';
         V.camToken++;
         V.camTimer = null;
         V.pend = [];
@@ -600,7 +600,7 @@
         $('dscVcStart').style.display = 'none';
         $('dscVcCall').style.display = 'flex';
         $('dscVcTime').textContent = '00:00';
-        $('dscVcCost').textContent = '¥0.000';
+        $('dscVcCost').textContent = '¥0.00';
         $('dscVcSubs').innerHTML = '';
         setCenterStatus(tr('connecting'));
 
@@ -893,7 +893,7 @@
             stopCamera();
             return;
         }
-        tryCamera(V.camFacing || 'user', false);
+        tryCamera(V.camFacing || 'environment', false);
     }
 
     function switchCamera() {
@@ -1494,7 +1494,7 @@
         var tm = $('dscVcTime');
         var cm = $('dscVcCost');
         if (tm) tm.textContent = fmtDuration(sec);
-        if (cm) cm.textContent = '¥' + V.costYuan.toFixed(3);
+        if (cm) cm.textContent = '¥' + V.costYuan.toFixed(2);
     }
 
     function fmtDuration(sec) {
@@ -1865,7 +1865,7 @@
                 var alive = tracks.length > 0 && tracks.every(function (t) { return t.readyState === 'live'; });
                 if (!alive) {
                     // 部分手机切后台会直接回收摄像头轨，必须重新取流，不能只重挂旧 srcObject。
-                    tryCamera(V.camFacing || 'user', true);
+                    tryCamera(V.camFacing || 'environment', true);
                     return;
                 }
                 var v = $('dscVcVideo');
