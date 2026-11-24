@@ -1241,3 +1241,52 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
     border-color: var(--kewe-line-strong);
     box-shadow: none;
 }
+
+
+/* ============================================================
+ * MOBILE COMPOSITOR BUDGET · 2026-11-24
+ * 手机端滚动/开关设置弹窗卡顿治理：
+ *   1. 去掉全站固定层的 backdrop-filter（iOS/Android 每次滚动都会重算高斯模糊）
+ *   2. 半透明面板改为接近实色的底色，视觉基本不变，合成成本大幅下降
+ *   3. 停掉消息入场/弹窗位移动画，减少滚动时的布局与绘制抖动
+ * 只在窄屏/触屏设备生效，桌面端外观完全不变。
+ * ============================================================ */
+@media (max-width: 860px), (hover: none) and (pointer: coarse) {
+    .dsc-topbar,
+    .dsc-sidebar,
+    .dsc-more-menu,
+    .dsc-plus-menu,
+    .dsc-model-menu,
+    .dsc-toast,
+    .dsc-sidebar-overlay,
+    .dsc-modal-overlay,
+    .dsc-db-overlay {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+    .dsc-topbar { background: #ffffff !important; }
+    .dsc-sidebar { background: #f7fafc !important; }
+    .dsc-more-menu,
+    .dsc-plus-menu,
+    .dsc-model-menu { background: #ffffff !important; }
+    .dsc-modal-overlay { background: rgba(9, 26, 38, .58) !important; }
+    .dsc-sidebar-overlay { background: rgba(15, 23, 42, .28) !important; }
+
+    /* 消息列表：避免滚动链传递到 body，并启用原生惯性滚动 */
+    #deepseekChatApp .dsc-messages {
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    /* 设置弹窗自身滚动也走原生惯性，不再与遮罩层的模糊抢合成资源 */
+    #deepseekChatApp .dsc-modal,
+    .dsc-settings-modal,
+    .dsc-db-modal {
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+    #deepseekChatApp .dsc-msg,
+    .dsc-settings-modal,
+    .dsc-db-modal {
+        animation: none !important;
+    }
+}

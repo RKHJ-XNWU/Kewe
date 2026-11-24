@@ -935,14 +935,12 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       '経路=${useDoubao ? '豆包/方舟' : (useRelay ? '中转站' : 'DeepSeek')})');
 
   // ★★ 显式插件按钮通道（墨迹天气 / 头条图文）
-  //   用户需求：
-  //     ① 点击按钮后「关闭工具模式」——function calling 全部禁用；
-  //     ② 但「必须真的调用该联网内容插件」，并把结果按 Markdown 返回。
+  //   用户需求（v10）：插件与工具模式不再互斥，可同时开启。
   //   实现要点：
-  //     · explicitPlugin 只用于「强制信源」，绝不开启工具模式；
-  //     · 本请求 enableTools 被硬性置为 false，并同步 DsToolGate 为 OFF；
-  //     · 插件走 Responses API 的 web_search(sources=[moji|toutiao])，
-  //       与 function calling 是两条完全独立的通道。
+  //     · explicitPlugin 只用于「强制信源」，不再碰 enableTools；
+  //     · 纯文本 / 图片走 callDbWikiWithToolsStream 的“插件 + function tools”
+  //       混合通道，并剔除同名 function web_search，避免互相抢占；
+  //     · 音视频不支持插件通道时回退原生工具链，但工具模式仍然保留。
   final List<String> explicitSources =
       explicitPlugin.isEmpty ? const <String>[] : <String>[explicitPlugin];
   if (explicitPlugin.isNotEmpty) {
@@ -950,9 +948,10 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       await dsJSONErr(res, 400, '墨迹天气 / 头条图文插件仅支持豆包模型，请先切换到豆包模式');
       return;
     }
-    enableTools = false;
-    DsToolGate.syncMode(sessionID, false);
-    logp('🎯 显式插件: $explicitPlugin（工具模式强制 OFF，只调用该插件）');
+    // 插件与工具模式解耦：显式插件只负责“强制信源”，不再抢占工具模式。
+    // 纯文本 / 图片会走“插件 + function tools”混合通道；音视频回退原生工具链。
+    DsToolGate.syncMode(sessionID, enableTools);
+    logp('🎯 显式插件: $explicitPlugin（工具模式=${enableTools ? 'ON' : 'OFF'}，信源强制启用）');
   }
 
   // ★★ 前缀强制信源（doubao_intent.dart）
@@ -1065,9 +1064,9 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // ========== 多轮反思 × 抖音百科：职责单一，绝不叠加 ==========
   // 1) 反思只由前端「多轮反思」开关的 reflectionRounds(1~10) 触发；
   //    工具模式独立走 function-calling 分支、不进入反思循环；长文模式保持单轮。
-  // 2) 抖音百科（联网内容插件，仅 Responses API）启用期间强制暂停工具模式：
-  //    混用通道里内置 web_search 与 function web_search 同名，会互相抢占，
-  //    模型被闸门拒绝后反复重试，表现为「调用超时」。插件必须独占本轮。
+  // 2) 抖音百科（联网内容插件）与工具模式已解耦：
+  //    混用通道会剔除同名 function web_search，只保留插件内置 web_search；
+  //    因此不再需要“插件必须独占本轮”。
   if (!longTextMode) {
     if (reflectionRounds > 0 && rounds > 1) {
       logp(
@@ -1076,14 +1075,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('➡️ 单轮直接回答: model=$model, Lv.$level（等级不触发反思）');
     }
   }
-  // ★★★ 2026-11-24 严重修复：抖音百科启用期间，工具模式必须让路。
-  //   原因：Responses API 混用通道里，内置插件也叫 web_search，而豆包工具集
-  //   里还有一个同名 function web_search。两者同时下发会造成同名冲突，
-  //   模型可能反复调用 function web_search，被搜索闸门拒绝后表现为
-  //   「调用超时 / 请稍后再试」，百科插件却从未真正执行。
-  //   因此百科可用时只走 Responses API 插件通道（callDbWikiResponsesStream），
-  //   不再混用 function tools。
-  //   音视频输入插件不保证可用，此时保留工具模式，由工具链自行处理。
+  // ★ 抖音百科与工具模式的兼容策略（v10）：
+  //   纯文本 / 图片走 callDbWikiWithToolsStream，同一请求里可同时出现
+  //   插件内置 web_search 与 function tools；该函数会剔除同名 function，
+  //   避免“模型反复调用被闸门拒绝的 function web_search”造成超时。
+  //   音视频输入插件不保证可用，此时保留工具模式，由原生工具链处理。
   //   （文件上下文在下方构建，故本次判定与工具闸门绑定也移到 fileCtx 之后。）
 
   // 注入提示词（system 角色）
@@ -1099,23 +1095,23 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   final fileCtx = buildFileContext(fileIDs);
 
   // ★ 非豆包通道没有抖音百科插件：前缀场景改为「该通道自己的联网搜索」。
-  //   若同时开着工具模式，模型可能只调用 function web_search 而跳过预检索；
-  //   这里显式暂停工具模式，让 buildWebSearchContext 在送模前完成检索，
-  //   保证「前缀」一定产生联网结果，而不是又被模型自由裁量。
+  //   即使工具模式开着，也先由 buildWebSearchContext 预检索，再交给模型；
+  //   不再为了前缀而关掉用户已经开启的工具模式。
   if (!useDoubao && dbIntent.forced && enableTools) {
-    enableTools = false;
-    logp('🛑 非豆包通道检测到信源前缀：暂停工具模式，改走本通道联网搜索');
+    logp('🔍 非豆包通道 + 信源前缀：预检索与工具模式并存（工具模式保持 ON）');
   }
 
-  // ★ 抖音百科插件可用性判定：插件不支持音频/视频输入，此类请求保留工具模式。
-  //   纯文本 / 图片可以走插件，此时暂停工具模式，避免 web_search 同名冲突。
+  // ★ 抖音百科插件与工具模式解耦：
+  //   纯文本 / 图片由 callDbWikiWithToolsStream 同时挂载插件与 function tools，
+  //   并在内部剔除同名 function web_search，避免 web_search 抢占；
+  //   音视频不支持插件通道时回退原生工具链，但仍保留工具模式。
   final dbWikiPluginUsableNow = dbWikiActiveNow &&
       fileCtx.audioFileIds.isEmpty &&
       fileCtx.videoFileIds.isEmpty;
   if (useDoubao && enableTools && dbWikiPluginUsableNow) {
-    enableTools = false;
-    logp('🛑 抖音百科已启用：本次暂停工具模式，'
-        '只走 Responses API 联网内容插件（避免 web_search 同名冲突）');
+    logp('🔧🌐 抖音百科 + 工具模式并存：本次走插件/function 混合通道');
+  } else if (useDoubao && enableTools && dbWikiActiveNow) {
+    logp('🔧 抖音百科 + 音视频：本次保留工具模式，插件通道回退');
   }
   // ★ 单一可信来源：本请求最终的 enableTools 就是服务端闸门的模式状态。
   //   之后所有工具执行（含插件混用通道）都以这里为准，前端状态不再能「带私货」。
@@ -1195,8 +1191,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   if (effectiveWebSearch) {
     final wikiOn = dbWikiPluginUsableNow;
     if (wikiOn) {
-      // 插件负责搜索；工具模式已在上面暂停，避免 web_search 同名冲突。
-      logp('🔍 豆包模式：联网内容插件负责搜索，工具模式暂停');
+      // 插件与 function tools 并存；同名 function 已在混用通道内剔除。
+      logp('🔍 豆包模式：联网内容插件 + 工具模式并存');
     } else if (useDoubao) {
       dbNativeSearch = true;
       logp('🔍 豆包模式：启用联网搜索（工具模式时改走 web_search/fetch 工具）');
@@ -1352,23 +1348,21 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('🎬 ${fileCtx.videoFileIds.length} 个视频将在 SSE 连接后 '
           '分割并准备');
     }
-    // 看过图片 / 音频 / 视频后是否先思考，完全服从用户的深度思考开关。
-    // 旧实现无条件 enabled，导致用户明明关掉深度思考，一发图片又开始思考。
-    dbExtraBody = deepThink
-        ? dbThinkingEnableParam(model)
-        : dbThinkingDisableParam(model);
-    dbExtraBody ??= <String, dynamic>{
-      'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
-    };
-    logp('🧠 媒体输入后的思考状态: ${deepThink ? 'enabled' : 'disabled'}');
-    // 工具模式的请求形式无法与 thinking 并用，因此
-    // 仅在附带媒体时自动关闭（不默默忽略）。
+    // 看过图片 / 音频 / 视频后是否先思考，服从深度思考开关；
+    // 但工具模式优先：保留工具，只让 thinking 让路，
+    // 绝不因为“优先思考”反过来关掉用户已经开启的工具模式。
     if (useTools) {
-      useTools = false;
-      // 工具模式曾把 temperature 压到 0，这里恢复默认采样温度；
-      // Lv.900–999 仍保持全局零温度。
-      temperature = level >= 900 ? 0.0 : 1.0;
-      logp('ℹ️ 因附带媒体，已自动关闭工具模式（优先思考）');
+      final disableThink = dbThinkingDisableParam(model);
+      if (disableThink != null) dbExtraBody = disableThink;
+      logp('🧠 媒体输入 + 工具模式：保留工具模式，thinking 让路');
+    } else {
+      dbExtraBody = deepThink
+          ? dbThinkingEnableParam(model)
+          : dbThinkingDisableParam(model);
+      dbExtraBody ??= <String, dynamic>{
+        'thinking': <String, dynamic>{'type': deepThink ? 'enabled' : 'disabled'},
+      };
+      logp('🧠 媒体输入后的思考状态: ${deepThink ? 'enabled' : 'disabled'}');
     }
   }
   // ★ 最终决定联网方式：工具模式与 web_search_options 互斥。

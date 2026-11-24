@@ -1,9 +1,10 @@
 /* ============================================================
- * dsc-doubao-tools.js —— 豆包专属工具模式按钮（前端）  v7
+ * dsc-doubao-tools.js —— 豆包专属工具模式按钮（前端）  v10
  *
- * 【v7 用户强制要求落地】
- *   ✓ 墨迹天气/头条图文插件开启时，工具模式按钮完全置灰、禁止点击
+ * 【v10 · 2026-11-24 用户要求落地】
+ *   ✓ 墨迹天气/头条图文插件与工具模式完全解耦，可同时开启
  *   ✓ 抖音百科/联网搜索开启时，工具模式按钮保持可用（两者可以并存）
+ *   ✓ 工具模式不再被插件开关关闭、置灰或抢占
  *   ✓ 所有残留硬编码日语文案全部清理，统一走多语言字典
  *   ✓ 全链路适配中文/英语/日语/韩语/法语/俄语
  *   ✓ 不备份、不编译，直接修改源文件
@@ -21,7 +22,7 @@
     /* 多语言字典：无任何硬编码日语 */
     var I18N_DICT = {
         'zh-CN': {
-            'plugin_locked': '墨迹天气/头条图文插件已开启，工具模式暂不可用',
+            'plugin_locked': '墨迹天气/头条图文插件可与工具模式同时开启',
             'tool_on': '豆包专属工具模式已开启（99 个工具 · 轮次无限制）',
             'tool_off': '豆包专属工具模式已关闭',
             'tool_available': '豆包专属工具模式可用（99 个工具 · 轮次无限制）',
@@ -29,7 +30,7 @@
             'tool_off_title': '豆包专属工具模式：已关闭（点击开启）'
         },
         'en-US': {
-            'plugin_locked': 'Moji/Toutiao plugin is active, tool mode is unavailable',
+            'plugin_locked': 'Moji/Toutiao plugins can run together with tool mode',
             'tool_on': 'Doubao tool mode enabled (99 tools · unlimited rounds)',
             'tool_off': 'Doubao tool mode disabled',
             'tool_available': 'Doubao tool mode available (99 tools · unlimited rounds)',
@@ -37,7 +38,7 @@
             'tool_off_title': 'Doubao tool mode: OFF (click to enable)'
         },
         'ja-JP': {
-            'plugin_locked': 'Moji天気/Toutiao記事プラグインが有効中のため、ツールモードは利用できません',
+            'plugin_locked': 'Moji天気/Toutiao記事はツールモードと同時に使えます',
             'tool_on': '豆包専用ツールモードを有効化しました（99ツール・ラウンド無制限）',
             'tool_off': '豆包専用ツールモードを無効化しました',
             'tool_available': '豆包専用ツールモードが利用可能です（99ツール・ラウンド無制限）',
@@ -45,7 +46,7 @@
             'tool_off_title': '豆包専用ツールモード：無効（クリックで有効）'
         },
         'ko-KR': {
-            'plugin_locked': 'Moji 날씨/Toutiao 기사 플러그인이 켜져 있어 도구 모드를 사용할 수 없습니다',
+            'plugin_locked': 'Moji 날씨/Toutiao 기사 플러그인은 도구 모드와 함께 사용할 수 있습니다',
             'tool_on': '두바오 전용 도구 모드가 켜졌습니다 (99 도구 · 라운드 무제한)',
             'tool_off': '두바오 전용 도구 모드가 꺼졌습니다',
             'tool_available': '두바오 전용 도구 모드를 사용할 수 있습니다 (99 도구 · 라운드 무제한)',
@@ -53,7 +54,7 @@
             'tool_off_title': '두바오 전용 도구 모드: 꺼짐 (클릭으로 켜기)'
         },
         'fr-FR': {
-            'plugin_locked': 'Plugin Moji/Toutiao actif, mode outils indisponible',
+            'plugin_locked': 'Les plugins Moji/Toutiao sont compatibles avec le mode outils',
             'tool_on': 'Mode outils Doubao activé (99 outils · tours illimités)',
             'tool_off': 'Mode outils Doubao désactivé',
             'tool_available': 'Mode outils Doubao disponible (99 outils · tours illimités)',
@@ -61,7 +62,7 @@
             'tool_off_title': 'Mode outils Doubao : OFF (cliquez pour activer)'
         },
         'ru-RU': {
-            'plugin_locked': 'Плагин Moji/Toutiao активен, режим инструментов недоступен',
+            'plugin_locked': 'Плагины Moji/Toutiao совместимы с режимом инструментов',
             'tool_on': 'Режим инструментов Doubao включён (99 инструментов · безлимит раундов)',
             'tool_off': 'Режим инструментов Doubao выключен',
             'tool_available': 'Режим инструментов Doubao доступен (99 инструментов · безлимит раундов)',
@@ -310,11 +311,6 @@
             e.preventDefault();
             e.stopImmediatePropagation();
 
-            if (pluginOn()) {
-                toast(T('plugin_locked'), 'info');
-                return;
-            }
-
             var next = !toolModeOn();
             if (typeof window.dscSetToolMode === 'function') {
                 window.dscSetToolMode(next);
@@ -374,24 +370,21 @@
         if (!b) return;
 
         var on = toolModeOn();
-        var locked = pluginOn();
 
         if (b.style.display === 'none') b.style.display = '';
-        b.classList.toggle('active', on && !locked);
-        b.classList.toggle('db-locked', locked);
+        b.classList.toggle('active', on);
+        b.classList.remove('db-locked');
         b.setAttribute('data-model', dbModel());
         b.setAttribute('data-tools', String(DB_TOOLS));
         b.setAttribute('data-rounds', String(DB_ROUNDS));
-        b.setAttribute('data-locked', locked ? '1' : '0');
+        b.setAttribute('data-locked', '0');
 
         /* 不再使用 pointer-events:none 与 aria-disabled：
            按钮始终可点，占用期间点击由 click 处理器给出明确提示，
            避免「点了毫无反应」。 */
         b.removeAttribute('aria-disabled');
         b.style.pointerEvents = '';
-        b.title = locked
-            ? T('plugin_locked')
-            : (on ? T('tool_on_title') : T('tool_off_title'));
+        b.title = on ? T('tool_on_title') : T('tool_off_title');
 
         if (!announcedDb) {
             announcedDb = true;
@@ -401,11 +394,12 @@
 
     window.dscDbToolModeOn = function () {
         try {
-            return isDbMode() && toolModeOn() && !pluginOn();
+            return isDbMode() && toolModeOn();
         } catch (e) { return false; }
     };
     window.dscDbToolSync = sync;
-    window.dscDbToolLocked = function () { return isDbMode() && pluginOn(); };
+    /* 插件不再锁定工具模式；保留该诊断入口兼容旧调用。 */
+    window.dscDbToolLocked = function () { return false; };
     window.dscDbToolTier = function () {
         return { code: 'unified', tools: DB_TOOLS, rounds: DB_ROUNDS };
     };

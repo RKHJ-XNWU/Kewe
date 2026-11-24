@@ -1,9 +1,9 @@
 /* ============================================================
  * dsc-doubao-plugins.js —— 豆包专属「墨迹天气 / 头条图文」开关按钮
  *
- * 【v7 · 2026 用户强制要求，逐条落地】
- *   ✓ 打开墨迹天气 / 头条图文任意插件时，强制关闭工具模式
- *   ✓ 插件开启期间，工具模式按钮完全置灰、禁止点击
+ * 【v10 · 2026-11-24 用户要求落地】
+ *   ✓ 墨迹天气 / 头条图文插件与工具模式完全解耦，可同时开启
+ *   ✓ 打开插件不再强制关闭工具模式，也不再置灰工具按钮
  *   ✓ 全链路多语言适配：中文 / 英语 / 日语 / 韩语 / 法语 / 俄语
  *   ✓ 所有残留日语文案全部清理，统一走 I18N 多语言字典
  *   ✓ 不备份、不编译，直接修改源文件
@@ -25,9 +25,9 @@
             'plugin_off': '已关闭该插件',
             'moji_label': '墨迹天气',
             'toutiao_label': '头条图文',
-            'moji_title': '墨迹天气：点击开启，再点关闭（可与头条图文同时开启）',
-            'toutiao_title': '头条图文：点击开启，再点关闭（可与墨迹天气同时开启）',
-            'tool_locked': '墨迹天气/头条图文插件已开启，工具模式暂不可用'
+            'moji_title': '墨迹天气：点击开启，再点关闭（可与头条图文、工具模式同时开启）',
+            'toutiao_title': '头条图文：点击开启，再点关闭（可与墨迹天气、工具模式同时开启）',
+            'tool_locked': '墨迹天气/头条图文插件可与工具模式同时开启'
         },
         'en-US': {
             'plugin_only_db': 'This plugin is only available in Doubao mode',
@@ -36,9 +36,9 @@
             'plugin_off': 'Plugin disabled',
             'moji_label': 'Moji Weather',
             'toutiao_label': 'Toutiao',
-            'moji_title': 'Moji Weather: click to enable, click again to disable (can run together with Toutiao)',
-            'toutiao_title': 'Toutiao Article: click to enable, click again to disable (can run together with Moji)',
-            'tool_locked': 'Moji/Toutiao plugin is active, tool mode is locked'
+            'moji_title': 'Moji Weather: click to enable, click again to disable (can run with Toutiao and tool mode)',
+            'toutiao_title': 'Toutiao Article: click to enable, click again to disable (can run with Moji and tool mode)',
+            'tool_locked': 'Moji/Toutiao plugins are compatible with tool mode'
         },
         'ja-JP': {
             'plugin_only_db': 'このプラグインは豆包モードでのみ利用可能です',
@@ -47,9 +47,9 @@
             'plugin_off': 'プラグインを無効化しました',
             'moji_label': 'Moji天気',
             'toutiao_label': 'Toutiao記事',
-            'moji_title': 'Moji天気：クリックで有効化、もう一度クリックで無効化（Toutiao記事と同時に有効化できます）',
-            'toutiao_title': 'Toutiao記事：クリックで有効化、もう一度クリックで無効化（Moji天気と同時に有効化できます）',
-            'tool_locked': 'Moji天気/Toutiao記事プラグインが有効中のため、ツールモードは利用できません'
+            'moji_title': 'Moji天気：クリックで有効化、もう一度クリックで無効化（Toutiao記事・ツールモードと同時に有効化できます）',
+            'toutiao_title': 'Toutiao記事：クリックで有効化、もう一度クリックで無効化（Moji天気・ツールモードと同時に有効化できます）',
+            'tool_locked': 'Moji天気/Toutiao記事はツールモードと同時に使えます'
         },
         'ko-KR': {
             'plugin_only_db': '이 플러그인은 두바오 모드에서만 사용 가능합니다',
@@ -58,9 +58,9 @@
             'plugin_off': '플러그인이 꺼졌습니다',
             'moji_label': 'Moji 날씨',
             'toutiao_label': 'Toutiao 기사',
-            'moji_title': 'Moji 날씨: 클릭으로 켜기, 다시 클릭으로 끄기 (Toutiao 기사와 함께 켤 수 있습니다)',
-            'toutiao_title': 'Toutiao 기사: 클릭으로 켜기, 다시 클릭으로 끄기 (Moji 날씨와 함께 켤 수 있습니다)',
-            'tool_locked': 'Moji 날씨/Toutiao 기사 플러그인이 켜져 있어 도구 모드를 사용할 수 없습니다'
+            'moji_title': 'Moji 날씨: 클릭으로 켜기, 다시 클릭으로 끄기 (Toutiao 기사·도구 모드와 함께 켤 수 있습니다)',
+            'toutiao_title': 'Toutiao 기사: 클릭으로 켜기, 다시 클릭으로 끄기 (Moji 날씨·도구 모드와 함께 켤 수 있습니다)',
+            'tool_locked': 'Moji 날씨/Toutiao 기사 플러그인은 도구 모드와 함께 사용할 수 있습니다'
         },
         'fr-FR': {
             'plugin_only_db': 'Ce plugin n\'est disponible qu\'en mode Doubao',
@@ -69,9 +69,9 @@
             'plugin_off': 'Plugin désactivé',
             'moji_label': 'Moji Weather',
             'toutiao_label': 'Toutiao',
-            'moji_title': 'Moji Weather : cliquez pour activer, recliquez pour désactiver (mode outils verrouillé)',
-            'toutiao_title': 'Article Toutiao : cliquez pour activer, recliquez pour désactiver (mode outils verrouillé)',
-            'tool_locked': 'Plugin Moji/Toutiao actif, mode outils verrouillé'
+            'moji_title': 'Moji Weather : cliquez pour activer, recliquez pour désactiver (compatible avec Toutiao et le mode outils)',
+            'toutiao_title': 'Article Toutiao : cliquez pour activer, recliquez pour désactiver (compatible avec Moji et le mode outils)',
+            'tool_locked': 'Les plugins Moji/Toutiao sont compatibles avec le mode outils'
         },
         'ru-RU': {
             'plugin_only_db': 'Этот плагин доступен только в режиме Doubao',
@@ -80,9 +80,9 @@
             'plugin_off': 'Плагин отключён',
             'moji_label': 'Moji Погода',
             'toutiao_label': 'Toutiao',
-            'moji_title': 'Погода Moji: нажмите для включения, нажмите ещё раз для отключения (режим инструментов заблокирован)',
-            'toutiao_title': 'Статьи Toutiao: нажмите для включения, нажмите ещё раз для отключения (режим инструментов заблокирован)',
-            'tool_locked': 'Плагин Moji/Toutiao активен, режим инструментов заблокирован'
+            'moji_title': 'Погода Moji: нажмите для включения, ещё раз — для отключения (совместимо с Toutiao и режимом инструментов)',
+            'toutiao_title': 'Статьи Toutiao: нажмите для включения, ещё раз — для отключения (совместимо с Moji и режимом инструментов)',
+            'tool_locked': 'Плагины Moji/Toutiao совместимы с режимом инструментов'
         }
     };
 
@@ -208,13 +208,9 @@
             b.classList.toggle('dsc-db-plugin-on', isOn);
             b.setAttribute('aria-pressed', isOn ? 'true' : 'false');
         }
-        /* 插件开启时关闭工具模式：只在「用户切换插件」这一刻执行一次。
-           v8 修复：不再写 pointer-events:none / aria-disabled，
-           否则会与 tools 侧的同步互相覆盖，形成可见的抖闪；
-           按钮保持可点，占用期间点击由 click 处理器给出明确提示。 */
-        /* v9：插件与工具模式彻底解耦。
-           插件开启不再强制关闭工具模式，也不再给按钮加锁定态，
-           插件与工具模式可以同时使用。 */
+        /* v10：插件与工具模式彻底解耦。
+           插件开关不再关闭工具模式，也不再给工具按钮加锁定态；
+           两者可以同时使用，工具按钮始终可点。 */
         var toolBtn = $('dscDbToolModeBtn');
         if (toolBtn) {
             toolBtn.classList.remove('db-locked');

@@ -2200,3 +2200,16 @@
     padding-left: 8px;
     padding-right: 8px;
 }
+
+
+/* 豆包设置/生图弹窗：手机端不再使用 backdrop-filter 毛玻璃。
+   设置保存后关闭遮罩时，模糊层消失原本会触发一次整屏重绘；
+   改成实色遮罩后点击“保存设置”不再有那一下顿感。 */
+@media (max-width: 860px), (hover: none) and (pointer: coarse) {
+    .dsc-db-overlay {
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+        background: rgba(15, 23, 42, .55);
+    }
+    .dsc-db-modal { animation: none !important; }
+}

@@ -5943,6 +5943,23 @@
         if (o) o.classList.remove('open');
     }
     async function saveSettings() {
+        // ★ 保存按钮即时反馈 + 防重复提交：
+        //   旧实现点击后没有任何反馈，网络稍慢就像“卡死”；
+        //   Android 上遮罩 blur 还会在关闭时整屏重绘一次。
+        //   这里先锁定按钮并给出“保存中…”，真正请求完成后再恢复。
+        var __saveBtn = $('dscSettingsSave');
+        if (__saveBtn && __saveBtn.getAttribute('data-saving') === '1') return;
+        function __restoreSaveBtn() {
+            if (!__saveBtn) return;
+            __saveBtn.removeAttribute('data-saving');
+            __saveBtn.disabled = false;
+            __saveBtn.textContent = dscT('設定を保存');
+        }
+        if (__saveBtn) {
+            __saveBtn.setAttribute('data-saving', '1');
+            __saveBtn.disabled = true;
+            __saveBtn.textContent = dscT('保存中…');
+        }
         var apiKey = $('dscApiKeyInput') ? $('dscApiKeyInput').value.trim() : '';
         // ★【修复 v3 · 根因】保存设置绝不允许改变维度。
         //   旧实现无条件优先取 dscRelayModelSelect 的值：设置面板一旦回显了中转站模型，
@@ -6006,7 +6023,11 @@
             toast(dscT('設定を保存しました · モデル:') + ' ' + model, 'success');
             updateTitle();
             closeSettings();
-        } catch (e) { toast(dscErrText('保存に失敗: ', e.message), 'error'); }
+        } catch (e) {
+            toast(dscErrText('保存に失敗: ', e.message), 'error');
+        } finally {
+            __restoreSaveBtn();
+        }
     }
 
     function autoResize() {
