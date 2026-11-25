@@ -189,9 +189,16 @@ Future<void> handleDsChatSendStream(
       //   输出规范（时间轴逐段、画面文字原样抄录、数字专名准确、不设上限）。
       if ((vid.parts.isNotEmpty || vid.text.isNotEmpty) &&
           dbVideoArkConfig().promptEnabled) {
-        promptOut =
-            '$promptOut\n\n${dbVideoUnderstandPrompt(lang)}';
-        logp('🎯 已注入视频理解输出规范（时间轴穷举 + 画面文字原样抄录）');
+        // 视频真的随请求送出 → 用「你看得到视频」的规范；
+        // 只有逐段转写文本（长视频被切成多段、单请求塞不下帧）→
+        // 用「原样交付这份记录」的规范，否则模型会对着转写再概括一次，
+        // 细节二次丢失。
+        final contract = vid.parts.isNotEmpty
+            ? dbVideoUnderstandPrompt(lang)
+            : dbVideoTranscriptPrompt(lang);
+        promptOut = '$promptOut\n\n$contract';
+        logp('🎯 已注入视频输出规范'
+            '（${vid.parts.isNotEmpty ? '时间轴穷举' : '转写原样交付'}）');
       }
       apiMessages.add({
         'role': 'user',
@@ -1168,6 +1175,18 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   }
 
   final fileCtx = buildFileContext(fileIDs);
+  // ★ 视频请求的输出预算下限（见 doubao_video_ark.dart 的
+  //   dbVideoAnswerTokenFloor）：视频回答是「全片时间轴细节记录」，
+  //   低推理等级给出的 8K~19K 预算写不完，模型会在中途被 max_tokens 切断，
+  //   用户看到的就是「视频理解不全」。这里只抬下限，
+  //   仍受模型上限与全局输出档位封顶，绝不越过上游允许值。
+  if (fileCtx.videoFileIds.isNotEmpty) {
+    final vidFloor = dbVideoAnswerTokenFloor(model);
+    if (maxTokens < vidFloor) {
+      logp('🎬 视频请求输出预算: $maxTokens → $vidFloor tokens（避免被截断）');
+      maxTokens = vidFloor;
+    }
+  }
 
   // ★ 非豆包通道没有抖音百科插件：前缀场景改为「该通道自己的联网搜索」。
   //   即使工具模式开着，也先由 buildWebSearchContext 预检索，再交给模型；
@@ -1417,9 +1436,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         //   否则模型只回答用户那一句话，细节必然缺失。
         if ((vid.parts.isNotEmpty || vid.text.isNotEmpty) &&
             dbVideoArkConfig().promptEnabled) {
-          userPrompt =
-              '$userPrompt\n\n${dbVideoUnderstandPrompt(mediaLang)}';
-          logp('🎯 已注入视频理解输出规范（时间轴穷举 + 画面文字原样抄录）');
+          // 与流式分支同一套判定：有视频帧 → 时间轴穷举规范；
+          // 只有逐段转写文本 → 原样交付规范（禁止二次概括）。
+          final contract = vid.parts.isNotEmpty
+              ? dbVideoUnderstandPrompt(mediaLang)
+              : dbVideoTranscriptPrompt(mediaLang);
+          userPrompt = '$userPrompt\n\n$contract';
+          logp('🎯 已注入视频输出规范'
+              '（${vid.parts.isNotEmpty ? '时间轴穷举' : '转写原样交付'}）');
         }
       } on DbVideoArkException catch (e) {
         logp('❌ 视频准备失败: ${e.message}');

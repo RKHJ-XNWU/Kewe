@@ -823,6 +823,7 @@ Future<File> dsDecryptFileToTemp(String absPath, {String? hintName}) async {
   final sink = out.openWrite();
   try {
     var first = true;
+    var chunk = 0;
     await for (final line in File(absPath)
         .openRead()
         .transform(utf8.decoder)
@@ -834,6 +835,14 @@ Future<File> dsDecryptFileToTemp(String absPath, {String? hintName}) async {
       final t = line.trim();
       if (t.isEmpty) continue;
       sink.add(keweDecryptBytesForUser(currentUserId, base64.decode(t)));
+      // ★ AES-GCM + base64 是主 isolate 上的纯 CPU 活。旧版一口气解完整个
+      //   文件，几百 MB 的视频会把事件循环堵住十几秒 —— 期间 SSE 心跳、
+      //   进度事件、定时器全部停摆，界面上就是「卡住不动」。
+      //   每 24 块（约 12MB 密文）让出一次事件循环，进度与心跳不中断。
+      chunk++;
+      if (chunk % 24 == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
     await sink.flush();
     await sink.close();

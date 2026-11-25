@@ -44,6 +44,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'ds_crypto.dart';
+import 'db_limits.dart';
 import 'doubao.dart';
 import 'files.dart';
 import 'globals.dart';
@@ -531,8 +532,8 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       continue;
     }
     logp('🎬 ${meta.name}: ${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
-        ' = ${(dur * cfg.fps).round()} 帧 > 方舟单请求上限 '
-        '$dbArkFrameLimitPerRequest 帧 → 等分 $segCount 段，'
+        ' = ${(dur * cfg.fps).round()} 帧 > 安全帧上限 '
+        '$dbArkFrameSafePerRequest 帧 → 等分 $segCount 段，'
         '每段 ${_dbClock(dur / segCount)}（fps 仍为 ${_dbFpsStr(cfg.fps)}）');
     onProgress?.call({...tag, 'stage': 'seg_split', 'size': size,
         'segments': segCount});
@@ -707,6 +708,11 @@ Future<String> _dbArkUploadToTosBucket({
 
   final raf = await file.open();
   var sent = 0;
+  // ★ 上传进度 1 秒本地补报：4MB 一块在弱网下要几秒到几十秒，
+  //   只按「块」上报会让界面长时间停在同一个百分比上，看起来像卡死。
+  final uploadTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+    onProgress?.call(sent, total);
+  });
   try {
     req.add(headBytes);
     const block = 4 * 1024 * 1024;
@@ -723,10 +729,12 @@ Future<String> _dbArkUploadToTosBucket({
       onProgress?.call(sent, total);
     }
   } catch (e) {
+    uploadTicker.cancel();
     try { await raf.close(); } catch (_) {}
     try { req.abort(); } catch (_) {}
     throw DbVideoArkException('TOS/方舟上传中断：$e', code: 'upload_failed');
   }
+  uploadTicker.cancel();
   try { await raf.close(); } catch (_) {}
 
   req.add(tailBytes);
@@ -782,37 +790,53 @@ Future<void> dbArkWaitFileActive({
   Duration timeout = const Duration(minutes: 40),
 }) async {
   final start = DateTime.now();
-  var intervalMs = 2000;
-  while (true) {
-    final waited = DateTime.now().difference(start);
-    if (waited > timeout) {
-      throw DbVideoArkException(
-          '方舟视频预处理超时（${waited.inMinutes} 分钟未完成，file=$fileId）');
+  var status = 'processing';
+  // ★ 本地秒表：进度秒数由 1 秒定时器推进，与「状态查询」彻底解耦。
+  //   旧实现只在查询返回后才 onTick 一次；网络抖动时一次查询就可能阻塞
+  //   十几秒（连接超时 10 秒 + 重试间隔 3 秒），界面上就是
+  //   「抽帧卡在 15 秒不动」。现在无论查询多慢，秒数每秒都会走一格。
+  final ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+    onTick?.call(status, DateTime.now().difference(start).inSeconds);
+  });
+  var intervalMs = 1500;
+  try {
+    while (true) {
+      final waited = DateTime.now().difference(start);
+      if (waited > timeout) {
+        throw DbVideoArkException(
+            '方舟视频预处理超时（${waited.inMinutes} 分钟未完成，file=$fileId）');
+      }
+      Map<String, dynamic> info;
+      try {
+        // ★ 查询自带硬超时：dbArkFileInfo 只对「拿到响应头」设了超时，
+        //   响应体读到一半被中间设备挂住时会永久 await，进度条随之停住。
+        info = await dbArkFileInfo(apiKey: apiKey, fileId: fileId)
+            .timeout(const Duration(seconds: 20));
+      } catch (e) {
+        onTick?.call(status, DateTime.now().difference(start).inSeconds);
+        logp('⚠️ 查询文件状态失败（将重试）: $e');
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
+      status = mStr(info, 'status').toLowerCase();
+      onTick?.call(status, DateTime.now().difference(start).inSeconds);
+      if (status == 'active' || status == 'processed') {
+        logp('✅ 方舟视频预处理完成: $fileId '
+            '（${DateTime.now().difference(start).inSeconds} 秒）');
+        return;
+      }
+      if (status == 'failed' || status == 'error') {
+        final err = info['error'] ?? info['error_message'] ?? info['message'];
+        final isTimeout = dbArkIsPreprocessTimeout('$err');
+        throw DbVideoArkException(
+            '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}',
+            code: isTimeout ? 'preprocess_timeout' : 'preprocess_failed');
+      }
+      await Future<void>.delayed(Duration(milliseconds: intervalMs));
+      if (intervalMs < 5000) intervalMs += 500;
     }
-    Map<String, dynamic> info;
-    try {
-      info = await dbArkFileInfo(apiKey: apiKey, fileId: fileId);
-    } catch (e) {
-      onTick?.call('retry', waited.inSeconds);
-      logp('⚠️ 查询文件状态失败（将重试）: $e');
-      await Future<void>.delayed(const Duration(seconds: 3));
-      continue;
-    }
-    final status = mStr(info, 'status').toLowerCase();
-    onTick?.call(status, waited.inSeconds);
-    if (status == 'active' || status == 'processed') {
-      logp('✅ 方舟视频预处理完成: $fileId （${waited.inSeconds} 秒）');
-      return;
-    }
-    if (status == 'failed' || status == 'error') {
-      final err = info['error'] ?? info['error_message'] ?? info['message'];
-      final isTimeout = dbArkIsPreprocessTimeout('$err');
-      throw DbVideoArkException(
-          '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}',
-          code: isTimeout ? 'preprocess_timeout' : 'preprocess_failed');
-    }
-    await Future<void>.delayed(Duration(milliseconds: intervalMs));
-    if (intervalMs < 5000) intervalMs += 500;
+  } finally {
+    ticker.cancel();
   }
 }
 
@@ -1310,6 +1334,69 @@ const String _dbVideoPromptZh = '''【视频理解输出规范 · 必须遵守�
 五、与用户问题的关系
 用户的问题如果只针对其中某一点，你仍然要先给出完整时间轴与细节记录，然后再回答问题。不得因为用户问得简单就只答那一句。''';
 
+/// 长视频（被等分切段、只送转写文本）专用的交付规范。
+///
+/// 与「视频随请求送出」时不同：模型这次看不到画面，只能看到逐段转写。
+/// 如果还按普通问答走，模型会把转写照抄成摘要，细节二次丢失。
+/// 所以这里要求它「原样交付这份记录」，只允许排版，不允许删减。
+String dbVideoTranscriptPrompt(String lang) {
+  final l = lang.trim().toLowerCase();
+  if (l.startsWith('ja')) return _dbVideoTranscriptPromptJa;
+  if (l.startsWith('zh') || l.startsWith('cmn') || l.startsWith('yue')) {
+    return _dbVideoTranscriptPromptZh;
+  }
+  return _dbVideoTranscriptPromptEn;
+}
+
+const String _dbVideoTranscriptPromptZh = '''【长视频逐段转写交付规范 · 必须遵守】
+
+本次视频超过了方舟单次请求可接收的帧数上限，已按时间轴等分切段、逐段完整看过。
+下面以【完整理解】开头的内容，就是逐段转写得到的原始记录（不是摘要）。
+
+1. 用户要的是「视频里究竟发生了什么、细节是什么」。你要交付的正是这份记录的完整内容：
+   按全片时间轴顺序整理输出，保留每一条时间点与原始表述。
+2. 禁止概括、禁止合并同类项、禁止用「之后」「随后」「接下来」跳过任何一段，
+   禁止只挑几条重点，禁止把多个事件压缩成一句话。
+3. 允许在不改变事实的前提下排版（分节、列表、加小标题），但不得删减信息，
+   不得改写数字、专名、台词原文与画面文字。
+4. 用户的问题若只针对某一点：先把完整记录给出来，再回答那一点。
+5. 不设字数上限，记录有多长就交付多长。
+6. 记录里标有（不确定）的地方，输出时保留该标注，不得当成确定事实。''';
+
+const String _dbVideoTranscriptPromptEn = '''[Long-video transcript delivery contract — mandatory]
+
+This video exceeds the number of frames a single Ark request can accept, so it was
+split on the timeline and every segment was watched in full. The text below the
+"complete understanding" heading is the verbatim per-segment record, not a summary.
+
+1. Deliver that record in full, in timeline order, keeping every timestamp and the
+   original wording.
+2. Do not summarise, do not merge entries, do not skip any segment with vague words
+   such as "then", "later", "in the middle", and never compress several events into
+   one sentence.
+3. You may reformat (sections, lists, sub-headings) but must not drop information and
+   must not rewrite numbers, proper nouns, quoted lines or on-screen text.
+4. If the user asks about one specific point, still deliver the full record first,
+   then answer that point.
+5. No length limit: deliver as much as the record contains.
+6. Keep the (uncertain) markers where the record has them; never present them as facts.''';
+
+const String _dbVideoTranscriptPromptJa = '''【長時間動画の逐段転写 納品規約 · 必須】
+
+本動画は 1 回のリクエストで受け取れるフレーム数の上限を超えているため、
+タイムラインで等分し、各区間を完全に視聴しました。以下の「完全理解」以降は
+区間ごとの逐語記録であり、要約ではありません。
+
+1. その記録の内容を丸ごと納品してください。全編のタイムライン順に並べ、
+   各時刻と元の表現を保持します。
+2. 要約・統合・省略は禁止です。「その後」「続いて」「途中で」などの曖昧な語で
+   区間を飛ばすこと、数件をまとめて一文にすることも禁止です。
+3. 事実を変えない範囲での整形（見出し・箇条書き）は可。ただし情報を削らず、
+   数字・固有名詞・台詞原文・画面文字を書き換えないこと。
+4. 質問が一点だけの場合でも、まず完全な記録を出し、その後に答えます。
+5. 字数制限はありません。記録の長さだけ納品してください。
+6. 記録内の（不確実）表記はそのまま残し、断定に変えないこと。''';
+
 const String _dbVideoPromptEn = '''[Video Understanding Output Contract — mandatory]
 
 A video is attached. You must actually watch the whole video before answering, and follow the rules below. This is a verifiable deliverable, not an impression.
@@ -1395,6 +1482,45 @@ const String _dbVideoPromptJa = '''【動画理解の出力規約 · 必須】
 /// 方舟 chat 单请求的输入帧数上限（实测硬限制：3600）。
 const int dbArkFrameLimitPerRequest = 3600;
 
+/// 分段规划用的安全帧上限：在 3600 的基础上留 600 帧余量。
+///
+/// 为什么不用 3600 直接规划：3600 是服务端「允许的上限值」，正好贴着边界时，
+/// 只要预处理多抽一帧（首帧补齐、关键帧对齐、min_frames 生效）就会撞
+/// number of the input image (3601) exceeds the limit (3600)；
+/// 而实测 3600 帧（12 分钟 @5fps）也已经贴着单文件预处理 ~15 分钟的失败边界。
+/// 规划按 3000 帧切分，两个边界都不贴。
+const int dbArkFrameSafePerRequest = 3000;
+
+/// 视频回答的 max_tokens 下限（十进制 64K = 64000）。
+///
+/// 「模型把细节全说出来」不是提示词能单独保证的：输出预算是硬约束，
+/// 预算不足时模型写到一半就被切断，用户看到的就是「理解不全」。
+/// 只要请求里带视频，就把预算抬到这个下限；同时仍受
+/// 「模型上限」与「全局输出档位」双重封顶，绝不越过上游允许值。
+int dbVideoAnswerTokenFloor(String model) {
+  const int want = 64 * 1000; // 64K，十进制
+  final cap = dbSpecialModelMaxOutput(model);
+  final global = dbCurrentOutputLimit();
+  var v = want;
+  if (cap > 0 && cap < v) v = cap;
+  if (global > 0 && global < v) v = global;
+  if (v < 8192) v = 8192;
+  return v;
+}
+
+/// 单段完整转写的输出预算：按时长给，短段不浪费、长段不截断。
+///
+/// 旧实现固定 8000 token：一段 10 分钟的片子要按时间点写清画面、台词、
+/// 画面文字，8000 token（约 5 千字）根本写不完，服务端 finish_reason=length
+/// 直接截断 —— 这是「长视频细节不全」最直接的一处丢细节。
+int dbVideoTranscriptMaxTokens(double segmentSec) {
+  if (segmentSec <= 0) return 32000;
+  var v = (segmentSec * 60).round(); // 每秒 60 token 的书写预算
+  if (v < 16000) v = 16000;
+  if (v > 64000) v = 64000;
+  return v;
+}
+
 /// 秒 → 分:秒 / 时:分:秒
 String _dbClock(num sec) {
   final s = sec < 0 ? 0 : sec.round();
@@ -1423,13 +1549,13 @@ Future<double> _dbProbeDurationSec(File f) async {
   return 0;
 }
 
-/// 按帧总数规划段数：≤3600 帧就是 1 段（整片直传，不分段）。
+/// 按帧总数规划段数：≤安全帧上限（3000 帧）就是 1 段（整片直传，不分段）。
 int dbArkPlanSegCount(double durationSec, double fps) {
   if (durationSec <= 0) return 1;
   final f = fps <= 0 ? 1.0 : fps;
   final frames = durationSec * f;
-  if (frames <= dbArkFrameLimitPerRequest) return 1;
-  var n = (frames / dbArkFrameLimitPerRequest).ceil();
+  if (frames <= dbArkFrameSafePerRequest) return 1;
+  var n = (frames / dbArkFrameSafePerRequest).ceil();
   if (n < 2) n = 2;
   if (n > 200) n = 200;
   return n;
@@ -1447,7 +1573,7 @@ Future<List<File>> _dbSplitByTime({
   required File src,
   required int segCount,
   required double duration,
-  void Function(int index, int total)? onSeg,
+  void Function(int index, int total, int elapsedSec)? onSeg,
 }) async {
   final tmpDir = Directory(
       '${Directory.systemTemp.path}/kewe_vseg_${DateTime.now().microsecondsSinceEpoch}');
@@ -1459,21 +1585,26 @@ Future<List<File>> _dbSplitByTime({
     final len = (i == segCount - 1) ? (duration - start) : segSec;
     if (len <= 0.5) continue;
     final path = '${tmpDir.path}/seg_${i.toString().padLeft(3, '0')}.mp4';
-    onSeg?.call(i, segCount);
-    final r = await Process.run('ffmpeg', [
-      '-y', '-hide_banner', '-loglevel', 'error',
-      '-ss', start.toStringAsFixed(3),
-      '-t', len.toStringAsFixed(3),
-      '-i', src.path,
-      '-map', '0:v:0',
-      '-map', '0:a?',
-      '-c:v', 'copy',
-      '-c:a', 'aac',
-      '-b:a', '128k',
-      '-avoid_negative_ts', 'make_zero',
-      '-movflags', '+faststart',
-      path,
-    ]);
+    onSeg?.call(i, segCount, 0);
+    // ★ 每段 ffmpeg 拷贝期间每 2 秒上报一次耗时：
+    //   大文件单段拷贝可能要几十秒，期间没有任何事件，界面就像卡死。
+    final r = await _dbRunFfmpegWithTicks(
+      [
+        '-y', '-hide_banner', '-loglevel', 'error',
+        '-ss', start.toStringAsFixed(3),
+        '-t', len.toStringAsFixed(3),
+        '-i', src.path,
+        '-map', '0:v:0',
+        '-map', '0:a?',
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '128k',
+        '-avoid_negative_ts', 'make_zero',
+        '-movflags', '+faststart',
+        path,
+      ],
+      onTick: (sec) => onSeg?.call(i, segCount, sec),
+    );
     if (r.exitCode != 0) {
       throw DbVideoArkException(
           '视频等分切段失败（第 ${i + 1}/$segCount 段，'
@@ -1491,28 +1622,33 @@ Future<List<File>> _dbSplitByTime({
   return out;
 }
 
-/// 用 file_id 做一次非流式视频理解，返回模型文本。
-Future<String> _dbArkChatByFileId({
+/// ffmpeg 执行期间每 2 秒回调一次耗时（避免长时间无事件）。
+Future<ProcessResult> _dbRunFfmpegWithTicks(
+  List<String> args, {
+  void Function(int elapsedSec)? onTick,
+}) async {
+  final t0 = DateTime.now();
+  final ticker = Timer.periodic(const Duration(seconds: 2), (_) {
+    onTick?.call(DateTime.now().difference(t0).inSeconds);
+  });
+  try {
+    return await Process.run('ffmpeg', args);
+  } finally {
+    ticker.cancel();
+  }
+}
+
+/// 单次「带视频的 chat 请求」：返回正文与结束原因。
+/// finish == 'length' 表示输出被 max_tokens 截断，调用方必须续写补齐。
+Future<({String text, String finish})> _dbArkChatOnce({
   required String apiKey,
   required String model,
-  required String fileId,
-  required String prompt,
-  int maxTokens = 8000,
+  required List<Map<String, dynamic>> messages,
+  required int maxTokens,
 }) async {
   final body = <String, dynamic>{
     'model': model,
-    'messages': <Map<String, dynamic>>[
-      <String, dynamic>{
-        'role': 'user',
-        'content': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'type': 'video_url',
-            'video_url': <String, dynamic>{'file_id': fileId},
-          },
-          <String, dynamic>{'type': 'text', 'text': prompt},
-        ],
-      },
-    ],
+    'messages': messages,
     'max_tokens': maxTokens,
     'temperature': 0.2,
   };
@@ -1538,13 +1674,104 @@ Future<String> _dbArkChatByFileId({
   if (choices.isEmpty) {
     throw DbVideoArkException('视频分段理解返回空响应');
   }
-  final msg = asMap(asMap(choices[0])['message']);
+  final choice = asMap(choices[0]);
+  final msg = asMap(choice['message']);
   var text = mStr(msg, 'content').trim();
   if (text.isEmpty) text = mStr(msg, 'reasoning_content').trim();
+  final finish = mStr(choice, 'finish_reason').trim().toLowerCase();
+  return (text: text, finish: finish);
+}
+
+/// 用 file_id 做完整转写（内部自动续写，直到写完或达到轮数上限）。
+///
+/// ★ 为什么必须续写：服务端把 max_tokens 用完时返回 finish_reason=length，
+///   正文会在半句处断掉。旧实现只发一次请求、默认 8000 token，
+///   长片段的记录必然被截断 —— 这是「长视频细节不全」最直接的丢细节点。
+///   续写轮次不再附带视频（视觉特征已在第一轮进入上下文），
+///   只把已写正文作为 assistant 上文接下去写，避免重复计视频 token。
+Future<String> _dbArkChatByFileId({
+  required String apiKey,
+  required String model,
+  required String fileId,
+  required String prompt,
+  int maxTokens = 32000,
+  void Function(int chars)? onProgress,
+}) async {
+  final budget = maxTokens <= 0 ? 32000 : maxTokens;
+  final buf = StringBuffer();
+  for (var round = 0; round < 3; round++) {
+    final messages = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          if (round == 0)
+            <String, dynamic>{
+              'type': 'video_url',
+              'video_url': <String, dynamic>{'file_id': fileId},
+            },
+          <String, dynamic>{'type': 'text', 'text': prompt},
+        ],
+      },
+      if (buf.isNotEmpty) ...<Map<String, dynamic>>[
+        <String, dynamic>{'role': 'assistant', 'content': buf.toString()},
+        <String, dynamic>{
+          'role': 'user',
+          'content': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'type': 'text',
+              'text': '上文是你正在写的这份记录，被输出长度上限截断了。'
+                  '请从中断处继续写，直接接着输出剩下的部分：'
+                  '不要重复已有内容，不要写任何说明、标题或总结。',
+            },
+          ],
+        },
+      ],
+    ];
+    final r = await _dbArkChatOnce(
+      apiKey: apiKey,
+      model: model,
+      messages: messages,
+      maxTokens: budget,
+    );
+    if (r.text.isNotEmpty) buf.write(r.text);
+    onProgress?.call(runeLen(buf.toString()));
+    if (r.finish != 'length') break;
+    logp('🎞️ 转写被输出上限截断（第 ${round + 1} 轮，'
+        '已 ${runeLen(buf.toString())} 字），自动续写');
+  }
+  final text = buf.toString().trim();
   if (text.isEmpty) {
     throw DbVideoArkException('视频分段理解返回空内容');
   }
   return text;
+}
+
+/// 段转写 + 每 2 秒上报一次耗时（非流式请求期间界面不会假死）。
+Future<String> _dbArkDescribeSegment({
+  required String apiKey,
+  required String model,
+  required String fileId,
+  required String prompt,
+  required int maxTokens,
+  void Function(int chars)? onChars,
+  void Function(int elapsedSec)? onTick,
+}) async {
+  final t0 = DateTime.now();
+  final ticker = Timer.periodic(const Duration(seconds: 2), (_) {
+    onTick?.call(DateTime.now().difference(t0).inSeconds);
+  });
+  try {
+    return await _dbArkChatByFileId(
+      apiKey: apiKey,
+      model: model,
+      fileId: fileId,
+      prompt: prompt,
+      maxTokens: maxTokens,
+      onProgress: onChars,
+    );
+  } finally {
+    ticker.cancel();
+  }
 }
 
 /// 段级提示词：要求按全片时间轴穷举细节，禁止概括、禁止跨段猜测。
@@ -1595,12 +1822,13 @@ Future<String> dbDescribeVideoInSegments({
       src: file,
       segCount: segCount,
       duration: duration,
-      onSeg: (i, total) {
+      onSeg: (i, total, elapsedSec) {
         onProgress?.call({
           'stage': 'seg_split',
           'segment': i + 1,
           'segments': total,
           'percent': ((i + 1) * 100) ~/ total,
+          'elapsed': elapsedSec,
         });
       },
     );
@@ -1629,6 +1857,8 @@ Future<String> dbDescribeVideoInSegments({
         'end': end.round(),
       });
       final segSize = segs[i].lengthSync();
+      final segSec = durs[i] > 0 ? durs[i] : duration / segs.length;
+      final segBudget = dbVideoTranscriptMaxTokens(segSec);
       final fileId = await _dbArkUploadToTosBucket(
         file: segs[i],
         fileName: _dbSegFileName(fileName, i, segs.length),
@@ -1654,7 +1884,15 @@ Future<String> dbDescribeVideoInSegments({
           });
         },
       );
-      final text = await _dbArkChatByFileId(
+      onProgress?.call({
+        'stage': 'describe',
+        'segment': i + 1,
+        'segments': segs.length,
+        'chars': 0,
+      });
+      logp('🧠 第 ${i + 1}/${segs.length} 段转写开始'
+          '（段长 ${_dbClock(segSec)}，预算 $segBudget token）');
+      final text = await _dbArkDescribeSegment(
         apiKey: apiKey,
         model: model,
         fileId: fileId,
@@ -1665,6 +1903,19 @@ Future<String> dbDescribeVideoInSegments({
           startSec: start,
           endSec: end,
         ),
+        maxTokens: segBudget,
+        onChars: (chars) => onProgress?.call({
+          'stage': 'describe',
+          'segment': i + 1,
+          'segments': segs.length,
+          'chars': chars,
+        }),
+        onTick: (sec) => onProgress?.call({
+          'stage': 'describe',
+          'segment': i + 1,
+          'segments': segs.length,
+          'elapsed': sec,
+        }),
       );
       logp('🎬 第 ${i + 1}/${segs.length} 段完整理解完成'
           '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');

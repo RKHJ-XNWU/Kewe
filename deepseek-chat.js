@@ -3518,6 +3518,36 @@
                                 mpLine = (isFinite(mpSec) && mpSec > 0)
                                     ? dscT('⏳ 方舟が動画を前処理中（抽帧）… {0} 秒', mpSec)
                                     : dscT('⏳ 方舟が動画を前処理中（抽帧）…');
+                            } else if (mpStage === 'seg_split') {
+                                // 長尺動画の等分切り出し：ffmpeg の 1 段コピーに
+                                // 数十秒かかることがあり、無進捗だと固まって見える。
+                                var ssSeg = Number(obj.segment), ssAll = Number(obj.segments);
+                                var ssSec = Number(obj.elapsed);
+                                if (isFinite(ssSeg) && ssSeg > 0 && isFinite(ssAll) && ssAll > 0) {
+                                    mpLine = (isFinite(ssSec) && ssSec > 0)
+                                        ? dscT('✂️ 第 {0}/{1} 段を切り出し中… {2} 秒', ssSeg, ssAll, ssSec)
+                                        : dscT('✂️ 第 {0}/{1} 段を切り出し中…', ssSeg, ssAll);
+                                } else {
+                                    mpLine = dscT('✂️ 無劣化で分割中…');
+                                }
+                            } else if (mpStage === 'describe') {
+                                // 区間ごとの書き起こし（非ストリーミング）は数分かかる。
+                                // 経過秒数／既に書けた字数を出すことで「固まった」と
+                                // 見える状態をなくす。
+                                var dsSeg = Number(obj.segment), dsAll = Number(obj.segments);
+                                var dsChars = Number(obj.chars);
+                                var dsSec = Number(obj.elapsed);
+                                if (isFinite(dsSeg) && dsSeg > 0 && isFinite(dsAll) && dsAll > 0) {
+                                    if (isFinite(dsChars) && dsChars > 0) {
+                                        mpLine = dscT('🧠 第 {0}/{1} 段を書き起こし中… すでに {2} 字', dsSeg, dsAll, dsChars);
+                                    } else if (isFinite(dsSec) && dsSec > 0) {
+                                        mpLine = dscT('🧠 第 {0}/{1} 段を書き起こし中… {2} 秒', dsSeg, dsAll, dsSec);
+                                    } else {
+                                        mpLine = dscT('🧠 第 {0}/{1} 段を書き起こし中…', dsSeg, dsAll);
+                                    }
+                                } else {
+                                    mpLine = dscT('🎬 動画を準備中…');
+                                }
                             } else if (mpStage === 'ready') {
                                 mpLine = dscT('✅ 動画の準備完了。回答を生成します…');
                             }
