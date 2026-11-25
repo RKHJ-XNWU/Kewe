@@ -184,6 +184,22 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Si vous avez besoin d’une recherche web, désactivez le mode Doubao '
         'et utilisez la recherche en mode DeepSeek.',
   },
+  'netConnFail': <String, String>{
+    'ja': 'ネットワークが方舟に接続できません（プロキシ失効の可能性。直結でも再試行しました）。'
+        'ネットワークを確認してから再送してください。',
+    'zh': '网络无法连接方舟（代理可能已失效，已自动改用直连重试仍未成功）。'
+        '请检查网络或代理后重新发送。',
+    'en': 'The network cannot reach Ark (the proxy may be down; a direct retry also failed). '
+        'Check your network or proxy and send again.',
+    'ko': '네트워크가 방주(Ark)에 연결되지 않습니다(프록시 만료 가능성, 직결 재시도도 실패). '
+        '네트워크나 프록시를 확인한 뒤 다시 보내 주세요.',
+    'ru': 'Сеть не может подключиться к Ark (возможно, прокси не работает; '
+        'повторная попытка напрямую тоже не удалась). '
+        'Проверьте сеть или прокси и отправьте снова.',
+    'fr': 'Le réseau ne peut pas joindre Ark (le proxy est peut-être hors service ; '
+        'une nouvelle tentative en direct a aussi échoué). '
+        'Vérifiez le réseau ou le proxy, puis renvoyez.',
+  },
   'noMediaNote': <String, String>{
     'ja': '【重要】此通道（DeepSeek）不支持音频、视频的内容理解。'
         '目标文件（{0}）的内容未被读取。'
@@ -752,13 +768,23 @@ Future<({int code, List<int> bytes})> _httpRaw(
   List<int>? body,
   Duration timeout = const Duration(seconds: 180),
 }) async {
-  final client = globalHTTPClientWithTimeout;
-  final req = await client.openUrl(method, Uri.parse(url)).timeout(timeout);
-  headers?.forEach((k, v) => req.headers.set(k, v));
-  if (body != null && body.isNotEmpty) req.add(body);
-  final resp = await req.close().timeout(timeout);
-  final bytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
-  return (code: resp.statusCode, bytes: bytes);
+  Future<({int code, List<int> bytes})> once(HttpClient client) async {
+    final req = await client.openUrl(method, Uri.parse(url)).timeout(timeout);
+    headers?.forEach((k, v) => req.headers.set(k, v));
+    if (body != null && body.isNotEmpty) req.add(body);
+    final resp = await req.close().timeout(timeout);
+    final bytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
+    return (code: resp.statusCode, bytes: bytes);
+  }
+
+  try {
+    return await once(globalHTTPClientWithTimeout);
+  } catch (e) {
+    // 代理失效 / DNS 抖动：直连再试一次，避免整个请求直接失败。
+    if (!dbIsConnectFailure(e)) rethrow;
+    logp('🔁 HTTP 连接失败，改用直连重试一次: $method $url ($e)');
+    return once(directHTTPClient);
+  }
 }
 
 String _errFromBytes(List<int> bytes) {

@@ -373,14 +373,16 @@ Future<
 
   final client = globalHTTPClient;
 
-  Future<HttpClientResponse> sendOnce(bool withThinking) async {
+  Future<HttpClientResponse> sendOnce(bool withThinking,
+      {HttpClient? clientOverride}) async {
     final b = Map<String, dynamic>.from(body);
     if (!withThinking) {
       // 只摘除被拒的 thinking；reasoning_effort 仍可单独开启思考
       // （DeepSeek/方舟文档：省略 thinking 时 effort 决定思考模式）。
       b.remove('thinking');
     }
-    final r = await client.postUrl(Uri.parse(apiUrl));
+    final c = clientOverride ?? client;
+    final r = await c.postUrl(Uri.parse(apiUrl));
     r.headers.set('Content-Type', 'application/json');
     r.headers.set('Authorization', 'Bearer $apiKey');
     r.headers.set('Accept', 'text/event-stream');
@@ -394,8 +396,19 @@ Future<
     return r.close();
   }
 
+  /// 连接层失败（代理失效 / DNS 抖动）时改用直连重试一次。
+  Future<HttpClientResponse> sendWithFallback(bool withThinking) async {
+    try {
+      return await sendOnce(withThinking);
+    } catch (e) {
+      if (!dbIsConnectFailure(e)) rethrow;
+      logp('🔁 聊天连接失败，改用直连重试一次: $e');
+      return sendOnce(withThinking, clientOverride: directHTTPClient);
+    }
+  }
+
   final hasThinking = thinkParam != null || explicitThink;
-  var resp = await sendOnce(hasThinking);
+  var resp = await sendWithFallback(hasThinking);
   // ★ 400 是"参数不支持"的典型。看正文只移除导致问题的参数
   //   重试（仅 stream_options / thinking 两种，各最多 1 次）。
   //   正文只能读一次，故在此读完再判定。
@@ -537,20 +550,33 @@ Future<({String content, String reasoning})> callDsChatAPI(
       body.containsKey('thinking') || body.containsKey('reasoning_effort');
   final client = globalHTTPClientWithTimeout;
 
-  Future<HttpClientResponse> sendOnce(bool withThinking) async {
+  Future<HttpClientResponse> sendOnce(bool withThinking,
+      {HttpClient? clientOverride}) async {
     final b = Map<String, dynamic>.from(body);
     if (!withThinking) {
       b.remove('thinking');
       b.remove('reasoning_effort');
     }
-    final r = await client.postUrl(Uri.parse(apiUrl));
+    final c = clientOverride ?? client;
+    final r = await c.postUrl(Uri.parse(apiUrl));
     r.headers.set('Content-Type', 'application/json');
     r.headers.set('Authorization', 'Bearer $apiKey');
     r.add(utf8.encode(jsonEncode(b)));
     return r.close();
   }
 
-  var resp = await sendOnce(hasThinking);
+  /// 连接层失败时改用直连再试一次（代理失效 / DNS 抖动）。
+  Future<HttpClientResponse> sendWithFallback(bool withThinking) async {
+    try {
+      return await sendOnce(withThinking);
+    } catch (e) {
+      if (!dbIsConnectFailure(e)) rethrow;
+      logp('🔁 非流式连接失败，改用直连重试一次: $e');
+      return sendOnce(withThinking, clientOverride: directHTTPClient);
+    }
+  }
+
+  var resp = await sendWithFallback(hasThinking);
   var rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
   var txt = utf8.decode(rawBytes, allowMalformed: true);
   if (resp.statusCode == 400 &&
@@ -566,7 +592,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
     if (low.contains('reasoning_effort')) {
       body.remove('reasoning_effort');
     }
-    resp = await sendOnce(body.containsKey('reasoning_effort'));
+    resp = await sendWithFallback(body.containsKey('reasoning_effort'));
     rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
   }
@@ -578,7 +604,7 @@ Future<({String content, String reasoning})> callDsChatAPI(
         logp('⚠️ 上游拒绝 max_tokens=$mt（上限 $providerCap），'
             '按十进制规则收敛到 $decimalCap 后重试');
         body['max_tokens'] = decimalCap;
-        resp = await sendOnce(body.containsKey('thinking') ||
+        resp = await sendWithFallback(body.containsKey('thinking') ||
             body.containsKey('reasoning_effort'));
         rawBytes = await resp.fold<List<int>>([], (a, b) => a..addAll(b));
         txt = utf8.decode(rawBytes, allowMalformed: true);
@@ -647,11 +673,28 @@ Future<DsRawResponse> callDsChatAPIRaw(
     body['tool_choice'] = 'auto';
   }
   final client = globalHTTPClient;
-  var resp = await client.postUrl(Uri.parse(apiUrl));
-  resp.headers.set('Content-Type', 'application/json');
-  resp.headers.set('Authorization', 'Bearer $apiKey');
-  resp.add(utf8.encode(jsonEncode(body)));
-  var rawResp = await resp.close();
+
+  Future<HttpClientResponse> postOnce({HttpClient? clientOverride}) async {
+    final c = clientOverride ?? client;
+    final req = await c.postUrl(Uri.parse(apiUrl));
+    req.headers.set('Content-Type', 'application/json');
+    req.headers.set('Authorization', 'Bearer $apiKey');
+    req.add(utf8.encode(jsonEncode(body)));
+    return req.close();
+  }
+
+  /// 连接层失败时改用直连再试一次（代理失效 / DNS 抖动）。
+  Future<HttpClientResponse> postWithFallback() async {
+    try {
+      return await postOnce();
+    } catch (e) {
+      if (!dbIsConnectFailure(e)) rethrow;
+      logp('🔁 非流式连接失败，改用直连重试一次: $e');
+      return postOnce(clientOverride: directHTTPClient);
+    }
+  }
+
+  var rawResp = await postWithFallback();
   var rawBytes =
       await rawResp.fold<List<int>>([], (a, b) => a..addAll(b));
   var txt = utf8.decode(rawBytes, allowMalformed: true);
@@ -674,11 +717,7 @@ Future<DsRawResponse> callDsChatAPIRaw(
       break;
     }
     logp('⚠️ 非流式请求被拒绝思考参数，降级后重试');
-    final retry = await client.postUrl(Uri.parse(apiUrl));
-    retry.headers.set('Content-Type', 'application/json');
-    retry.headers.set('Authorization', 'Bearer $apiKey');
-    retry.add(utf8.encode(jsonEncode(body)));
-    rawResp = await retry.close();
+    rawResp = await postWithFallback();
     rawBytes = await rawResp.fold<List<int>>([], (a, b) => a..addAll(b));
     txt = utf8.decode(rawBytes, allowMalformed: true);
   }
@@ -751,14 +790,31 @@ Future<void> callDsChatAPIStream(
     if (arkThink != null) 'thinking': arkThink,
   };
   final client = globalHTTPClient;
-  final req = await client.postUrl(Uri.parse(apiUrl));
-  req.headers.set('Content-Type', 'application/json');
-  req.headers.set('Authorization', 'Bearer $apiKey');
-  req.headers.set('Accept', 'text/event-stream');
-  // ★ 禁用上游压缩（防止 SSE 把若干帧攒在一起延迟）
-  req.headers.set('Accept-Encoding', 'identity');
-  req.add(utf8.encode(jsonEncode(body)));
-  var resp = await req.close();
+
+  Future<HttpClientResponse> sendOnce({HttpClient? clientOverride}) async {
+    final c = clientOverride ?? client;
+    final req = await c.postUrl(Uri.parse(apiUrl));
+    req.headers.set('Content-Type', 'application/json');
+    req.headers.set('Authorization', 'Bearer $apiKey');
+    req.headers.set('Accept', 'text/event-stream');
+    // ★ 禁用上游压缩（防止 SSE 把若干帧攒在一起延迟）
+    req.headers.set('Accept-Encoding', 'identity');
+    req.add(utf8.encode(jsonEncode(body)));
+    return req.close();
+  }
+
+  /// 连接层失败（代理失效 / DNS 抖动）时改用直连重试一次。
+  Future<HttpClientResponse> sendWithFallback() async {
+    try {
+      return await sendOnce();
+    } catch (e) {
+      if (!dbIsConnectFailure(e)) rethrow;
+      logp('🔁 聊天连接失败，改用直连重试一次: $e');
+      return sendOnce(clientOverride: directHTTPClient);
+    }
+  }
+
+  var resp = await sendWithFallback();
   // ★ 400 是"参数不支持"的典型（web_search_options / stream_options）。
   //   正文只能读一次，故在此读完再判定原因，
   //   只移除对应参数后重试（各最多 1 次）。
@@ -774,13 +830,7 @@ Future<void> callDsChatAPIStream(
         allowMalformed: true);
     final low = txt.toLowerCase();
     Future<HttpClientResponse> resend() async {
-      final r = await client.postUrl(Uri.parse(apiUrl));
-      r.headers.set('Content-Type', 'application/json');
-      r.headers.set('Authorization', 'Bearer $apiKey');
-      r.headers.set('Accept', 'text/event-stream');
-      r.headers.set('Accept-Encoding', 'identity');
-      r.add(utf8.encode(jsonEncode(body)));
-      return r.close();
+      return sendWithFallback();
     }
 
     if (!droppedStreamOpts &&

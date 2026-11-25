@@ -24,6 +24,7 @@ import 'globals.dart';
 import 'knowledge.dart';
 import 'httpsrv.dart';
 import 'model_router.dart';
+import 'net.dart';
 import 'relay.dart';
 import 'search_intent.dart';
 import 'sessions.dart';
@@ -1745,6 +1746,13 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       reasoning = r.reasoning;
     }
   } catch (e) {
+    // 连接层失败（代理失效 / DNS 抖动）单独提示：此时消息并未送达模型，
+    // 直接抛原始 SocketException 会让用户误以为账户或产品坏了。
+    if (dbIsConnectFailure(e)) {
+      logp('❌ 网络连接失败（已尝试直连重试）: $e');
+      await dsJSONErr(res, 502, dbLocalized(uiLang, 'netConnFail'));
+      return;
+    }
     await dsJSONErr(res, 500, 'API 调用失败: $e');
     return;
   }

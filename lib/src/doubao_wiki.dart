@@ -302,8 +302,10 @@ Future<void> callDbWikiResponsesStream(
   logp('🌐 豆包联网内容插件：$url（信源=${src.join(",")}）');
 
   final client = globalHTTPClient;
-  Future<HttpClientResponse> send(Map<String, dynamic> payload) async {
-    final req = await client.postUrl(Uri.parse(url));
+  Future<HttpClientResponse> send(Map<String, dynamic> payload,
+      {HttpClient? clientOverride}) async {
+    final c = clientOverride ?? client;
+    final req = await c.postUrl(Uri.parse(url));
     req.headers.set('Content-Type', 'application/json');
     req.headers.set('Authorization', 'Bearer $apiKey');
     req.headers.set('Accept', 'text/event-stream');
@@ -313,7 +315,19 @@ Future<void> callDbWikiResponsesStream(
     return req.close();
   }
 
-  var resp = await send(body);
+  /// 连接层失败（代理失效 / DNS 抖动）时改用直连重试一次，
+  /// 避免「HTTP connection timed out after 0:00:10」直接把消息打回输入框。
+  Future<HttpClientResponse> sendWithFallback(Map<String, dynamic> payload) async {
+    try {
+      return await send(payload);
+    } catch (e) {
+      if (!dbIsConnectFailure(e)) rethrow;
+      logp('🔁 联网插件连接失败，改用直连重试一次: $e');
+      return send(payload, clientOverride: directHTTPClient);
+    }
+  }
+
+  var resp = await sendWithFallback(body);
   // ★ 兼容性兜底：部分模型/网关不支持 tool_choice / max_tool_calls /
   //   thinking / reasoning。逐项摘除并重试；思考字段被摘除只发生在上游
   //   明确拒绝时，不能因为怕 400 就默认不发送。
@@ -328,20 +342,20 @@ Future<void> callDbWikiResponsesStream(
       logp('⚠️ 当前模型不支持强制工具选择，回退为普通插件请求');
       body.remove('tool_choice');
       body.remove('max_tool_calls');
-      resp = await send(body);
+      resp = await sendWithFallback(body);
       continue;
     }
     if (body.containsKey('thinking') &&
         (low.contains('thinking') || low.contains('unknown field'))) {
       logp('⚠️ 插件上游拒绝了 thinking，移除 thinking 后重试（保留 reasoning.effort）');
       body.remove('thinking');
-      resp = await send(body);
+      resp = await sendWithFallback(body);
       continue;
     }
     if (body.containsKey('reasoning') && low.contains('reasoning')) {
       logp('⚠️ 插件上游拒绝了 reasoning，移除后重试');
       body.remove('reasoning');
-      resp = await send(body);
+      resp = await sendWithFallback(body);
       continue;
     }
     throw Exception(

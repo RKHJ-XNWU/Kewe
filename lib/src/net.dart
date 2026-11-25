@@ -84,6 +84,7 @@ ProxyConf detectProxy() {
 
 HttpClient? _shared;
 HttpClient? _sharedTimeout;
+HttpClient? _direct;
 
 HttpClient get globalHTTPClient {
   final c = _shared;
@@ -97,6 +98,36 @@ HttpClient get globalHTTPClient {
   _applyProxy(client);
   _shared = client;
   return client;
+}
+
+/// 绕过代理的直连 client。
+///
+/// 为什么需要：系统代理（PROXY / HTTPS_PROXY / proxy.conf）失效时，
+/// 所有外呼都会在 10 秒连接超时后失败，UI 上就是
+/// 「HTTP connection timed out after 0:00:10」。
+/// 方舟（ark.cn-beijing.volces.com）在国内可直连，因此连接层失败后
+/// 用这个 client 再试一次，避免整条消息直接失败。
+HttpClient get directHTTPClient {
+  final c = _direct;
+  if (c != null) return c;
+  final client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 20)
+    ..idleTimeout = const Duration(seconds: 90)
+    ..maxConnectionsPerHost = 100
+    ..autoUncompress = true;
+  _direct = client;
+  return client;
+}
+
+/// 是否属于「连接层」失败（还没拿到任何业务响应，可安全重试）。
+bool dbIsConnectFailure(Object e) {
+  if (e is SocketException) return true;
+  if (e is HandshakeException) return true;
+  final s = '$e';
+  return s.contains('HTTP connection timed out') ||
+      s.contains('Connection timed out') ||
+      s.contains('Connection refused') ||
+      s.contains('Failed host lookup');
 }
 
 /// 带整体超时的 client（Go: globalHTTPClientWithTimeout，Timeout=24h）
