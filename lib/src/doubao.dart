@@ -67,6 +67,8 @@ const List<DbModelSpec> dbModelCatalog = <DbModelSpec>[
   DbModelSpec('doubao-seed-2-1-lite-260915', 'Doubao-Seed-2.1-lite', 'chat'),
   DbModelSpec('doubao-seed-2-1-turbo-260628', 'Doubao-Seed-2.1-turbo', 'chat'),
   DbModelSpec('doubao-seed-2-0-lite-260428', 'Doubao-Seed-2.0-lite', 'chat'),
+  DbModelSpec('deepseek-v4-1-flash-261017',
+      'DeepSeek-V4.1-Flash（方舟短视频理解）', 'chat'),
   DbModelSpec('doubao-seedream-5-5-261028', '生图5.5升级版', 'image'),
 ];
 
