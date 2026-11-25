@@ -1154,6 +1154,7 @@
 
     var xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/restore?login=1', true);
+    try { xhr.setRequestHeader('X-DSC-Lang', state.lang || 'zh'); } catch (e0) {}
     xhr.upload.onprogress = function (ev) {
       if (!ev.lengthComputable) return;
       var pct = Math.floor((ev.loaded / ev.total) * 100);

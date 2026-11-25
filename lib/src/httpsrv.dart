@@ -12,6 +12,21 @@ import 'globals.dart';
 
 typedef Handler = Future<void> Function(HttpRequest req);
 
+/// 当前响应所属请求的 UI 语言。
+///
+/// `HttpResponse` 本身不暴露对应请求的头部，而 `dsJSONErr` / `errJson`
+/// 只拿得到 response。这里在 dispatch 入口按 `X-DSC-Lang` 记录一次，
+/// 后续所有错误响应直接从同一张表取语言，避免 100+ 调用点各传一份。
+final Expando<String> _responseLangStore = Expando<String>('dscResponseLang');
+
+void rememberResponseLang(HttpRequest req) {
+  final raw = req.headers.value('x-dsc-lang');
+  _responseLangStore[req.response] = dsNormalizeLang(raw);
+}
+
+String responseLangOf(HttpResponse res) =>
+    _responseLangStore[res] ?? 'zh';
+
 // ------------------------------------------------------------
 // 中间件
 // ------------------------------------------------------------
@@ -20,7 +35,8 @@ Handler corsMiddleware(Handler next) {
     final res = req.response;
     res.headers.set('Access-Control-Allow-Origin', '*');
     res.headers.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-    res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.headers.set(
+        'Access-Control-Allow-Headers', 'Content-Type, X-DSC-Lang');
     if (req.method == 'OPTIONS') {
       res.statusCode = 200;
       await res.close();
@@ -88,7 +104,8 @@ Future<void> jsonResponse(HttpResponse res, int code, Object? data) async {
   try {
     body = jsonEncode(data);
   } catch (_) {
-    body = '{"error":"序列化失败"}';
+    final localized = dbLocalizedError('序列化失败', responseLangOf(res), code);
+    body = jsonEncode(<String, String>{'error': localized});
   }
   await _writeJsonRaw(res, code, body);
 }
@@ -115,7 +132,9 @@ Future<void> jsonRaw(HttpResponse res, int code, String body) async {
 }
 
 Future<void> errJson(HttpResponse res, int code, String msg) =>
-    jsonResponse(res, code, {'error': msg});
+    jsonResponse(res, code, <String, String>{
+      'error': dbLocalizedError(msg, responseLangOf(res), code),
+    });
 
 // Go 版 dsJSON / dsErr 的等价命名
 Future<void> dsJSONOk(HttpResponse res, int code, Object? v) =>

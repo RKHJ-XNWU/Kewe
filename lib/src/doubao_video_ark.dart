@@ -1293,11 +1293,12 @@ bool dbVideoMessagesNeedResponses(
 
 /// 视频理解输出规范（跟随 UI 语言；未覆盖的语言回退英文）。
 String dbVideoUnderstandPrompt(String lang) {
-  final l = lang.trim().toLowerCase();
-  if (l.startsWith('ja')) return _dbVideoPromptJa;
-  if (l.startsWith('zh') || l.startsWith('cmn') || l.startsWith('yue')) {
-    return _dbVideoPromptZh;
-  }
+  final l = dsNormalizeLang(lang);
+  if (l == 'ja') return _dbVideoPromptJa;
+  if (l == 'ko') return _dbVideoPromptKo;
+  if (l == 'ru') return _dbVideoPromptRu;
+  if (l == 'fr') return _dbVideoPromptFr;
+  if (l == 'zh') return _dbVideoPromptZh;
   return _dbVideoPromptEn;
 }
 
@@ -1340,11 +1341,12 @@ const String _dbVideoPromptZh = '''【视频理解输出规范 · 必须遵守�
 /// 如果还按普通问答走，模型会把转写照抄成摘要，细节二次丢失。
 /// 所以这里要求它「原样交付这份记录」，只允许排版，不允许删减。
 String dbVideoTranscriptPrompt(String lang) {
-  final l = lang.trim().toLowerCase();
-  if (l.startsWith('ja')) return _dbVideoTranscriptPromptJa;
-  if (l.startsWith('zh') || l.startsWith('cmn') || l.startsWith('yue')) {
-    return _dbVideoTranscriptPromptZh;
-  }
+  final l = dsNormalizeLang(lang);
+  if (l == 'ja') return _dbVideoTranscriptPromptJa;
+  if (l == 'ko') return _dbVideoTranscriptPromptKo;
+  if (l == 'ru') return _dbVideoTranscriptPromptRu;
+  if (l == 'fr') return _dbVideoTranscriptPromptFr;
+  if (l == 'zh') return _dbVideoTranscriptPromptZh;
   return _dbVideoTranscriptPromptEn;
 }
 
@@ -1396,6 +1398,39 @@ const String _dbVideoTranscriptPromptJa = '''【長時間動画の逐段転写 �
 4. 質問が一点だけの場合でも、まず完全な記録を出し、その後に答えます。
 5. 字数制限はありません。記録の長さだけ納品してください。
 6. 記録内の（不確実）表記はそのまま残し、断定に変えないこと。''';
+
+const String _dbVideoTranscriptPromptKo = '''[장시간 영상 구간별 전사 전달 규격 — 필수]
+
+이 영상은 한 번의 요청으로 받을 수 있는 프레임 수를 초과하여 타임라인을 균등 분할하고 각 구간을 완전히 시청했습니다. 아래 "완전 이해"로 시작하는 내용은 구간별 축어 기록이며 요약이 아닙니다.
+
+1. 그 기록의 내용을 전부 전달하십시오. 전체 타임라인 순서로 정리하고 각 시점과 원문 표현을 유지합니다.
+2. 요약·통합·생략은 금지입니다. "그 후", "이어서", "중간에" 같은 모호한 말로 구간을 건너뛰거나 여러 사건을 한 문장으로 압축하지 마십시오.
+3. 사실을 바꾸지 않는 범위의 정리(소제목, 목록)는 가능합니다. 다만 정보를 삭제하지 말고 숫자·고유명사·대사 원문·화면 글자를 바꾸지 마십시오.
+4. 질문이 한 점만 묻더라도 먼저 완전한 기록을 제시한 뒤 그 점에 답하십시오.
+5. 글자 수 제한은 없습니다. 기록 길이만큼 전달하십시오.
+6. 기록의 (불확실) 표시는 그대로 유지하고 단정으로 바꾸지 마십시오.''';
+
+const String _dbVideoTranscriptPromptRu = '''[Контракт на передачу расшифровки длинного видео — обязательно]
+
+Это видео превышает число кадров, которое можно получить за один запрос, поэтому оно было разделено по таймлайну и каждый фрагмент просмотрен полностью. Текст ниже заголовка «полное понимание» — дословная запись по фрагментам, а не пересказ.
+
+1. Передайте эту запись полностью, в порядке общей хронологии, сохраняя каждую отметку времени и исходные формулировки.
+2. Запрещены пересказ, объединение и пропуски. Не пропускайте фрагменты словами «потом», «затем», «в середине» и не сжимайте несколько событий в одно предложение.
+3. Можно форматировать (разделы, списки, подзаголовки), но нельзя удалять информацию и менять числа, имена собственные, цитаты и текст на экране.
+4. Если вопрос касается одного пункта, сначала дайте полную запись, затем ответьте на этот пункт.
+5. Ограничения по длине нет: передайте столько, сколько содержит запись.
+6. Сохраняйте пометки «(неопределённо)» и не превращайте их в факты.''';
+
+const String _dbVideoTranscriptPromptFr = '''[Contrat de livraison de transcription de vidéo longue — obligatoire]
+
+Cette vidéo dépasse le nombre d'images qu'une seule requête Ark peut recevoir ; elle a donc été découpée sur la chronologie et chaque segment a été regardé en entier. Le texte sous « compréhension complète » est la transcription mot pour mot par segment, pas un résumé.
+
+1. Livrez cette transcription dans son intégralité, dans l'ordre chronologique, en conservant chaque horodatage et la formulation d'origine.
+2. Ne résumez pas, ne fusionnez pas, ne sautez aucun segment avec des mots vagues comme « puis », « ensuite », « au milieu », et ne compressez jamais plusieurs événements en une phrase.
+3. Vous pouvez reformater (sections, listes, sous-titres) sans supprimer d'information ni réécrire les nombres, noms propres, répliques citées ou texte à l'écran.
+4. Si l'utilisateur ne pose une question que sur un point, livrez d'abord la transcription complète, puis répondez à ce point.
+5. Aucune limite de longueur : livrez tout ce que contient la transcription.
+6. Conservez les marqueurs « (incertain) » et ne les présentez jamais comme des faits.''';
 
 const String _dbVideoPromptEn = '''[Video Understanding Output Contract — mandatory]
 
@@ -1462,6 +1497,105 @@ const String _dbVideoPromptJa = '''【動画理解の出力規約 · 必須】
 
 五、ユーザーの質問との関係
 質問が一点だけを尋ねていても、まず完全なタイムラインと細部を提示し、その後に回答します。''';
+
+const String _dbVideoPromptKo = '''[영상 이해 출력 규격 — 필수]
+
+이 요청에는 영상이 첨부되어 있습니다. 답변 전에 영상 전체를 실제로 시청하고 아래 규칙을 따르십시오. 이것은 검증 가능한 결과물이며 감상문이 아닙니다.
+
+1. 전체 타임라인
+1.1 00:00부터 시간 순서로 진행하고, 각 항목 앞에 00:00, 03:12 형식의 타임스탬프를 붙입니다.
+1.2 각 항목에는 화면에서 무슨 일이 일어나는지, 누가 등장하는지, 무엇을 말하는지, 화면에 어떤 글자가 있는지, 카메라가 어떻게 움직이는지 씁니다.
+1.3 영상 길이에 맞게 충분히 씁니다. 글자 수 제한은 없습니다. "그 후", "이어서", "중간에" 같은 모호한 말로 구간을 건너뛰지 마십시오.
+1.4 내용이 많으면 단계별로 묶어도 되지만, 항목별 타임스탬프를 유지하고 합치지 마십시오.
+
+2. 세부 사항 완전 포함
+2.1 인물: 수, 외모, 의상, 머리, 신원 단서, 표정 변화, 구체적 행동.
+2.2 장면: 장소, 환경, 조명, 날씨, 시간대, 소품, 배경 요소.
+2.3 화면 속 글자: 자막, 제목, 댓글, UI 요소, 간판, 포장, 숫자. 원문 그대로 옮기고 의역하지 마십시오.
+2.4 대사와 소리: 들리는 대사, 내레이션, 효과음, 음악 변화를 타임스탬프와 함께 원문 그대로 옮깁니다. 들리지 않으면 "여기서는 확인할 수 없음"이라고 쓰고 창작하지 마십시오.
+2.5 행동과 사건: 누가 무엇을 했는지, 순서, 원인과 결과.
+2.6 전환과 카메라: 컷, 편집점, 시점 변화, 속도 변화, 효과, 반복 화면.
+2.7 숫자와 고유명사: 모든 숫자, 가격, 날짜, 시간, 인명, 지명, 브랜드, 모델명, 링크를 정확히 옮깁니다. 생략도 추측도 금지.
+
+3. 절대 금지
+3.1 요약만, 주제 감상, "내용이 풍부함", "볼 만함" 같은 채우기 금지.
+3.2 보지 않은 내용을 쓰지 마십시오. 불확실한 점은 (불확실)로 표시.
+3.3 길다고 압축하지 말고 항목을 늘리십시오.
+3.4 같은 정보를 반복해 분량을 채우지 마십시오.
+
+4. 구성
+4.1 첫 문장에 결론: 주제 + 줄거리 + 결말.
+4.2 그다음 타임라인에 따라 모든 세부를 전개.
+4.3 마지막에 "핵심 정보 목록": 등장한 모든 숫자, 고유명사, 결론, 할 일.
+
+5. 사용자 질문과의 관계
+질문이 한 점만 묻더라도 먼저 전체 타임라인과 세부 기록을 제시한 뒤 답하십시오. 그 한 점만 답하지 마십시오.''';
+
+const String _dbVideoPromptRu = '''[Спецификация вывода для понимания видео — обязательно]
+
+К запросу приложено видео. Перед ответом вы должны реально просмотреть всё видео и соблюдать правила ниже. Это проверяемый результат, а не впечатление.
+
+1. Полная хронология
+1.1 Начните с 00:00 и идите по времени; каждый пункт начинайте с отметки в формате 00:00 или 03:12.
+1.2 В каждом пункте укажите, что происходит на экране, кто появляется, что говорится, какой текст виден, как меняется камера.
+1.3 Пишите столько, сколько требует видео. Ограничения по длине нет. Не пропускайте фрагменты словами «потом», «затем», «в середине».
+1.4 При большом объёме можно группировать по этапам, но сохраняйте отметки времени для каждого пункта и не объединяйте их.
+
+2. Исчерпывающие детали (по каждому пункту)
+2.1 Люди: количество, внешность, одежда, причёска, признаки личности, изменения мимики, конкретные действия.
+2.2 Сцена: место, окружение, свет, погода, время суток, реквизит, элементы фона.
+2.3 Текст на экране: субтитры, заголовки, комментарии, элементы интерфейса, вывески, упаковка, цифры. Переписывайте дословно, не перефразируйте и не переводите вместо оригинала.
+2.4 Речь и звук: слышимые реплики, закадровый текст, звуковые эффекты, изменения музыки — дословно с отметками времени. Где не слышно, пишите «здесь невозможно подтвердить». Не выдумывайте.
+2.5 Действия и события: кто что сделал, в каком порядке, причина и результат.
+2.6 Переходы и камера: склейки, монтажные точки, смена ракурса, ускорение/замедление, эффекты, повторяющиеся кадры.
+2.7 Числа и имена собственные: все числа, цены, даты, длительность, имена, места, бренды, модели, ссылки — точно. Ничего не пропускайте и не угадывайте.
+
+3. Жёсткие запреты
+3.1 Не только пересказ, не тематическое эссе, не «богатый контент» / «стоит посмотреть».
+3.2 Не описывайте то, чего не видели. Неопределённость помечайте как (неопределённо).
+3.3 Не сжимайте из-за длины видео; добавляйте пункты.
+3.4 Не заполняйте объём повторами.
+
+4. Структура
+4.1 Начните с вывода в одном предложении: тема + основная линия + финал.
+4.2 Затем полная хронология со всеми деталями.
+4.3 В конце — «Ключевые сведения»: все числа, имена собственные, выводы, задачи.
+
+5. Связь с вопросом пользователя
+Даже если пользователь спрашивает об одном пункте, сначала дайте полную хронологию и запись деталей, затем ответьте. Не ограничивайтесь только этим пунктом.''';
+
+const String _dbVideoPromptFr = '''[Contrat de sortie pour la compréhension vidéo — obligatoire]
+
+Une vidéo est jointe. Vous devez réellement regarder toute la vidéo avant de répondre et suivre les règles ci-dessous. Il s'agit d'un livrable vérifiable, pas d'une impression.
+
+1. Chronologie complète
+1.1 Commencez à 00:00 et avancez chronologiquement ; chaque entrée commence par un horodatage au format 00:00 ou 03:12.
+1.2 Chaque entrée doit préciser ce qui se passe à l'écran, qui apparaît, ce qui est dit, quel texte est visible et comment la caméra évolue.
+1.3 Écrivez autant que la vidéo l'exige. Aucune limite de longueur. Ne sautez jamais de sections avec des mots vagues comme « puis », « ensuite », « au milieu ».
+1.4 Si le contenu est dense, regroupez par phases, mais conservez les horodatages par entrée et ne fusionnez pas.
+
+2. Détail exhaustif (chaque élément)
+2.1 Personnes : nombre, apparence, vêtements, coiffure, indices d'identité, changements d'expression, actions concrètes.
+2.2 Scène : lieu, environnement, lumière, météo, moment de la journée, accessoires, éléments de fond.
+2.3 Texte à l'écran : sous-titres, titres, commentaires, éléments d'interface, enseignes, emballages, chiffres. Transcription mot pour mot ; ne reformulez pas et ne traduisez pas à la place de l'original.
+2.4 Dialogue et son : répliques audibles, narration, effets sonores, changements de musique, mot pour mot avec horodatage. Si inaudible, écrivez « impossible à confirmer ici ». N'inventez jamais.
+2.5 Actions et événements : qui a fait quoi, dans quel ordre, avec quelle cause et quel résultat.
+2.6 Transitions et caméra : coupes, points de montage, changements d'angle, accélérations, effets, images répétées.
+2.7 Nombres et noms propres : chaque nombre, prix, date, durée, nom de personne, lieu, marque, modèle et lien doit être transcrit exactement. N'omettez rien, ne devinez rien.
+
+3. Interdictions strictes
+3.1 Pas de réponse uniquement résumée, pas de dissertation thématique, pas de remplissage « contenu riche » / « à voir ».
+3.2 Ne décrivez jamais ce que vous n'avez pas vu. Marquez l'incertitude par (incertain).
+3.3 Ne compressez pas parce que la vidéo est longue ; ajoutez des entrées.
+3.4 Ne remplissez pas avec des informations répétées.
+
+4. Structure
+4.1 Ouvrez par une conclusion en une phrase : sujet + fil conducteur + issue.
+4.2 Puis la chronologie complète avec tous les détails requis.
+4.3 Terminez par une liste « Informations clés » : tous les nombres, noms propres, conclusions, actions à faire.
+
+5. Relation avec la question de l'utilisateur
+Même si l'utilisateur ne pose une question que sur un point, vous devez d'abord livrer la chronologie complète et le détail, puis répondre. Ne répondez pas seulement à ce point.''';
 
 
 // ============================================================

@@ -103,9 +103,9 @@ const String DB_DEFAULT_VOICE_B = 'zh_male_qingshuangnanda_mars_bigtts';
 // ------------------------------------------------------------
 const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String>>{
   'audioUnsupported': <String, String>{
-    'ja': '当前选择的豆包模型（{0}）不支持语音理解。'
-        '请切换到支持语音理解的模型（{1}）。'
-        '不会把音频发送给 DeepSeek。',
+    'ja': '現在選択されている豆包モデル（{0}）は音声理解に対応していません。'
+        '音声理解に対応したモデル（{1}）に切り替えてください。'
+        '音声は DeepSeek に送信されません。',
     'zh': '当前所选豆包模型（{0}）不支持音频理解。'
         '请切换到支持音频理解的模型（{1}）。音频不会发送给 DeepSeek。',
     'en': 'The selected Doubao model ({0}) does not support audio understanding. '
@@ -122,9 +122,9 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Votre audio n’est jamais envoyé à DeepSeek.',
   },
   'videoUnsupported': <String, String>{
-    'ja': '当前选择的豆包模型（{0}）不支持视频理解。'
-        '请切换到支持视频理解的模型（{1}）。'
-        '不会把视频发送给 DeepSeek。',
+    'ja': '現在選択されている豆包モデル（{0}）は動画理解に対応していません。'
+        '動画理解に対応したモデル（{1}）に切り替えてください。'
+        '動画は DeepSeek に送信されません。',
     'zh': '当前所选豆包模型（{0}）不支持视频理解。'
         '请切换到支持视频理解的模型（{1}）。视频不会发送给 DeepSeek。',
     'en': 'The selected Doubao model ({0}) does not support video understanding. '
@@ -141,7 +141,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Votre vidéo n’est jamais envoyée à DeepSeek.',
   },
   'audioTooLarge': <String, String>{
-    'ja': '音频文件过大（上限 40MB）：{0}',
+    'ja': '音声ファイルが大きすぎます（上限 40MB）：{0}',
     'zh': '音频文件过大（上限 40MB）：{0}',
     'en': 'Audio file is too large (limit 40MB): {0}',
     'ko': '오디오 파일이 너무 큽니다(최대 40MB): {0}',
@@ -151,7 +151,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
   'videoTooLarge': <String, String>{
     // 视频上限从 40MB 提升到 2GB：整片直传 TOS 走 file_id，
     // 不切片、不分段（见 doubao_video_ark.dart）。
-    'ja': '视频文件过大（上限 2GB）：{0}',
+    'ja': '動画ファイルが大きすぎます（上限 2GB）：{0}',
     'zh': '视频文件过大（上限 2GB）：{0}',
     'en': 'Video file is too large (limit 2GB): {0}',
     'ko': '동영상 파일이 너무 큽니다(최대 2GB): {0}',
@@ -159,7 +159,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Fichier vidéo trop volumineux (limite 2 Go) : {0}',
   },
   'keyMissingForModel': <String, String>{
-    'ja': '当前选择了豆包模型，但豆包 API Key 未设置',
+    'ja': '豆包モデルが選択されていますが、豆包 API Key が設定されていません',
     'zh': '已选择豆包模型，但豆包 API Key 未填写',
     'en': 'A Doubao model is selected, but the Doubao API Key is not set.',
     'ko': '더우바오 모델을 선택했지만 더우바오 API Key가 설정되지 않았습니다.',
@@ -167,9 +167,9 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Un modèle Doubao est sélectionné, mais la clé API Doubao n’est pas définie.',
   },
   'searchBlockedNote': <String, String>{
-    'ja': '【关于联网搜索】本站不支持在豆包模式下进行网页搜索。'
-        '也无需另外添加豆包的搜索功能。'
-        '如需网页搜索，请关闭豆包模式，在 DeepSeek 模式下搜索。',
+    'ja': '【ウェブ検索について】本サイトは豆包モードでのウェブ検索に対応していません。'
+        '豆包の検索機能を別途追加する必要もありません。'
+        'ウェブ検索が必要な場合は、豆包モードをオフにして DeepSeek モードで検索してください。',
     'zh': '【关于联网搜索】本网站不支持豆包模式下的联网搜索，也没有必要额外支持豆包搜索。'
         '如需联网搜索，请关闭豆包模式，改用 DeepSeek 模式进行搜索。',
     'en': '[About web search] This site does not support web search in Doubao mode, '
@@ -203,10 +203,10 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'Vérifiez le réseau ou le proxy, puis renvoyez.',
   },
   'noMediaNote': <String, String>{
-    'ja': '【重要】此通道（DeepSeek）不支持音频、视频的内容理解。'
-        '目标文件（{0}）的内容未被读取。'
-        '若需要理解音频、视频，请切换到豆包模式'
-        '请选择支持语音理解、视频理解的模型。',
+    'ja': '【重要】このチャネル（DeepSeek）は音声・動画の内容理解に対応していません。'
+        '対象ファイル（{0}）の内容は読み取られていません。'
+        '音声・動画を理解させたい場合は豆包モードに切り替え、'
+        '音声理解・動画理解に対応したモデルを選択してください。',
     'zh': '【重要】当前通道（DeepSeek）不支持音频、视频内容理解。'
         '目标文件（{0}）的内容并未被读取。'
         '如需理解音频、视频，请切换到豆包模式，并选择支持音频理解、视频理解的模型。',
@@ -228,7 +228,7 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
         'un modèle compatible audio/vidéo.',
   },
   'transcribeNote': <String, String>{
-    'ja': '所选模型不支持语音理解，已在转写后进行分析',
+    'ja': '選択したモデルは音声理解に対応していないため、先に文字起こしを行ってから分析しました',
     'zh': '所选模型不支持音频理解，因此先转写文字再进行分析',
     'en': 'The selected model lacks audio understanding, so the audio was transcribed first '
         'and then analyzed.',
@@ -268,12 +268,10 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
 
 /// 取得指定语言的文案；args 依次替换 {0} {1} …
 String dbLocalized(String lang, String key, [List<String> args = const <String>[]]) {
-  final raw = lang.trim().toLowerCase();
-  // 'zh-CN' / 'en-US' 这类带地区的写法也要能命中（取前两位）
-  final code = raw.length >= 2 ? raw.substring(0, 2) : raw;
+  final code = dsNormalizeLang(lang);
   final row = _dbMsgTable[key];
   if (row == null) return key;
-  var text = row[code] ?? row['ja'] ?? key;
+  var text = row[code] ?? row['en'] ?? key;
   for (var i = 0; i < args.length; i++) {
     text = text.replaceAll('{$i}', args[i]);
   }

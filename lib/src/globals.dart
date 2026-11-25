@@ -399,10 +399,23 @@ const Map<String, String> DS_OUTPUT_LANGUAGE_NAMES = <String, String>{
   'fr': 'French (français)',
 };
 
+/// 把 `en-US` / `zh-CN` / `cmn` 等写法统一成六语短码。
+/// 未知值回退到本项目默认 UI 语言（zh）。
+String dsNormalizeLang(String? code) {
+  final c = (code ?? '').trim().toLowerCase();
+  if (c.startsWith('zh') || c == 'cmn' || c == 'yue') return 'zh';
+  if (c.startsWith('ja')) return 'ja';
+  if (c.startsWith('en')) return 'en';
+  if (c.startsWith('ko')) return 'ko';
+  if (c.startsWith('ru')) return 'ru';
+  if (c.startsWith('fr')) return 'fr';
+  return 'zh';
+}
+
 /// 返回与 UI 语言代码（ja/zh/en/ko/ru/fr）对应的输出语言规则。
 /// 未知代码回退到简体中文（本项目默认 UI 语言）。
 String dsLangSystemPrompt(String? code) {
-  final c = (code ?? '').trim().toLowerCase();
+  final c = dsNormalizeLang(code);
   final name = DS_OUTPUT_LANGUAGE_NAMES[c] ?? DS_OUTPUT_LANGUAGE_NAMES['zh']!;
   return DS_JA_ONLY_SYSTEM_PROMPT.replaceAll('{{LANGUAGE}}', name);
 }
@@ -414,6 +427,342 @@ String dsRequestLang(HttpRequest req, Map<String, dynamic> body) {
   final h = req.headers.value('x-dsc-lang');
   if (h != null && h.trim().isNotEmpty) return h.trim();
   return 'ja';
+}
+
+// ------------------------------------------------------------
+// 后端错误文案本地化
+//   目标：`dsJSONErr` / `errJson` 返回的文案不再把中文泄漏到其他 UI。
+//   策略：
+//     1) 常见固定文案走精确表，保留具体原因；
+//     2) 带变量的长文案按语义类别翻译，避免逐条维护上百个模板；
+//     3) 仍无法识别的中日韩文案回退到当前语言的通用错误，绝不原样返回。
+// ------------------------------------------------------------
+final RegExp _dbErrKanaRe = RegExp(r'[\u3040-\u309f\u30a0-\u30ff]');
+final RegExp _dbErrHanRe = RegExp(r'[\u3400-\u4dbf\u4e00-\u9fff]');
+
+const Map<String, Map<String, String>> _dbErrExact = <String, Map<String, String>>{
+  '无效的请求体': <String, String>{
+    'ja': '無効なリクエスト本文です',
+    'zh': '无效的请求体',
+    'en': 'Invalid request body',
+    'ko': '잘못된 요청 본문입니다',
+    'ru': 'Недопустимое тело запроса',
+    'fr': 'Corps de requête invalide',
+  },
+  '無効なリクエスト本文です': <String, String>{
+    'ja': '無効なリクエスト本文です',
+    'zh': '无效的请求体',
+    'en': 'Invalid request body',
+    'ko': '잘못된 요청 본문입니다',
+    'ru': 'Недопустимое тело запроса',
+    'fr': 'Corps de requête invalide',
+  },
+  '无效请求体': <String, String>{
+    'ja': '無効なリクエスト本文です',
+    'en': 'Invalid request body',
+    'ko': '잘못된 요청 본문입니다',
+    'ru': 'Недопустимое тело запроса',
+    'fr': 'Corps de requête invalide',
+  },
+  '保存失败': <String, String>{
+    'ja': '保存に失敗しました',
+    'en': 'Failed to save',
+    'ko': '저장하지 못했습니다',
+    'ru': 'Не удалось сохранить',
+    'fr': 'Échec de l’enregistrement',
+  },
+  '缺少 id': <String, String>{
+    'ja': 'id が指定されていません',
+    'en': 'Missing id',
+    'ko': 'id가 없습니다',
+    'ru': 'Не указан id',
+    'fr': 'Identifiant manquant',
+  },
+  '缺少id': <String, String>{
+    'ja': 'id が指定されていません',
+    'en': 'Missing id',
+    'ko': 'id가 없습니다',
+    'ru': 'Не указан id',
+    'fr': 'Identifiant manquant',
+  },
+  '缺少 sessionId': <String, String>{
+    'ja': 'セッション ID が指定されていません',
+    'en': 'Missing session ID',
+    'ko': '세션 ID가 없습니다',
+    'ru': 'Не указан идентификатор сессии',
+    'fr': 'ID de session manquant',
+  },
+  '缺少会话 ID': <String, String>{
+    'ja': 'セッション ID が指定されていません',
+    'en': 'Missing session ID',
+    'ko': '세션 ID가 없습니다',
+    'ru': 'Не указан идентификатор сессии',
+    'fr': 'ID de session manquant',
+  },
+  '缺少会话ID': <String, String>{
+    'ja': 'セッション ID が指定されていません',
+    'en': 'Missing session ID',
+    'ko': '세션 ID가 없습니다',
+    'ru': 'Не указан идентификатор сессии',
+    'fr': 'ID de session manquant',
+  },
+  '缺少 sessionId 或 id': <String, String>{
+    'ja': 'セッション ID または id が指定されていません',
+    'en': 'Missing session ID or id',
+    'ko': '세션 ID 또는 id가 없습니다',
+    'ru': 'Не указан идентификатор сессии или id',
+    'fr': 'ID de session ou identifiant manquant',
+  },
+  '会话不存在': <String, String>{
+    'ja': 'セッションが見つかりません',
+    'en': 'Session not found',
+    'ko': '세션을 찾을 수 없습니다',
+    'ru': 'Сессия не найдена',
+    'fr': 'Session introuvable',
+  },
+  '标题为必填项': <String, String>{
+    'ja': 'タイトルは必須です',
+    'en': 'Title is required',
+    'ko': '제목은 필수입니다',
+    'ru': 'Требуется заголовок',
+    'fr': 'Le titre est obligatoire',
+  },
+  '文本为必填项': <String, String>{
+    'ja': 'テキストは必須です',
+    'en': 'Text is required',
+    'ko': '텍스트는 필수입니다',
+    'ru': 'Требуется текст',
+    'fr': 'Le texte est obligatoire',
+  },
+  '文本为空': <String, String>{
+    'ja': 'テキストが空です',
+    'en': 'Text is empty',
+    'ko': '텍스트가 비어 있습니다',
+    'ru': 'Текст пуст',
+    'fr': 'Le texte est vide',
+  },
+  '文本为空（清理后）': <String, String>{
+    'ja': 'テキストが空です（クリーニング後）',
+    'en': 'Text is empty after cleaning',
+    'ko': '정리 후 텍스트가 비어 있습니다',
+    'ru': 'Текст пуст после очистки',
+    'fr': 'Le texte est vide après nettoyage',
+  },
+  '语音识别失败': <String, String>{
+    'ja': '音声認識に失敗しました',
+    'en': 'Speech recognition failed',
+    'ko': '음성 인식에 실패했습니다',
+    'ru': 'Не удалось распознать речь',
+    'fr': 'Échec de la reconnaissance vocale',
+  },
+  '序列化失败': <String, String>{
+    'ja': 'シリアル化に失敗しました',
+    'en': 'Serialization failed',
+    'ko': '직렬화에 실패했습니다',
+    'ru': 'Ошибка сериализации',
+    'fr': 'Échec de la sérialisation',
+  },
+  '请求体超过大小上限': <String, String>{
+    'ja': 'リクエスト本文がサイズ上限を超えています',
+    'en': 'Request body exceeds the size limit',
+    'ko': '요청 본문이 크기 제한을 초과했습니다',
+    'ru': 'Тело запроса превышает допустимый размер',
+    'fr': 'Le corps de la requête dépasse la limite de taille',
+  },
+  '请求体不是有效的 JSON': <String, String>{
+    'ja': 'リクエスト本文が有効な JSON ではありません',
+    'en': 'Request body is not valid JSON',
+    'ko': '요청 본문이 올바른 JSON이 아닙니다',
+    'ru': 'Тело запроса не является допустимым JSON',
+    'fr': 'Le corps de la requête n’est pas un JSON valide',
+  },
+  '文件不存在': <String, String>{
+    'ja': 'ファイルが見つかりません',
+    'en': 'File not found',
+    'ko': '파일을 찾을 수 없습니다',
+    'ru': 'Файл не найден',
+    'fr': 'Fichier introuvable',
+  },
+  'サーバー内部エラー': <String, String>{
+    'ja': 'サーバー内部エラー',
+    'zh': '服务器内部错误',
+    'en': 'Internal server error',
+    'ko': '서버 내부 오류',
+    'ru': 'Внутренняя ошибка сервера',
+    'fr': 'Erreur interne du serveur',
+  },
+  '服务器内部错误': <String, String>{
+    'ja': 'サーバー内部エラー',
+    'en': 'Internal server error',
+    'ko': '서버 내부 오류',
+    'ru': 'Внутренняя ошибка сервера',
+    'fr': 'Erreur interne du serveur',
+  },
+  '未知操作': <String, String>{
+    'ja': '不明な操作です',
+    'en': 'Unknown operation',
+    'ko': '알 수 없는 작업입니다',
+    'ru': 'Неизвестная операция',
+    'fr': 'Opération inconnue',
+  },
+  '没有可继续生成的内容': <String, String>{
+    'ja': '続行できる内容がありません',
+    'en': 'No content available to continue',
+    'ko': '계속할 내용이 없습니다',
+    'ru': 'Нет содержимого для продолжения',
+    'fr': 'Aucun contenu à poursuivre',
+  },
+  '消息为空': <String, String>{
+    'ja': 'メッセージが空です',
+    'en': 'Message is empty',
+    'ko': '메시지가 비어 있습니다',
+    'ru': 'Сообщение пустое',
+    'fr': 'Le message est vide',
+  },
+  '最大出力は 64K / 128K / 256K / 384K から選択してください': <String, String>{
+    'ja': '最大出力は 64K / 128K / 256K / 384K から選択してください',
+    'zh': '最大输出请从 64K / 128K / 256K / 384K 中选择',
+    'en': 'Choose an output level: 64K / 128K / 256K / 384K',
+    'ko': '출력 수준을 64K / 128K / 256K / 384K 중에서 선택하세요',
+    'ru': 'Выберите уровень вывода: 64K / 128K / 256K / 384K',
+    'fr': 'Choisissez un niveau de sortie : 64K / 128K / 256K / 384K',
+  },
+  '最大出力レベルの保存に失敗しました': <String, String>{
+    'ja': '最大出力レベルの保存に失敗しました',
+    'zh': '最大输出等级保存失败',
+    'en': 'Failed to save the maximum output level',
+    'ko': '최대 출력 수준을 저장하지 못했습니다',
+    'ru': 'Не удалось сохранить уровень максимального вывода',
+    'fr': 'Échec de l’enregistrement du niveau de sortie maximale',
+  },
+};
+
+const Map<String, Map<String, String>> _dbErrCategory = <String, Map<String, String>>{
+  'invalidRequest': <String, String>{
+    'ja': '無効なリクエストです',
+    'zh': '无效的请求',
+    'en': 'Invalid request',
+    'ko': '잘못된 요청입니다',
+    'ru': 'Недопустимый запрос',
+    'fr': 'Requête invalide',
+  },
+  'missingParam': <String, String>{
+    'ja': '必須パラメータが不足しています',
+    'zh': '缺少必填参数',
+    'en': 'Missing required parameter',
+    'ko': '필수 매개변수가 없습니다',
+    'ru': 'Отсутствует обязательный параметр',
+    'fr': 'Paramètre obligatoire manquant',
+  },
+  'requiredField': <String, String>{
+    'ja': '必須項目です',
+    'zh': '该字段为必填项',
+    'en': 'This field is required',
+    'ko': '필수 항목입니다',
+    'ru': 'Обязательное поле',
+    'fr': 'Champ obligatoire',
+  },
+  'notFound': <String, String>{
+    'ja': '見つかりません',
+    'zh': '未找到',
+    'en': 'Not found',
+    'ko': '찾을 수 없습니다',
+    'ru': 'Не найдено',
+    'fr': 'Introuvable',
+  },
+  'tooLong': <String, String>{
+    'ja': '入力が長すぎます',
+    'zh': '输入过长',
+    'en': 'Input is too long',
+    'ko': '입력이 너무 깁니다',
+    'ru': 'Ввод слишком длинный',
+    'fr': 'Saisie trop longue',
+  },
+  'limitReached': <String, String>{
+    'ja': '上限に達しました',
+    'zh': '已达上限',
+    'en': 'Limit reached',
+    'ko': '한도에 도달했습니다',
+    'ru': 'Достигнут лимит',
+    'fr': 'Limite atteinte',
+  },
+  'operationFailed': <String, String>{
+    'ja': '処理に失敗しました',
+    'zh': '操作失败',
+    'en': 'Operation failed',
+    'ko': '작업에 실패했습니다',
+    'ru': 'Операция не удалась',
+    'fr': 'Échec de l’opération',
+  },
+  'apiKeyMissing': <String, String>{
+    'ja': 'API Key が設定されていません',
+    'zh': '未填写 API Key',
+    'en': 'API key is not configured',
+    'ko': 'API Key가 설정되지 않았습니다',
+    'ru': 'API-ключ не задан',
+    'fr': 'La clé API n’est pas configurée',
+  },
+  'mediaPrepareFailed': <String, String>{
+    'ja': '音声・動画の準備に失敗しました',
+    'zh': '音频或视频准备失败',
+    'en': 'Failed to prepare the audio or video',
+    'ko': '오디오·동영상 준비에 실패했습니다',
+    'ru': 'Не удалось подготовить аудио или видео',
+    'fr': 'Échec de la préparation de l’audio ou de la vidéo',
+  },
+};
+
+const Map<String, String> _dbErrGeneric = <String, String>{
+  'ja': 'リクエストに失敗しました。もう一度お試しください。',
+  'zh': '请求失败，请重试。',
+  'en': 'Request failed. Please try again.',
+  'ko': '요청에 실패했습니다. 다시 시도하세요.',
+  'ru': 'Не удалось выполнить запрос. Повторите попытку.',
+  'fr': 'La requête a échoué. Veuillez réessayer.',
+};
+
+/// 把后端错误文案转成目标语言。
+/// 已经由 `dbLocalized` 生成本地化文案时，不再二次翻译。
+String dbLocalizedError(String message, String lang, [int? httpCode]) {
+  final c = dsNormalizeLang(lang);
+  if (c == 'zh' && !_dbErrKanaRe.hasMatch(message)) return message;
+  final exact = _dbErrExact[message];
+  if (exact != null) return exact[c] ?? exact['en'] ?? message;
+
+  final hasKana = _dbErrKanaRe.hasMatch(message);
+  final hasHan = _dbErrHanRe.hasMatch(message);
+  if (!hasKana && !hasHan) return message;
+  if (c == 'ja' && hasKana) return message;
+
+  String? category;
+  if (message.contains('API Key') || message.contains('APIキー')) {
+    category = 'apiKeyMissing';
+  } else if (message.contains('视频准备失败') ||
+      message.contains('音频准备失败')) {
+    category = 'mediaPrepareFailed';
+  } else if (message.contains('缺少')) {
+    category = 'missingParam';
+  } else if (message.contains('为空') || message.contains('必填')) {
+    category = 'requiredField';
+  } else if (message.contains('最多')) {
+    category = 'limitReached';
+  } else if (message.contains('过长') || message.contains('超过')) {
+    category = 'tooLong';
+  } else if (message.contains('不存在') || message.contains('未找到')) {
+    category = 'notFound';
+  } else if (message.contains('失败') || message.contains('错误') ||
+      message.contains('失敗') || message.contains('エラー')) {
+    category = 'operationFailed';
+  } else if (message.contains('无效') || message.contains('非法') ||
+      message.contains('不明') || message.contains('未知')) {
+    category = 'invalidRequest';
+  }
+  if (category != null) {
+    final row = _dbErrCategory[category]!;
+    return row[c] ?? row['en'] ?? _dbErrGeneric['en']!;
+  }
+  final generic = _dbErrGeneric[c] ?? _dbErrGeneric['en']!;
+  return httpCode != null && httpCode > 0 ? '$generic (HTTP $httpCode)' : generic;
 }
 
 

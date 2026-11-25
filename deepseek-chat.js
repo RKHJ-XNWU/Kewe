@@ -871,13 +871,26 @@
         return out;
     }
 
+    // 非中文/非日语界面下，残留的汉字词块同样属于未翻译文案。
+    // 只删除含汉字的整块，保留 HTTP 状态码、数字、URL 等技术信息。
+    function dscStripHan(s) {
+        var t = String(s == null ? '' : s);
+        if (!/[\u3400-\u4dbf\u4e00-\u9fff]/.test(t)) return t;
+        var out = t.replace(/[^\s]*[\u3400-\u4dbf\u4e00-\u9fff][^\s]*/g, ' ');
+        out = out.replace(/\s{2,}/g, ' ');
+        out = out.replace(/^[\s:：、,，。|]+|[\s:：、,，。|]+$/g, '');
+        return out;
+    }
+
     // エラー本文を現在言語へ。headKey は辞書に存在する日本語キー。
     function dscErrText(headKey, raw) {
         var s = raw == null ? '' : String(raw).trim();
         var head = headKey || '翻訳に失敗：';
         var isJa = false;
+        var lang = 'zh';
         try {
-            isJa = !!(window.I18N && window.I18N.getLang && window.I18N.getLang() === 'ja');
+            lang = (window.I18N && window.I18N.getLang && window.I18N.getLang()) || 'zh';
+            isJa = lang === 'ja';
         } catch (e0) {}
 
         for (var i = 0; i < DSC_ERR_HEADS.length; i++) {
@@ -902,7 +915,10 @@
         var detail = s;
         if (detail) {
             if (detail.length <= 160) detail = dscT(detail);
-            if (!isJa) detail = dscStripKana(detail);
+            if (!isJa) {
+                detail = dscStripKana(detail);
+                if (lang !== 'zh') detail = dscStripHan(detail);
+            }
             detail = detail.replace(/\s{2,}/g, ' ').trim();
             detail = detail.replace(/^[\s:：、,，。|]+/, '');
         }

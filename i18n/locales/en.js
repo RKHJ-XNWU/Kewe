@@ -1567,7 +1567,7 @@ I18N.add('en',`
     咪仔 + 大衣先生（既定）|Mizai + Dayi (default)
     刘飞 + 潇磊|Liu Fei + Xiao Lei
     用語集管理|Glossary Management
-    用語集はサーバーに保存され、.sts 形式で 1 行 1 用語（id|原語|訳語|ソース言語|ターゲット言語）。|Glossary is stored server-side as .sts, one term per line (id|source|translation|source lang|target lang).
+    用語集はサーバーに保存され、.sts 形式で 1 行 1 用語（id\|原語\|訳語\|ソース言語\|ターゲット言語）。|Glossary is stored server-side as .sts, one term per line (id\|source\|translation\|source lang\|target lang).
     — 選択してください —|— Please select —
     用語集を選択|Select glossary
     新規用語集名|New glossary name

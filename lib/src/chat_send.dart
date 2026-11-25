@@ -220,7 +220,9 @@ Future<void> handleDsChatSendStream(
       return;
     } catch (e) {
       logp('❌ 视频准备失败（流式·意外）: $e');
-      await sse.send('error', {'message': '视频准备失败：$e'});
+      await sse.send('error', {
+        'message': dbLocalizedError('视频准备失败：$e', lang),
+      });
       await sse.done();
       return;
     }

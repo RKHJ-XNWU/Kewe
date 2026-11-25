@@ -277,6 +277,7 @@ Future<void> _dispatchAuthed(HttpRequest req) async {
 
 Future<void> dispatch(HttpRequest req) async {
   final path = req.uri.path;
+  rememberResponseLang(req);
 
   // 登录 / 注册 / 状态本身就是公开入口，但仍走统一的日志 + CORS 中间件。
   if (path == '/api/auth' || path.startsWith('/api/auth/')) {

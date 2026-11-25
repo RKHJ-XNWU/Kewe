@@ -169,15 +169,34 @@
         }
 
         // 3) 部分一致（動的に連結された文言の断片を消す）
+        //    一度置換した訳文は再走査しない。旧実装は out 全体を毎回 split/join
+        //    していたため、訳文に含まれる別の原文断片まで再翻訳して混排していた。
         if (s.length <= 160 && CJK_RE.test(s)) {
             var arr = partialIndex[code] || buildPartial(code);
-            var out = s;
+            var out = '';
+            var rest = s;
             var any = false;
-            for (var i = 0; i < arr.length; i++) {
-                if (out.indexOf(arr[i][0]) >= 0) {
-                    out = out.split(arr[i][0]).join(arr[i][1]);
-                    any = true;
+            while (rest.length) {
+                var bestPos = -1;
+                var bestKey = '';
+                var bestVal = '';
+                for (var i = 0; i < arr.length; i++) {
+                    var at = rest.indexOf(arr[i][0]);
+                    if (at < 0) continue;
+                    if (bestPos < 0 || at < bestPos ||
+                        (at === bestPos && arr[i][0].length > bestKey.length)) {
+                        bestPos = at;
+                        bestKey = arr[i][0];
+                        bestVal = arr[i][1];
+                    }
                 }
+                if (bestPos < 0) {
+                    out += rest;
+                    break;
+                }
+                out += rest.slice(0, bestPos) + bestVal;
+                rest = rest.slice(bestPos + bestKey.length);
+                any = true;
             }
             if (any) return out;
         }
@@ -219,24 +238,56 @@
     // ---------- 辞書登録 ----------
     /**
      * I18N.add(code, data)
-     * data は { "日本語": "訳文" } 形式、または
-     * 「日本語|訳文」を 1 行ずつ並べた文字列のどちらでもよい。
+     * data は { "原文": "訳文" } 形式、または
+     * 「原文|訳文」を 1 行ずつ並べた文字列のどちらでもよい。
+     *
+     * 行形式では原文・訳文に含まれる区切り文字を次のようにエスケープする:
+     *   \|  → 文字としての |
+     *   \n  → 改行
+     * これにより「id|原語|訳語」のような技術書式や、複数行の例文も
+     * 1 行の辞書エントリとして安全に登録できる。
      */
+    function decodeEntryPart(s) {
+        return String(s)
+            .replace(/\\n/g, '\n')
+            .replace(/\\\|/g, '|')
+            .replace(/\\\\/g, '\\');
+    }
+    function splitEntryLine(ln) {
+        for (var i = 0; i < ln.length; i++) {
+            if (ln.charAt(i) !== '|') continue;
+            var slashCount = 0;
+            for (var j = i - 1; j >= 0 && ln.charAt(j) === '\\'; j--) slashCount++;
+            if ((slashCount % 2) === 1) continue;
+            return [decodeEntryPart(ln.slice(0, i)), decodeEntryPart(ln.slice(i + 1))];
+        }
+        return null;
+    }
     function add(code, data) {
         if (!dicts[code]) dicts[code] = {};
         if (typeof data === 'string') {
             data.split('\n').forEach(function (line) {
                 var ln = line.replace(/^\s+|\s+$/g, '');
-                if (!ln || ln.charAt(0) === '#') return;
-                var i = ln.indexOf('|');
-                if (i < 0) return;
-                dicts[code][ln.slice(0, i)] = ln.slice(i + 1);
+                if (!ln || ln.charAt(0) === '#' || ln.indexOf('//') === 0) return;
+                var pair = splitEntryLine(ln);
+                if (!pair) return;
+                dicts[code][pair[0]] = pair[1];
             });
         } else if (data && typeof data === 'object') {
             for (var k in data) {
                 if (Object.prototype.hasOwnProperty.call(data, k)) dicts[code][k] = data[k];
             }
         }
+        dictCache[code] = null;
+        partialIndex[code] = null;
+        memo = Object.create(null);
+        return I18N;
+    }
+
+    function remove(code, keys) {
+        if (!dicts[code]) return I18N;
+        var list = Array.isArray(keys) ? keys : [keys];
+        for (var i = 0; i < list.length; i++) delete dicts[code][list[i]];
         dictCache[code] = null;
         partialIndex[code] = null;
         memo = Object.create(null);
@@ -726,7 +777,8 @@
         coverage: function (code) {
             return Object.keys(dicts[code] || {}).length;
         },
-        dict: function (code) { return dicts[code] || {}; }
+        dict: function (code) { return dicts[code] || {}; },
+        remove: remove
     };
 
     global.I18N = I18N;

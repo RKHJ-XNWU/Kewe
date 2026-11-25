@@ -562,9 +562,7 @@ I18N.add('fr',`
     語速 -50〜100、0 は既定値|Vitesse de -50 à 100 ; 0 correspond à la valeur par défaut
     生成方法|Méthode de génération
     音色（ペア）|Paire de voix
-    A: 皆さん、こんにちは。
-B: 今日はAIについて話しましょう。|A : Bonjour à tous.
-B : Parlons aujourd’hui de l’IA.
+    A: 皆さん、こんにちは。\nB: 今日はAIについて話しましょう。|A : Bonjour à tous.\nB : Parlons aujourd’hui de l’IA.
     1分|1 min
     2分|2 min
     3分|3 min

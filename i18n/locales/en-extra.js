@@ -562,9 +562,7 @@ I18N.add('en',`
     語速 -50〜100、0 は既定値|Speed -50 to 100; 0 is the default
     生成方法|Generation method
     音色（ペア）|Voice pair
-    A: 皆さん、こんにちは。
-B: 今日はAIについて話しましょう。|A: Hello, everyone.
-B: Let’s talk about AI today.
+    A: 皆さん、こんにちは。\nB: 今日はAIについて話しましょう。|A: Hello, everyone.\nB: Let’s talk about AI today.
     1分|1 min
     2分|2 min
     3分|3 min
