@@ -4,6 +4,10 @@
 // 维护工具：python3 tools/i18n_rewrite.py
 // ============================================================
 I18N.add('en',`
+    ✂️ 分割完了、区間ごとに理解します…|✂️ Split complete — understanding each segment…
+    🎬 方舟の単一ファイル前処理上限を超えたため、無劣化で分割して理解します（{0}）|🎬 Beyond Ark's single-file preprocessing limit — switching to lossless segmented analysis ({0})
+    ✂️ 無劣化で分割中…|✂️ Splitting without re-encoding…
+    🎬 第 {0}/{1} 区間を理解中…|🎬 Understanding segment {0}/{1}…
     未踏の境地を探る・新版|Exploring the Unknown · New Edition
     DeepSeek チャット · 左上をタップしてセッション切替|DeepSeek Chat · Tap the top-left corner to switch sessions
     ＋|＋

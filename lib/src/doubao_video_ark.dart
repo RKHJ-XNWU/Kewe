@@ -62,6 +62,65 @@ const int dbArkTosMaxBytes = 2 * 1024 * 1024 * 1024;
 /// 方舟文件默认保留 7 天，本地缓存按 6 天失效
 const int _dbArkFileTtlMs = 6 * 24 * 3600 * 1000;
 
+/// 单文件预处理超时/被拒的「失败记忆」有效期。
+/// 命中后同一文件不再白传一次大文件，直接走无损切片通道。
+const int _dbArkSlowPathTtlMs = 6 * 24 * 3600 * 1000;
+
+/// 单文件预处理的抽帧预算（默认 24000 帧）。
+///
+/// 为什么需要它：方舟把「预处理处理不过来」统一报成
+/// InvalidArgumentError("Timeout occurred while processing video …")。
+/// 抽帧总量 = 时长 × fps，fps=5 时一条 20 分钟的视频就是 6000 帧，
+/// 一条 1 小时的是 18000 帧，服务端预处理时窗被抽帧拖爆。
+/// 所以真正要压的是「帧数」，不是「字节数」——同样 100MB，
+/// 高码率短视频抽帧少、超时概率低；低码率长视频抽帧多、必超时。
+/// 这是本项目自己的保守预算（非官方硬性数值），可在
+/// doubao_video_ark.json 里改 frameBudget，0 表示不限制。
+const int dbArkFrameBudgetDefault = 24000;
+
+/// frameBudget 归一化：负数/0 视为不限制，过小的值没有意义。
+int _dbArkNormalizeFrameBudget(int v) {
+  if (v <= 0) return 0;
+  if (v < 100) return 100;
+  if (v > 200000) return 200000;
+  return v;
+}
+
+/// 单文件预处理等待上限：按体积自适应。
+/// 小文件不必白等 40 分钟；2GB 级文件也不该被固定超时提前掐断。
+Duration dbArkPreprocessTimeoutFor(int bytes) {
+  var sec = 20 * 60;
+  final gb = bytes <= 0 ? 0.0 : bytes / (1024 * 1024 * 1024);
+  sec += (gb * 25 * 60).round();
+  if (sec > 3 * 3600) sec = 3 * 3600;
+  return Duration(seconds: sec);
+}
+
+/// 按「时长 × fps ≤ frameBudget」规划实际抽帧密度。
+/// 返回真正要传给方舟的 fps（永远不高于配置值）与估算帧数。
+/// 时长探测失败时原样返回配置 fps（不猜、不擅自降级）。
+Future<({double fps, int budgetFrames, int estFrames, double duration})>
+    dbArkPlanPreprocessFps(File f, DbVideoArkConfig cfg) async {
+  final want = cfg.fps <= 0 ? 1.0 : cfg.fps;
+  final budget = cfg.frameBudget;
+  final dur = await _dbProbeDuration(f);
+  if (dur <= 0) {
+    return (fps: want, budgetFrames: budget, estFrames: 0, duration: 0.0);
+  }
+  final est = (dur * want).round();
+  if (budget <= 0 || est <= budget) {
+    return (fps: want, budgetFrames: budget, estFrames: est, duration: dur);
+  }
+  var fps = budget / dur;
+  if (fps < 0.2) fps = 0.2;
+  return (
+    fps: fps,
+    budgetFrames: budget,
+    estFrames: (dur * fps).round(),
+    duration: dur,
+  );
+}
+
 // ------------------------------------------------------------
 // 异常
 // ------------------------------------------------------------
@@ -112,6 +171,10 @@ class DbVideoArkConfig {
   /// 最少抽帧数(透传 preprocess_configs[video][min_frames];0=不传)
   int minFrames;
 
+  /// 单文件/单段预处理的抽帧预算（帧）。0 = 不限制。
+  /// 超过预算会自动下调 fps，避免服务端预处理超时。
+  int frameBudget;
+
   /// 旧版 TOS 自动上传字段，保留兼容；当前 TOS 通道走 Files API
   /// 的二进制上传 + tos[bucket]/tos[prefix]，不需要 TOS AK/SK。
   String tosAccessKey;
@@ -136,6 +199,7 @@ class DbVideoArkConfig {
     this.preprocessModel = '',
     this.maxVideoTokens = 0,
     this.minFrames = 0,
+    this.frameBudget = dbArkFrameBudgetDefault,
     this.tosAccessKey = '',
     this.tosSecretKey = '',
     this.tosEndpoint = 'tos-cn-beijing.volces.com',
@@ -158,6 +222,7 @@ class DbVideoArkConfig {
         'preprocessModel': preprocessModel,
         'maxVideoTokens': maxVideoTokens,
         'minFrames': minFrames,
+        'frameBudget': frameBudget,
         'tosAccessKey': tosAccessKey,
         'tosSecretKey': tosSecretKey,
         'tosEndpoint': tosEndpoint,
@@ -179,8 +244,15 @@ class DbVideoArkConfig {
     if (fps > 5) fps = 5;
 
     var seg = intArgDefault(j, 'segmentMaxBytes', dbVideoDefaultSegmentBytes);
-    // 必须小于 base64 硬上限，且不能小到切出太多段
+    // 必须小于 base64 硬上限，且不能小到切出太多段。
+    // 注意：segmentMaxBytes 只管「分段后每段多大」，与「单文件能不能走
+    // TOS 2GB 直传」无关；写 2GB 在这里会被无损钳制回 45MB（base64 上限
+    // 是 50MB 请求体，物理上不可能一段 2GB）。钳制时明确打日志，避免
+    // 配置看起来生效、实际没生效。
     if (seg > dbVideoBase64HardMaxBytes - 1024 * 1024) {
+      logp('⚠️ segmentMaxBytes=$seg 超过分段上限，已回退为 '
+          '${dbFmtSize(dbVideoDefaultSegmentBytes)}'
+          '（该值只管分段大小，单文件 TOS 上限由 maxBytes 决定）');
       seg = dbVideoDefaultSegmentBytes;
     }
     if (seg < 5 * 1024 * 1024) seg = dbVideoDefaultSegmentBytes;
@@ -196,6 +268,8 @@ class DbVideoArkConfig {
       preprocessModel: mStr(j, 'preprocessModel').trim(),
       maxVideoTokens: intArgDefault(j, 'maxVideoTokens', 0),
       minFrames: intArgDefault(j, 'minFrames', 0),
+      frameBudget: _dbArkNormalizeFrameBudget(
+          intArgDefault(j, 'frameBudget', dbArkFrameBudgetDefault)),
       tosAccessKey: mStr(j, 'tosAccessKey').trim(),
       tosSecretKey: mStr(j, 'tosSecretKey').trim(),
       tosEndpoint: trimOr(mStr(j, 'tosEndpoint'), 'tos-cn-beijing.volces.com'),
@@ -269,6 +343,102 @@ String _dbFmtClock(num sec) {
   if (h > 0) return '$h:${p2(m)}:${p2(ss)}';
   return '${p2(m)}:${p2(ss)}';
 }
+
+// ------------------------------------------------------------
+// 单文件预处理失败判定 + 失败记忆
+// ------------------------------------------------------------
+
+/// 方舟把「源文件体量超出预处理能力」统一报成
+/// InvalidArgumentError("Timeout occurred while processing video. ...")。
+///
+/// 实测（2026-11-25，本账号 ark-c94a…，桶 large-video-understand-000）：
+///   · studio_video_1795563651880.mp4 = 237,871,791 字节（226.8MB）
+///     fps=5   → status=failed，Timeout occurred while processing video
+///     fps=0.5 → 同一文件同样 failed（抽帧密度降到 1/10 也没用）
+///   · share_5ac575….mp4 = 5,727,114 字节，同桶同模型同 fps=5 → status=active
+/// 结论：TOS 授权正常、文件本身也正常；卡住的只是「单文件体量」。
+/// 这类失败必须降级成无损切片，而不是甩给用户去查授权。
+/// 严格判定：只认「服务端处理超时」这一种。
+///
+/// ★ 2026-11-25 二次修复：旧实现把 invalidarg / invalidparam 也算超时，
+///   于是任何 400 InvalidParameter（模型没绑 project、桶权限不足、参数拼错）
+///   都会被写成「体量超时」的失败记忆，进而把所有大文件永久判死。
+///   参数错误与体量问题必须分开：参数错误该修配置，体量问题该降抽帧。
+bool dbArkIsPreprocessTimeout(Object e) {
+  final s = e.toString().toLowerCase();
+  return s.contains('timeout') || s.contains('超时') || s.contains('timed out');
+}
+
+/// 宽松判定：是否属于「值得降参重试一次」的预处理失败。
+/// 仅用于决定要不要再试一次，绝不用于写失败记忆。
+bool dbArkLooksLikePreprocessTrouble(Object e) {
+  final s = e.toString().toLowerCase();
+  return dbArkIsPreprocessTimeout(e) ||
+      s.contains('invalidarg') ||
+      s.contains('invalidparam') ||
+      s.contains('processing video');
+}
+
+String get _dbArkSlowPathFile => '$dsChatDir/doubao_ark_slowpath.sts';
+
+Map<String, dynamic> _dbArkSlowPathLoad() {
+  final f = File(_dbArkSlowPathFile);
+  if (!f.existsSync()) return <String, dynamic>{};
+  try {
+    return asMap(jsonDecode(f.readAsStringSync()));
+  } catch (_) {
+    return <String, dynamic>{};
+  }
+}
+
+bool _dbArkSlowPathHit(String key) {
+  final raw = _dbArkSlowPathLoad()[key];
+  if (raw is! Map) return false;
+  final at = intArgDefault(asMap(raw), 'at', 0);
+  return DateTime.now().millisecondsSinceEpoch - at < _dbArkSlowPathTtlMs;
+}
+
+/// 该文件上次失败时用的 fps（没记录返回 0）。
+/// 只有在「这次抽帧比上次更省」时才允许重试，否则重复上传只会在
+/// 同一个坑里再超时一次。
+double _dbArkSlowPathFps(String key) {
+  final raw = _dbArkSlowPathLoad()[key];
+  if (raw is! Map) return 0;
+  final v = asMap(raw)['fps'];
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v) ?? 0;
+  return 0;
+}
+
+void _dbArkSlowPathRemember(String key, String reason,
+    {int bytes = 0, double fps = 0}) {
+  final all = _dbArkSlowPathLoad();
+  all[key] = <String, dynamic>{
+    'at': DateTime.now().millisecondsSinceEpoch,
+    'bytes': bytes,
+    'fps': fps,
+    'reason': reason.length > 300 ? reason.substring(0, 300) : reason,
+  };
+  final now = DateTime.now().millisecondsSinceEpoch;
+  all.removeWhere((_, v) {
+    final e = asMap(v);
+    return now - intArgDefault(e, 'at', 0) >= _dbArkSlowPathTtlMs;
+  });
+  try {
+    ensureDir(dsChatDir);
+    File(_dbArkSlowPathFile).writeAsStringSync(jsonEncode(all));
+  } catch (e) {
+    logp('⚠️ 预处理失败记忆写入失败: $e');
+  }
+}
+
+// ★ 2026-11-25 二次修复：这里原本有一个 _dbArkSlowPathMinFailBytes()，
+//   把「历史失败样本的最小体积」当成全局阈值：只要某个文件曾经失败，
+//   之后任何 ≥ 该体积的文件都会被直接判成「必然超时」，连上传都不试，
+//   直接走切片 —— 这就是「明明 TOS 支持 2GB，却报单文件预处理失败」的
+//   关键原因之一。用「一次失败」推「同体积全失败」在统计上也不成立：
+//   真正决定预处理耗时的是抽帧总量与编码复杂度，不是字节数。
+//   现已删除：大文件照样先试单文件 TOS，失败再降抽帧重试，仍失败才切片。
 
 // ------------------------------------------------------------
 // 基础工具：ffmpeg / ffprobe
@@ -520,15 +690,7 @@ Future<String> _dbDescribeSegment({
   required double fps,
 }) async {
   final clock = _dbFmtClock(startSec);
-  final prompt = '这是完整视频《$videoName》的第 ${index + 1}/$total 段，'
-      '本段从 $clock 开始（全片时间轴上的一段）。\n'
-      '请客观、详细地描述本段内容，按以下顺序给出要点：\n'
-      '1. 场景与环境（室内/室外、地点、光线、天气）；\n'
-      '2. 出现的人物或主体（人数、外观、穿着、身份线索）；\n'
-      '3. 动作与事件的发生顺序（按时间先后）；\n'
-      '4. 画面中出现的文字、字幕、标题、界面元素（原样抄录）；\n'
-      '5. 可辨识的声音、说话内容要点（若有）。\n'
-      '只描述本段，不要猜测其他段落，不要写总结或评价。';
+  final prompt = _dbSegmentPrompt(videoName, index, total, startSec);
 
   final tail = StringBuffer()
     ..write('","fps":${_dbNumStr(fps)}}},{"type":"text","text":')
@@ -551,7 +713,10 @@ Future<String> _dbDescribeSegment({
     file: segment,
     head: head,
     tail: tailBytes,
-    timeout: const Duration(seconds: 300),
+    // ★ 2026-11-25 二次修复：45MB base64 分片要「上传 + 视频推理」，
+    //   300 秒在弱网/长段上经常不够，超时即判该段失败，
+    //   最终表现就是「视频没有完全理解成功」。放宽到 900 秒。
+    timeout: const Duration(seconds: 900),
   );
   if (r.code != 200) {
     throw DbVideoArkException(
@@ -569,6 +734,243 @@ Future<String> _dbDescribeSegment({
   logp('🎬 第 ${index + 1}/$total 段理解完成（从 ${clock} '
       '${_dbFmtClock(endSec)}、${cost} 秒、${runeLen(text)} 文字）');
   return text;
+}
+
+/// 分段理解带一次重试。
+/// 单段失败此前会直接写成「（本段理解失败：…）」并入结果，只要不是全段失败
+/// 就放行 —— 于是视频「看起来理解了」，但中间缺了几段内容。
+/// 这里对网络类失败再给一次机会，仍失败才如实记录。
+Future<String> _dbSegmentRetryOnce({
+  required File segment,
+  required String mime,
+  required String model,
+  required String apiKey,
+  required int index,
+  required int total,
+  required String videoName,
+  required double startSec,
+  required double endSec,
+  required double fps,
+}) async {
+  try {
+    return await _dbDescribeSegment(
+      segment: segment,
+      mime: mime,
+      model: model,
+      apiKey: apiKey,
+      index: index,
+      total: total,
+      videoName: videoName,
+      startSec: startSec,
+      endSec: endSec,
+      fps: fps,
+    );
+  } catch (e) {
+    logp('⚠️ 第 ${index + 1}/$total 段理解失败，3 秒后重试一次：$e');
+    await Future<void>.delayed(const Duration(seconds: 3));
+    return _dbDescribeSegment(
+      segment: segment,
+      mime: mime,
+      model: model,
+      apiKey: apiKey,
+      index: index,
+      total: total,
+      videoName: videoName,
+      startSec: startSec,
+      endSec: endSec,
+      fps: fps,
+    );
+  }
+}
+
+/// 分段的通用提示词（base64 通道与 TOS 分段通道共用，避免两处漂移）。
+String _dbSegmentPrompt(
+    String videoName, int index, int total, double startSec) {
+  final clock = _dbFmtClock(startSec);
+  return '这是完整视频《$videoName》的第 ${index + 1}/$total 段，'
+      '本段从 $clock 开始（全片时间轴上的一段）。\n'
+      '请客观、详细地描述本段内容，按以下顺序给出要点：\n'
+      '1. 场景与环境（室内/室外、地点、光线、天气）；\n'
+      '2. 出现的人物或主体（人数、外观、穿着、身份线索）；\n'
+      '3. 动作与事件的发生顺序（按时间先后）；\n'
+      '4. 画面中出现的文字、字幕、标题、界面元素（原样抄录）；\n'
+      '5. 可辨识的声音、说话内容要点（若有）。\n'
+      '只描述本段，不要猜测其他段落，不要写总结或评价。';
+}
+
+/// 分段上传到 TOS 时的文件名：ASCII、带段号，避免同名互相覆盖。
+String _dbSegmentUploadName(String videoName, int index, int total) {
+  var base = videoName.trim();
+  final dot = base.lastIndexOf('.');
+  var stem = dot > 0 ? base.substring(0, dot) : base;
+  final ext = dot > 0 ? base.substring(dot).toLowerCase() : '.mp4';
+  if (stem.length > 60) stem = stem.substring(0, 60);
+  stem = stem.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  if (stem.isEmpty) stem = 'segment';
+  final no = (index + 1).toString().padLeft(2, '0');
+  final all = total.toString().padLeft(2, '0');
+  return '${stem}_p${no}of$all$ext';
+}
+
+/// 段级 TOS 通道：把一段（≤ segmentMaxBytes）按配置上传到方舟 TOS 预处理，
+/// 再用返回的 file_id 让模型描述这一段。
+///
+/// 为什么需要它：方舟「单文件」视频预处理的处理能力有上限，源文件 226.8MB
+/// 时服务端直接超时（fps 5 与 0.5 都失败），而同一账号/桶/模型下 5.7MB 文件
+/// 正常 active。切片后每段体量小，预处理能完成 —— 于是大视频也能被真实理解，
+/// 且全程不重编码、不改变原文件字节。
+Future<String> _dbDescribeSegmentByFileId({
+  required File segment,
+  required String fileName,
+  required DbVideoArkConfig cfg,
+  required String model,
+  required String apiKey,
+  required int index,
+  required int total,
+  required String videoName,
+  required double startSec,
+  required double endSec,
+}) async {
+  final clock = _dbFmtClock(startSec);
+  // 段级同样按帧预算降密：45MB 的段在低码率长视频上是好几分钟，
+  // 直接套 fps=5 会让这一段自己又超时一次。
+  final segPlan = await dbArkPlanPreprocessFps(segment, cfg);
+  final segFps = segPlan.fps;
+  if (segPlan.estFrames > 0 && cfg.fps > 0 && segFps < cfg.fps) {
+    logp('🎚️ 第 ${index + 1} 段抽帧降密: ${_dbFpsStr(cfg.fps)} → '
+        '${_dbFpsStr(segFps)} fps（约 ${segPlan.estFrames} 帧）');
+  }
+  final segSize = await segment.length();
+  final fileId = await _dbArkUploadToTosBucket(
+    file: segment,
+    fileName: fileName,
+    bucket: cfg.tosBucket,
+    prefix: cfg.tosPrefix,
+    model: cfg.preprocessModel,
+    apiKey: apiKey,
+    fps: segFps,
+    maxVideoTokens: cfg.maxVideoTokens,
+    minFrames: cfg.minFrames,
+  );
+  await dbArkWaitFileActive(
+    apiKey: apiKey,
+    fileId: fileId,
+    timeout: dbArkPreprocessTimeoutFor(segSize),
+  );
+  final text = await _dbArkChatOnce(
+    apiKey: apiKey,
+    model: model,
+    fileId: fileId,
+    prompt: _dbSegmentPrompt(videoName, index, total, startSec),
+    maxTokens: 1600,
+  );
+  logp('🎬 第 ${index + 1}/$total 段 TOS 理解完成'
+      '（从 $clock 到 ${_dbFmtClock(endSec)}，${runeLen(text)} 文字）');
+  return text;
+}
+
+/// 非流式单轮视频理解：用 file_id 作为视频输入，返回模型文本。
+/// doubao-seed 系列走 Chat API；DeepSeek V4 系列必须走 Responses API
+/// （参见 dbVideoNeedsResponsesApi 的说明）。
+Future<String> _dbArkChatOnce({
+  required String apiKey,
+  required String model,
+  required String fileId,
+  required String prompt,
+  int maxTokens = 1600,
+}) async {
+  final base = dbBaseUrl(null);
+
+  if (dbVideoNeedsResponsesApi(model)) {
+    final body = <String, dynamic>{
+      'model': model,
+      'stream': false,
+      'max_output_tokens': maxTokens,
+      'input': <Map<String, dynamic>>[
+        <String, dynamic>{
+          'type': 'message',
+          'role': 'user',
+          'content': <Map<String, dynamic>>[
+            <String, dynamic>{'type': 'input_video', 'file_id': fileId},
+            <String, dynamic>{'type': 'input_text', 'text': prompt},
+          ],
+        },
+      ],
+    };
+    final r = await _dbPostJson('$base/responses', apiKey, body);
+    if (r.code != 200) {
+      throw DbVideoArkException(
+          '视频理解失败（Responses HTTP ${r.code}）：${_dbErrText(r.bytes)}');
+    }
+    final j = asMap(jsonDecode(utf8.decode(r.bytes, allowMalformed: true)));
+    final out = StringBuffer();
+    for (final item in asList(j['output'])) {
+      for (final c in asList(asMap(item)['content'])) {
+        final cm = asMap(c);
+        if ('${cm['type']}' == 'output_text') out.write(mStr(cm, 'text'));
+      }
+    }
+    final text = out.toString().trim();
+    if (text.isEmpty) {
+      throw DbVideoArkException('视频理解返回空内容（Responses API）');
+    }
+    return text;
+  }
+
+  final body = <String, dynamic>{
+    'model': model,
+    'messages': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'video_url',
+            'video_url': <String, dynamic>{'file_id': fileId},
+          },
+          <String, dynamic>{'type': 'text', 'text': prompt},
+        ],
+      },
+    ],
+    'max_tokens': maxTokens,
+    'temperature': 0.3,
+  };
+  if (model.toLowerCase().startsWith('doubao-seed')) {
+    body['thinking'] = <String, dynamic>{'type': 'disabled'};
+  }
+  final r = await _dbPostJson('$base/chat/completions', apiKey, body);
+  if (r.code != 200) {
+    throw DbVideoArkException(
+        '视频理解失败（Chat HTTP ${r.code}）：${_dbErrText(r.bytes)}');
+  }
+  final j = asMap(jsonDecode(utf8.decode(r.bytes, allowMalformed: true)));
+  final choices = asList(j['choices']);
+  if (choices.isEmpty) {
+    throw DbVideoArkException('视频理解返回空响应');
+  }
+  final msg = asMap(asMap(choices[0])['message']);
+  var text = mStr(msg, 'content').trim();
+  if (text.isEmpty) text = mStr(msg, 'reasoning_content').trim();
+  if (text.isEmpty) {
+    throw DbVideoArkException('视频理解返回空内容');
+  }
+  return text;
+}
+
+Future<_DbJsonResp> _dbPostJson(
+    String url, String apiKey, Map<String, dynamic> body) async {
+  final client = globalHTTPClient;
+  final req = await client.postUrl(Uri.parse(url));
+  req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+  req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+  final bytes = utf8.encode(jsonEncode(body));
+  req.headers.contentLength = bytes.length;
+  req.add(bytes);
+  final resp = await req.close().timeout(const Duration(seconds: 900));
+  final out = <int>[];
+  await for (final c in resp) {
+    out.addAll(c);
+  }
+  return _DbJsonResp(resp.statusCode, out);
 }
 
 String _dbNumStr(double v) {
@@ -712,13 +1114,42 @@ Future<({List<Map<String, dynamic>> parts, String text})>
             code: 'tos_not_configured');
       }
       onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-      final part = await dbArkVideoPartForLocalFile(
-        absPath: absPath,
-        fileName: meta.name,
-        model: model,
-        apiKey: apiKey,
-        onProgress: (info) => onProgress?.call({...tag, ...info}),
-      );
+      late Map<String, dynamic> part;
+      try {
+        part = await dbArkVideoPartForLocalFile(
+          absPath: absPath,
+          fileName: meta.name,
+          model: model,
+          apiKey: apiKey,
+          onProgress: (info) => onProgress?.call({...tag, ...info}),
+        );
+      } on DbVideoArkException catch (e) {
+        if (e.code != 'need_segment') rethrow;
+        // ★ 2026-11-25 修复「方舟视频预处理失败」死循环：
+        //   方舟单文件预处理对大体量源文件会服务端超时（实测 226.8MB 必失败，
+        //   同桶 5.7MB 正常 active）。文件没坏、TOS 授权也没问题 ——
+        //   正确解法是 ffmpeg -c copy 无损切片后逐段走方舟，而不是把
+        //   "请确认授权/文件损坏" 甩给用户。
+        logp('⚠️ 单文件预处理不可用，改用无损切片通道: ${meta.name}');
+        onProgress?.call({...tag, 'stage': 'fallback_split', 'size': size});
+        final desc = await _dbDescribeLargeVideo(
+          file: f,
+          meta: meta,
+          mime: mime,
+          cfg: cfg,
+          model: model,
+          apiKey: apiKey,
+          onProgress: onProgress,
+          tag: tag,
+          preferTos: true,
+        );
+        blocks.add(desc);
+        index++;
+        if (decryptedTempDir != null) {
+          try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+        }
+        continue;
+      }
       parts.add(part);
       logp('🎬 经由 TOS 发送: ${meta.name}');
       index++;
@@ -756,6 +1187,9 @@ Future<String> _dbDescribeLargeVideo({
   required String apiKey,
   required Map<String, dynamic> tag,
   void Function(Map<String, dynamic> info)? onProgress,
+  /// true：每段优先走方舟 TOS 预处理（段小，预处理不会超时），
+  /// 失败再回退 base64。单文件预处理超时降级时使用。
+  bool preferTos = false,
 }) async {
   Directory? tmpDir;
   try {
@@ -785,6 +1219,13 @@ Future<String> _dbDescribeLargeVideo({
     var failed = 0;
     for (var i = 0; i < segs.length; i++) {
       final end = start + durs[i];
+      // 本段抽帧密度：段时长已知，不再重复 ffprobe。
+      var segFps = cfg.fps;
+      final fdur = durs[i];
+      if (fdur > 0 && cfg.frameBudget > 0 && fdur * segFps > cfg.frameBudget) {
+        segFps = cfg.frameBudget / fdur;
+        if (segFps < 0.2) segFps = 0.2;
+      }
       onProgress?.call({
         ...tag,
         'stage': 'segment_start',
@@ -794,18 +1235,50 @@ Future<String> _dbDescribeLargeVideo({
         'end': end.round(),
       });
       try {
-        final text = await _dbDescribeSegment(
-          segment: segs[i],
-          mime: mime,
-          model: model,
-          apiKey: apiKey,
-          index: i,
-          total: segs.length,
-          videoName: meta.name,
-          startSec: start,
-          endSec: end,
-          fps: cfg.fps,
-        );
+        String text;
+        if (preferTos && cfg.tosBucket.trim().isNotEmpty) {
+          try {
+            text = await _dbDescribeSegmentByFileId(
+              segment: segs[i],
+              fileName: _dbSegmentUploadName(meta.name, i, segs.length),
+              cfg: cfg,
+              model: model,
+              apiKey: apiKey,
+              index: i,
+              total: segs.length,
+              videoName: meta.name,
+              startSec: start,
+              endSec: end,
+            );
+          } catch (e) {
+            logp('⚠️ 第 ${i + 1} 段 TOS 通道失败，回退 base64：$e');
+            text = await _dbSegmentRetryOnce(
+              segment: segs[i],
+              mime: mime,
+              model: model,
+              apiKey: apiKey,
+              index: i,
+              total: segs.length,
+              videoName: meta.name,
+              startSec: start,
+              endSec: end,
+              fps: segFps,
+            );
+          }
+        } else {
+          text = await _dbSegmentRetryOnce(
+            segment: segs[i],
+            mime: mime,
+            model: model,
+            apiKey: apiKey,
+            index: i,
+            total: segs.length,
+            videoName: meta.name,
+            startSec: start,
+            endSec: end,
+            fps: segFps,
+          );
+        }
         descs.add('【第 ${i + 1}/${segs.length} 段 · '
             '${_dbFmtClock(start)} - ${_dbFmtClock(end)}】\n$text');
       } catch (e) {
@@ -1004,9 +1477,11 @@ Future<String> _dbArkUploadToTosBucket({
       final chunk = await raf.read(block);
       if (chunk.isEmpty) break;
       req.add(chunk);
-      // 分块 flush 不设短超时：手机弱网 + 2GB 大视频本来就慢，
-      // 由 server.idleTimeout=14400 秒兜底；绝不偷偷回退本地。
-      await req.flush();
+      // 手机弱网 + 2GB 大视频本来就慢，所以给足时间；但「给足」不等于
+      // 「无限等」：连接被中间设备悄悄掐断时 flush 会永久挂住 ——
+      // SSE 心跳还在跳，任务却永远不会结束。单块 4MB 给 10 分钟，
+      // 超时即判定断流，抛 upload_failed 让上层走切片/重试。
+      await req.flush().timeout(const Duration(minutes: 10));
       sent += chunk.length;
       onProgress?.call(sent, total);
     }
@@ -1094,10 +1569,10 @@ Future<void> dbArkWaitFileActive({
     }
     if (status == 'failed' || status == 'error') {
       final err = info['error'] ?? info['error_message'] ?? info['message'];
+      final isTimeout = dbArkIsPreprocessTimeout('$err');
       throw DbVideoArkException(
-          '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}\n'
-          '请确认：TOS Bucket 已授权给方舟项目；视频不是损坏文件；'
-          'tos[bucket]/tos[prefix] 与方舟控制台授权一致。');
+          '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}',
+          code: isTimeout ? 'preprocess_timeout' : 'preprocess_failed');
     }
     await Future<void>.delayed(Duration(milliseconds: intervalMs));
     if (intervalMs < 5000) intervalMs += 500;
@@ -1128,9 +1603,22 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
 
-  // 配置即行为：原文件直接上传，不改字节；fps / 模型 / 抽帧参数全部取配置值。
-  final arkFps = cfg.fps;
+  // 原文件直接上传，不改字节。
+  // ★ 2026-11-25 二次修复：fps 不再无条件取配置值，而是按「时长 × fps」
+  //   规划到抽帧预算内。fps=5 用在长视频上必然把方舟预处理拖到超时，
+  //   而方舟只会回一句 "Timeout occurred while processing video"，
+  //   让人误以为是文件体积或授权问题。
   final key = _dbArkCacheKey(f, size);
+  final plan = await dbArkPlanPreprocessFps(f, cfg);
+  final arkFps = plan.fps;
+  if (plan.estFrames > 0 &&
+      plan.budgetFrames > 0 &&
+      cfg.fps > 0 &&
+      arkFps < cfg.fps) {
+    logp('🎚️ 单文件抽帧降密: ${_dbFpsStr(cfg.fps)} → ${_dbFpsStr(arkFps)} fps'
+        '（时长 ${_dbFmtClock(plan.duration)}，约 ${plan.estFrames} 帧，'
+        '预算 ${plan.budgetFrames} 帧）');
+  }
   final cached = _dbArkCacheLookup(key, arkFps);
   if (cached != null) {
     onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
@@ -1143,56 +1631,135 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         code: 'tos_not_configured');
   }
 
+  // 同一文件此前已确认超时：只有当这次抽帧更省时才允许再试一次。
+  // 抽帧没变就重传，只会在同一个坑里再超时一次、再白等一轮。
+  if (_dbArkSlowPathHit(key)) {
+    final prevFps = _dbArkSlowPathFps(key);
+    // 旧版失败记忆没有 fps 字段（prevFps=0）：说明是升级前留下的，
+    // 这次抽帧策略已经变了，允许重试一次，不能拿旧账把文件永久判死。
+    if (prevFps > 0 && arkFps >= prevFps) {
+      throw DbVideoArkException(
+          '《$fileName》此前在方舟单文件预处理阶段超时'
+          '（${dbFmtSize(size)}，fps=${prevFps > 0 ? _dbFpsStr(prevFps) : '未记录'}），'
+          '本次直接改用无损切片通道',
+          code: 'need_segment');
+    }
+    logp('🔁 该文件上次 fps=${_dbFpsStr(prevFps)} 超时，'
+        '这次降到 ${_dbFpsStr(arkFps)} fps 再试一次');
+  }
+
   // 二进制上传 + tos[bucket]/tos[prefix]：文件落到用户 TOS，
   // 预处理由方舟完成；不需要 TOS AK/SK，也不检查/依赖 TOS 对象路径。
-  onProgress?.call({'stage': 'tos_upload_start', 'size': size});
-  final arkId = await _dbArkUploadToTosBucket(
-    file: f,
-    fileName: fileName,
-    bucket: cfg.tosBucket,
-    prefix: cfg.tosPrefix,
-    model: cfg.preprocessModel,
-    apiKey: apiKey,
-    fps: arkFps,
-    maxVideoTokens: cfg.maxVideoTokens,
-    minFrames: cfg.minFrames,
-    onProgress: (sent, total) {
-      onProgress?.call({
-        'stage': 'tos_upload',
-        'sent': sent,
-        'total': total,
-        'percent': total <= 0 ? 0 : ((sent * 100) ~/ total),
-      });
-    },
-  );
-  onProgress?.call({'stage': 'tos_upload_done', 'size': size});
-  onProgress?.call({'stage': 'tos_reference', 'size': size});
+  // 单文件 TOS 直传最多试两轮：
+  //   第 1 轮用规划后的 fps；仅当失败属于「预处理超时/InvalidArgument」
+  //   且还有降密空间时，第 2 轮把 fps 减半再试；仍失败才交给切片通道。
+  // 官方对 TOS 通道的承诺是单文件 ≤2GB，因此 2GB 以内一律先按单文件走，
+  // 绝不再因为「某个更小的文件曾经失败」就提前放弃。
+  var attempt = 0;
+  String? lastErr;
+  String lastArkId = '';
+  double lastFps = arkFps;
+  while (attempt < 2) {
+    attempt++;
+    if (attempt == 1) {
+      lastFps = arkFps;
+    } else {
+      var f2 = arkFps / 2;
+      if (f2 < 0.2) f2 = 0.2;
+      lastFps = f2;
+      logp('🔁 单文件预处理失败，降抽帧重试: '
+          '${_dbFpsStr(arkFps)} → ${_dbFpsStr(lastFps)} fps');
+    }
+    onProgress?.call({
+      'stage': 'tos_upload_start',
+      'size': size,
+      'attempt': attempt,
+      'fps': lastFps,
+    });
+    final arkId = await _dbArkUploadToTosBucket(
+      file: f,
+      fileName: fileName,
+      bucket: cfg.tosBucket,
+      prefix: cfg.tosPrefix,
+      model: cfg.preprocessModel,
+      apiKey: apiKey,
+      fps: lastFps,
+      maxVideoTokens: cfg.maxVideoTokens,
+      minFrames: cfg.minFrames,
+      onProgress: (sent, total) {
+        onProgress?.call({
+          'stage': 'tos_upload',
+          'sent': sent,
+          'total': total,
+          'percent': total <= 0 ? 0 : ((sent * 100) ~/ total),
+          'attempt': attempt,
+        });
+      },
+    );
+    lastArkId = arkId;
+    onProgress?.call({'stage': 'tos_upload_done', 'size': size});
+    onProgress?.call({'stage': 'tos_reference', 'size': size});
 
-  // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
-  //   旧实现有 2 处损坏：
-  //     1) 发送 preprocess_wait 时没带 waited → 前端 (obj.waited || 0) 恒为 0
-  //     2) 没有把 onTick 传给 dbArkWaitFileActive → 轮询期间
-  //        没有任何进度流动，直到完成都固定显示"0 秒"
-  //   以此处等待开始时刻为起点，每个 tick 下发实际经过秒数。
-  onProgress
-      ?.call({'stage': 'preprocess_wait', 'arkFileId': arkId, 'waited': 0});
-  final waitStartedAt = DateTime.now();
-  await dbArkWaitFileActive(
-    apiKey: apiKey,
-    fileId: arkId,
-    onTick: (status, waitedSec) {
-      // 首个 tick 的 waitedSec 可能为 0，用本地经过时间兜底
-      final local = DateTime.now().difference(waitStartedAt).inSeconds;
-      onProgress?.call({
-        'stage': 'preprocess',
-        'arkFileId': arkId,
-        'status': status,
-        'waited': waitedSec > local ? waitedSec : local,
-      });
-    },
-  );
-  _dbArkCacheStore(key, arkId, cfg.preprocessModel, arkFps);
-  return dbArkVideoPartByFileId(arkId, fps: arkFps);
+    // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
+    //   旧实现有 2 处损坏：
+    //     1) 发送 preprocess_wait 时没带 waited → 前端 (obj.waited || 0) 恒为 0
+    //     2) 没有把 onTick 传给 dbArkWaitFileActive → 轮询期间
+    //        没有任何进度流动，直到完成都固定显示"0 秒"
+    //   以此处等待开始时刻为起点，每个 tick 下发实际经过秒数。
+    onProgress?.call({
+      'stage': 'preprocess_wait',
+      'arkFileId': arkId,
+      'waited': 0,
+      'attempt': attempt,
+    });
+    final waitStartedAt = DateTime.now();
+    try {
+      // ★ 2026-11-25 二次修复：等待上限按体积自适应。
+      //   固定 40 分钟对小文件是白等，对 2GB 又可能提前掐断；
+      //   now: 20 分钟基础 + 每 GB 25 分钟，上限 3 小时。
+      await dbArkWaitFileActive(
+        apiKey: apiKey,
+        fileId: arkId,
+        timeout: dbArkPreprocessTimeoutFor(size),
+        onTick: (status, waitedSec) {
+          // 首个 tick 的 waitedSec 可能为 0，用本地经过时间兜底
+          final local = DateTime.now().difference(waitStartedAt).inSeconds;
+          onProgress?.call({
+            'stage': 'preprocess',
+            'arkFileId': arkId,
+            'status': status,
+            'waited': waitedSec > local ? waitedSec : local,
+            'attempt': attempt,
+          });
+        },
+      );
+    } on DbVideoArkException catch (e) {
+      lastErr = e.message;
+      // 只有「像预处理问题」的失败才值得降参重试；
+      // 鉴权、桶不存在、模型不存在这类错误重试多少次都一样。
+      if (!dbArkLooksLikePreprocessTrouble(e)) rethrow;
+      final canRetry = attempt < 2 && lastFps > 0.2;
+      if (canRetry) {
+        logp('⚠️ 第 $attempt 轮单文件预处理失败（${dbFmtSize(size)}，'
+            'fps=${_dbFpsStr(lastFps)}）：${e.message}');
+        continue;
+      }
+      if (dbArkIsPreprocessTimeout(e)) {
+        // 只有明确的「超时」才写入失败记忆；参数错误绝不能记成体量问题。
+        _dbArkSlowPathRemember(key, e.message, bytes: size, fps: lastFps);
+      }
+      throw DbVideoArkException(
+          '方舟单文件预处理超时（源文件 ${dbFmtSize(size)}，'
+          'fps=${_dbFpsStr(lastFps)}，file=$lastArkId）：$lastErr',
+          code: 'need_segment');
+    }
+    _dbArkCacheStore(key, arkId, cfg.preprocessModel, lastFps);
+    return dbArkVideoPartByFileId(arkId, fps: lastFps);
+  }
+  throw DbVideoArkException(
+      '方舟单文件预处理失败（源文件 ${dbFmtSize(size)}，'
+      'file=$lastArkId）：${lastErr ?? '未知原因'}',
+      code: 'need_segment');
 }
 
 // ============================================================

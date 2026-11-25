@@ -3476,6 +3476,20 @@
                                 mpLine = dscT('🎬 動画 {0} 件を準備します', (obj.count || 1));
                             } else if (mpStage === 'cache_hit') {
                                 mpLine = dscT('♻️ アップロード済みの動画を再利用します');
+                            } else if (mpStage === 'fallback_split') {
+                                // 方舟単一ファイルの前処理上限を超えた場合の自動降級
+                                // （無劣化スライス → 区間ごと理解）。数字入りなので
+                                // {0} プレースホルダで渡す。
+                                mpLine = dscT('🎬 方舟の単一ファイル前処理上限を超えたため、無劣化で分割して理解します（{0}）', dscFmtBytes(obj.size));
+                            } else if (mpStage === 'split_start') {
+                                mpLine = dscT('✂️ 無劣化で分割中…');
+                            } else if (mpStage === 'split_done') {
+                                mpLine = dscT('✂️ 分割完了、区間ごとに理解します…');
+                            } else if (mpStage === 'segment_start' || mpStage === 'segment_done') {
+                                var mpSeg = Number(obj.segment), mpAll = Number(obj.segments);
+                                mpLine = dscT('🎬 第 {0}/{1} 区間を理解中…',
+                                    (isFinite(mpSeg) ? mpSeg : 0),
+                                    (isFinite(mpAll) && mpAll > 0 ? mpAll : 0));
                             } else if (mpStage === 'compact_start') {
                                 mpLine = dscT('🎞️ 動画が方舟の上限を超えているため、アップロード用に最適化します（元 {0}）…', dscFmtBytes(obj.size));
                             } else if (mpStage === 'compact') {
