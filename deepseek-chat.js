@@ -3564,6 +3564,11 @@
                                 } else {
                                     mpLine = dscT('🎬 動画を準備中…');
                                 }
+                            } else if (mpStage === 'segment_failed') {
+                                var ffSeg = Number(obj.segment), ffAll = Number(obj.segments);
+                                mpLine = (isFinite(ffSeg) && ffSeg > 0 && isFinite(ffAll) && ffAll > 0)
+                                    ? dscT('⚠️ 第 {0}/{1} 段の理解に失敗、スキップして続行…', ffSeg, ffAll)
+                                    : dscT('⚠️ 一部の区間の理解に失敗、スキップして続行…');
                             } else if (mpStage === 'ready') {
                                 mpLine = dscT('✅ 動画の準備完了。回答を生成します…');
                             }

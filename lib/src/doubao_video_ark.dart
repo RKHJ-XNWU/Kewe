@@ -1683,7 +1683,30 @@ Future<double> _dbProbeDurationSec(File f) async {
   return 0;
 }
 
+/// 文件里是否存在音频流。只看 codec_type，不依赖时长字段。
+///
+/// 切片 AAC 的 `stream=duration` 经常是 N/A：时长探测读不到不代表没有
+/// 音频轨，必须单独判断流是否存在，否则会把「有坏音频轨」误当成
+/// 「纯视频」跳过修复，坏轨原样上传后被方舟按 audio_url duration 拒收。
+Future<bool> _dbHasAudioStream(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'stream=codec_type',
+      '-of', 'default=nw=1:nk=1',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      return '${r.stdout}'.toLowerCase().contains('audio');
+    }
+  } catch (_) {}
+  return false;
+}
+
 /// 读取首条音频流的时长（秒）；无音频或读不到返回 0。
+///
+/// 注意：只取音频流自己的 duration，不回退容器时长 —— 容器时长是视频
+/// 的长度，拿它当音频时长会把一条塌缩成 8ms 的坏轨误判成「音频正常」。
 Future<double> _dbProbeAudioDurationSec(File f) async {
   try {
     final r = await Process.run('ffprobe', [
@@ -1705,14 +1728,21 @@ Future<double> _dbProbeAudioDurationSec(File f) async {
 ///
 /// 2026-11-25 现场：24 分钟 / 330MB 视频切成 3 段后，方舟仍报
 /// audio duration 8ms（下限 10ms）。只做 -c:a aac 并不能保证每个
-/// 分段的音频时间戳都正常，所以输出后再探测一次：音频流存在但
-/// 短于 50ms 时，用 apad 补静音到该段时长，重新封装；视频流仍是
-/// -c:v copy，不重编码、不丢画质。无音频的片段直接跳过。
+/// 分段的音频时间戳都正常，所以输出后再探测一次：
+///
+/// 1. 无音频流 → 纯视频段，直接跳过（方舟不会校验不存在的音频轨）；
+/// 2. 有音频流且时长正常（≥50ms）→ 不动；
+/// 3. 有音频流但时长读不到（0）或短于 50ms → AAC 重编码 + 起点对齐 +
+///    apad 补静音到该段时长，重新封装；视频流仍是 -c:v copy，不丢画质；
+/// 4. 补静音后音频轨依旧过短（<10ms 量级，encoder 救不回来）→ 兜底把
+///    音频轨整个剥离（-an），出纯视频段。与其留一条被方舟拒收的坏音频，
+///    不如不带音频：纯视频不会触发 audio_url duration 那条 400。
 Future<void> _dbFixShortSegmentAudio(File seg, double targetSec) async {
+  final hasAudio = await _dbHasAudioStream(seg);
+  if (!hasAudio) return;
   final audioDur = await _dbProbeAudioDurationSec(seg);
-  if (audioDur <= 0 || audioDur >= 0.05) return;
-  logp('⚠️ 分段音频仅 ${audioDur.toStringAsFixed(3)}s'
-      '（方舟下限 10ms），补静音后重新封装: ${seg.path}');
+  if (audioDur >= 0.05) return;
+
   final fixed = File('${seg.path}.audiofix.mp4');
   final r = await _dbRunFfmpegWithTicks([
     '-y', '-hide_banner', '-loglevel', 'error',
@@ -1738,17 +1768,44 @@ Future<void> _dbFixShortSegmentAudio(File seg, double targetSec) async {
         'ffmpeg exit=${r.exitCode}）：$stderrText');
   }
   final fixedAudio = await _dbProbeAudioDurationSec(fixed);
-  if (fixedAudio < 0.01) {
+  if (fixedAudio >= 0.01) {
+    logp('✅ 分段音频已补静音修复'
+        '（${audioDur.toStringAsFixed(3)}s → ${fixedAudio.toStringAsFixed(3)}s）');
     try {
-      fixed.deleteSync();
+      seg.deleteSync();
+    } catch (_) {}
+    fixed.renameSync(seg.path);
+    return;
+  }
+
+  // 兜底：坏音频轨补不回来，剥离音频出纯视频段。
+  try {
+    fixed.deleteSync();
+  } catch (_) {}
+  final silent = File('${seg.path}.an.mp4');
+  final r2 = await _dbRunFfmpegWithTicks([
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', seg.path,
+    '-map', '0:v:0',
+    '-an',
+    '-c:v', 'copy',
+    '-avoid_negative_ts', 'make_zero',
+    '-movflags', '+faststart',
+    silent.path,
+  ]);
+  if (r2.exitCode != 0 || !silent.existsSync() || silent.lengthSync() <= 0) {
+    try {
+      silent.deleteSync();
     } catch (_) {}
     throw DbVideoArkException(
-        '分段音频修复后仍过短（${fixedAudio.toStringAsFixed(3)}s）：${seg.path}');
+        '分段音频兜底剥离失败（原音频 ${audioDur.toStringAsFixed(3)}s，'
+        'ffmpeg exit=${r2.exitCode}）：${'${r2.stderr}'.trim()}');
   }
+  logp('⚠️ 分段坏音频轨无法修复，已剥离为纯视频段: ${seg.path}');
   try {
     seg.deleteSync();
   } catch (_) {}
-  fixed.renameSync(seg.path);
+  silent.renameSync(seg.path);
 }
 
 /// 按帧总数规划段数：≤安全帧上限（3000 帧）就是 1 段（整片直传，不分段）。
@@ -1802,6 +1859,9 @@ Future<List<File>> _dbSplitByTime({
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '128k',
+        // 输入 seek 后音频首帧 pts 可能不为 0，异步对齐到 0，
+        // 避免切出的 AAC 时长元数据塌缩成几毫秒被方舟拒收。
+        '-af', 'aresample=async=1:first_pts=0',
         '-avoid_negative_ts', 'make_zero',
         '-movflags', '+faststart',
         path,
@@ -2048,7 +2108,12 @@ Future<String> dbDescribeVideoInSegments({
     }
     if (total <= 0) total = duration;
 
-    final blocks = <String>[];
+    // ★ 段级容错：一段失败（上传 / 预处理 / 转写任一环节）只标记该段，
+    //   绝不能让整段循环中断 —— 旧实现里第一段 400 就直接抛异常，
+    //   第二、三段根本没上传到方舟。现在失败段记入 failedNotes，后续段
+    //   照常上传、照常理解；全部段失败才整体报错。
+    final okBlocks = <String>[];
+    final failedNotes = <String>[];
     var cursor = 0.0;
     for (var i = 0; i < segs.length; i++) {
       final start = cursor;
@@ -2063,85 +2128,108 @@ Future<String> dbDescribeVideoInSegments({
       final segSize = segs[i].lengthSync();
       final segSec = durs[i] > 0 ? durs[i] : duration / segs.length;
       final segBudget = dbVideoTranscriptMaxTokens(segSec);
-      final fileId = await _dbArkUploadToTosBucket(
-        file: segs[i],
-        fileName: _dbSegFileName(fileName, i, segs.length),
-        bucket: cfg.tosBucket,
-        prefix: cfg.tosPrefix,
-        model: cfg.preprocessModel,
-        apiKey: apiKey,
-        fps: fps,
-        maxVideoTokens: cfg.maxVideoTokens,
-        minFrames: cfg.minFrames,
-      );
-      await dbArkWaitFileActive(
-        apiKey: apiKey,
-        fileId: fileId,
-        timeout: dbArkPreprocessTimeoutFor(segSize),
-        onTick: (status, waitedSec) {
-          onProgress?.call({
-            'stage': 'preprocess',
+      try {
+        final fileId = await _dbArkUploadToTosBucket(
+          file: segs[i],
+          fileName: _dbSegFileName(fileName, i, segs.length),
+          bucket: cfg.tosBucket,
+          prefix: cfg.tosPrefix,
+          model: cfg.preprocessModel,
+          apiKey: apiKey,
+          fps: fps,
+          maxVideoTokens: cfg.maxVideoTokens,
+          minFrames: cfg.minFrames,
+        );
+        await dbArkWaitFileActive(
+          apiKey: apiKey,
+          fileId: fileId,
+          timeout: dbArkPreprocessTimeoutFor(segSize),
+          onTick: (status, waitedSec) {
+            onProgress?.call({
+              'stage': 'preprocess',
+              'segment': i + 1,
+              'segments': segs.length,
+              'status': status,
+              'waited': waitedSec,
+            });
+          },
+        );
+        onProgress?.call({
+          'stage': 'describe',
+          'segment': i + 1,
+          'segments': segs.length,
+          'chars': 0,
+        });
+        logp('🧠 第 ${i + 1}/${segs.length} 段转写开始'
+            '（段长 ${_dbClock(segSec)}，预算 $segBudget token）');
+        final text = await _dbArkDescribeSegment(
+          apiKey: apiKey,
+          model: model,
+          fileId: fileId,
+          prompt: _dbSegFullPrompt(
+            videoName: fileName,
+            index: i,
+            total: segs.length,
+            startSec: start,
+            endSec: end,
+          ),
+          maxTokens: segBudget,
+          onChars: (chars) => onProgress?.call({
+            'stage': 'describe',
             'segment': i + 1,
             'segments': segs.length,
-            'status': status,
-            'waited': waitedSec,
-          });
-        },
-      );
-      onProgress?.call({
-        'stage': 'describe',
-        'segment': i + 1,
-        'segments': segs.length,
-        'chars': 0,
-      });
-      logp('🧠 第 ${i + 1}/${segs.length} 段转写开始'
-          '（段长 ${_dbClock(segSec)}，预算 $segBudget token）');
-      final text = await _dbArkDescribeSegment(
-        apiKey: apiKey,
-        model: model,
-        fileId: fileId,
-        prompt: _dbSegFullPrompt(
-          videoName: fileName,
-          index: i,
-          total: segs.length,
-          startSec: start,
-          endSec: end,
-        ),
-        maxTokens: segBudget,
-        onChars: (chars) => onProgress?.call({
-          'stage': 'describe',
+            'chars': chars,
+          }),
+          onTick: (sec) => onProgress?.call({
+            'stage': 'describe',
+            'segment': i + 1,
+            'segments': segs.length,
+            'elapsed': sec,
+          }),
+        );
+        logp('🎬 第 ${i + 1}/${segs.length} 段完整理解完成'
+            '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
+        if (segs.length > 1) {
+          okBlocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$text');
+        } else {
+          okBlocks.add(text);
+        }
+        onProgress?.call({
+          'stage': 'segment_done',
           'segment': i + 1,
           'segments': segs.length,
-          'chars': chars,
-        }),
-        onTick: (sec) => onProgress?.call({
-          'stage': 'describe',
+          'percent': ((i + 1) * 100) ~/ segs.length,
+        });
+      } catch (e) {
+        final note = '第 ${i + 1}/${segs.length} 段'
+            '（${_dbClock(start)} - ${_dbClock(end)}）：$e';
+        failedNotes.add(note);
+        logp('⚠️ $note —— 跳过该段，继续处理其余分段');
+        onProgress?.call({
+          'stage': 'segment_failed',
           'segment': i + 1,
           'segments': segs.length,
-          'elapsed': sec,
-        }),
-      );
-      logp('🎬 第 ${i + 1}/${segs.length} 段完整理解完成'
-          '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
-      if (segs.length > 1) {
-        blocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$text');
-      } else {
-        blocks.add(text);
+          'error': '$e',
+        });
       }
-      onProgress?.call({
-        'stage': 'segment_done',
-        'segment': i + 1,
-        'segments': segs.length,
-        'percent': ((i + 1) * 100) ~/ segs.length,
-      });
       cursor = end;
     }
 
-    if (blocks.length == 1) return blocks.first;
-    return '''【《$fileName》完整理解 · 全片 ${_dbClock(total)} · ${_dbFpsStr(fps)} fps · 等分 ${blocks.length} 段】
+    if (okBlocks.isEmpty) {
+      throw DbVideoArkException(
+          '全部分段理解失败：${failedNotes.join('；')}');
+    }
+
+    final body = okBlocks.join('\n\n');
+    if (segs.length == 1 && failedNotes.isEmpty) return body;
+    final failedSuffix = failedNotes.isEmpty
+        ? ''
+        : '\n\n【未能理解的段落（原片对应时间轴，内容缺失，请勿臆补）】\n'
+            '${failedNotes.join('\n')}';
+    return '''【《$fileName》完整理解 · 全片 ${_dbClock(total)} · ${_dbFpsStr(fps)} fps · 等分 ${segs.length} 段】
 （下面按全片时间轴顺序连续记录；分段只为绕过方舟「单次请求 3600 帧」的上限，内容本身是一整条视频，段与段自然衔接。）
 
-${blocks.join('\n\n')}''';
+$body$failedSuffix''';
   } finally {
     if (tmpDir != null) {
       try {
