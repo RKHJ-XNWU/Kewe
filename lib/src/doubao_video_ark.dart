@@ -478,75 +478,28 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       'fileName': meta.name,
     };
 
-    // ---------- 按「帧上限」决策 ----------
+    // ---------- 整片直传（用户明确要求：不分段） ----------
     //
-    // ★ 2026-11-25 四次修复。旧版是「整片直传、绝不分段」，结果 20 分钟
-    //   以上的片子一律撞方舟预处理超时，用户只能看到失败；而当时代码为
-    //   了"避免丢细节"完全不提供任何兜底，于是「视频理解不成功」成了必然。
-    //
-    //   本机现场实测（账号 ark-c94a…、桶 large-video-understand-000、
-    //   模型 doubao-seed-2-1-lite-260915、fps=5、同一源片 HEVC 1080p）：
-    //     · 30 秒   → active   4 秒
-    //     · 5 分钟  → active  13 秒
-    //     · 12 分钟 → active  17 秒   （3600 帧）
-    //     · 20 分钟 → failed  21 秒   Timeout occurred while processing video
-    //     · 20 分钟 + max_video_tokens=131072 → 仍然 failed（参数救不了）
-    //     · 一次请求装 5 段（合计 6169 帧）→
-    //       "number of the input image (6169) exceeds the limit (3600)"
-    //
-    //   两条硬边界因此确定：
-    //     A. 单文件预处理：12 分钟（3600 帧）能过，20 分钟必超时；
-    //     B. chat 单请求：输入帧数上限 3600（官方限制，与体积/授权/编码无关）。
-    //   两者同一个数：3600 帧。所以 fps=5 时，12 分钟以内的视频可以
-    //   真正「整片一次看完」；超过 12 分钟的视频，帧数总量已经超过模型
-    //   单次能接收的上限，物理上无法塞进一次请求。
-    //
-    //   于是策略变成：≤3600 帧 → 整片直传（不分段、不降帧、不重试）；
-    //   >3600 帧 → 等分切段，但每段仍是 fps=5 的完整转写（不是摘要），
-    //   按全片时间轴拼接成一份连续记录。这样既守住 fps=5，也守住细节。
+    // 不再按帧数/时长做任何分段决策：无论视频多长，原文件整片上传方舟 TOS，
+    // 由方舟完成预处理，再以 file_id 作为 video_url 一次性交给模型。
+    // 不切片、不分段、不降帧、不压缩、不重试；预处理失败就原样报错。
     if (cfg.tosBucket.trim().isEmpty) {
       throw DbVideoArkException(
           '未配置 tosBucket：视频直传需要 TOS Bucket（≥50MB 的视频无法走 '
           'base64）：${meta.name}（${dbFmtSize(size)}）',
           code: 'tos_not_configured');
     }
-    final dur = await _dbProbeDurationSec(f);
-    final segCount = dbArkPlanSegCount(dur, cfg.fps);
-    if (segCount <= 1) {
-      onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-      final part = await dbArkVideoPartForLocalFile(
-        absPath: absPath,
-        fileName: meta.name,
-        model: model,
-        apiKey: apiKey,
-        onProgress: (info) => onProgress?.call({...tag, ...info}),
-      );
-      parts.add(part);
-      logp('🎬 整片直传（未分段）: ${meta.name}（${dbFmtSize(size)}，'
-          '${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
-          ' = ${(dur * cfg.fps).round()} 帧）');
-      index++;
-      if (decryptedTempDir != null) {
-        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
-      }
-      continue;
-    }
-    logp('🎬 ${meta.name}: ${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
-        ' = ${(dur * cfg.fps).round()} 帧 > 安全帧上限 '
-        '$dbArkFrameSafePerRequest 帧 → 等分 $segCount 段，'
-        '每段 ${_dbClock(dur / segCount)}（fps 仍为 ${_dbFpsStr(cfg.fps)}）');
-    onProgress?.call({...tag, 'stage': 'seg_split', 'size': size,
-        'segments': segCount});
-    final desc = await dbDescribeVideoInSegments(
-      file: f,
+    onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
+    final part = await dbArkVideoPartForLocalFile(
+      absPath: absPath,
       fileName: meta.name,
-      cfg: cfg,
+      model: model,
       apiKey: apiKey,
-      segCount: segCount,
-      duration: dur,
       onProgress: (info) => onProgress?.call({...tag, ...info}),
     );
-    blocks.add(desc);
+    parts.add(part);
+    logp('🎬 整片直传（不分段）: ${meta.name}（${dbFmtSize(size)}，'
+        'fps=${_dbFpsStr(cfg.fps)}）');
     index++;
     if (decryptedTempDir != null) {
       try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
