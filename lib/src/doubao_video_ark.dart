@@ -29,10 +29,14 @@
 //   · 93.6MB HEVC 1080p 23分42秒（fps=5 与 fps=2.5）→
 //     InvalidArgumentError("Timeout occurred while processing video")
 //   · 226.8MB 长视频同样失败（fps=0.5 也一样失败）
-//   → 决定成败的是「时长 × 抽帧密度」而不是字节数：fps 调低并不能减少
-//     服务端解码全片的工作量，所以降帧重试对这类失败毫无帮助，
-//     只会让用户多等一轮。整片预处理能否完成由方舟服务端判定，
-//     客户端只负责原样送达并等足够久（见 dbArkPreprocessTimeoutFor）。
+//   · 同片 5 / 10 / 15 分钟（25.7MB / 46.6MB / 65.4MB，fps=5）→ 全部 active
+//   · 同片 20 分钟 81.5MB（fps=5）→ failed（同样那条 Timeout）
+//   · 23 分 42 秒那条加上 max_video_tokens=128000 → 依然 failed
+//   → 结论：方舟对「单视频时长」有硬上限，约 15 分钟。超过就一律报
+//     "Timeout occurred while processing video"，与体积、fps、token 预算
+//     都无关；降帧重试对这类失败毫无帮助，只会让用户多等一轮。
+//     整片预处理能否完成由方舟服务端判定，客户端只负责原样送达并等足够久
+//     （见 dbArkPreprocessTimeoutFor），失败时如实报错、不降级改写。
 // ============================================================
 
 import 'dart:async';
@@ -865,10 +869,10 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException(
         '方舟整片预处理失败（源文件 ${dbFmtSize(size)}，'
         'fps=${_dbFpsStr(fps)}，file=$arkId）：$msg\n'
-        '说明：方舟对单视频的整片预处理有服务端时长上限，超过即报 '
-        '"Timeout occurred while processing video"（实测 23 分 42 秒必失败、'
-        '10 分钟可成功），与文件体积、fps 取值均无关。当前策略已禁止切片，'
-        '不会自动降级分段。',
+        '说明：方舟对单视频有约 15 分钟的时长上限，超过就一律报 '
+        '"Timeout occurred while processing video"（实测 15 分钟可成功，'
+        '20 分钟与 23 分 42 秒必失败），与文件体积、fps 取值、token 预算'
+        '均无关。当前策略已禁止切片，不会自动降级分段。',
         code: 'preprocess_failed');
   }
   _dbArkCacheStore(key, arkId, cfg.preprocessModel, fps);
