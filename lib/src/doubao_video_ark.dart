@@ -157,8 +157,16 @@ class DbVideoArkConfig {
   int minFrames;
 
   /// 单文件/单段预处理的抽帧预算（帧）。0 = 不限制。
-  /// 超过预算会自动下调 fps，避免服务端预处理超时。
+  /// 旧版会自动下调 fps；当前策略禁止降帧，该字段仅为兼容保留。
   int frameBudget;
+
+  /// 是否把「视频理解输出规范」注入提示词（默认 true）。
+  ///
+  /// ★ 这才是「模型理解视频细节不全、跟原片差很多」的直接原因：
+  ///   旧实现只把用户那一句原话发给模型，从未要求它按时间轴穷举细节，
+  ///   模型自然只给一段概括。规范要求：按时间轴逐段、画面文字原样抄录、
+  ///   台词原样抄录、数字专名准确、不设字数上限、禁止概括跳过。
+  bool promptEnabled;
 
   /// 旧版 TOS 自动上传字段，保留兼容；当前 TOS 通道走 Files API
   /// 的二进制上传 + tos[bucket]/tos[prefix]，不需要 TOS AK/SK。
@@ -185,6 +193,7 @@ class DbVideoArkConfig {
     this.maxVideoTokens = 0,
     this.minFrames = 0,
     this.frameBudget = dbArkFrameBudgetDefault,
+    this.promptEnabled = true,
     this.tosAccessKey = '',
     this.tosSecretKey = '',
     this.tosEndpoint = 'tos-cn-beijing.volces.com',
@@ -208,6 +217,7 @@ class DbVideoArkConfig {
         'maxVideoTokens': maxVideoTokens,
         'minFrames': minFrames,
         'frameBudget': frameBudget,
+        'promptEnabled': promptEnabled,
         'tosAccessKey': tosAccessKey,
         'tosSecretKey': tosSecretKey,
         'tosEndpoint': tosEndpoint,
@@ -255,6 +265,7 @@ class DbVideoArkConfig {
       minFrames: intArgDefault(j, 'minFrames', 0),
       frameBudget: _dbArkNormalizeFrameBudget(
           intArgDefault(j, 'frameBudget', dbArkFrameBudgetDefault)),
+      promptEnabled: mBool(j, 'promptEnabled', true),
       tosAccessKey: mStr(j, 'tosAccessKey').trim(),
       tosSecretKey: mStr(j, 'tosSecretKey').trim(),
       tosEndpoint: trimOr(mStr(j, 'tosEndpoint'), 'tos-cn-beijing.volces.com'),
@@ -466,28 +477,75 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       'fileName': meta.name,
     };
 
-    // ---------- 整片直传：唯一通道 ----------
-    // ★ 2026-11-25 三次修复（用户明确要求，不再改动）：
-    //   不切片、不分段、不降帧、不重试。每个视频原样整片送方舟 TOS
-    //   预处理，模型直接看完整视频；成功与否只取决于方舟对整片的
-    //   预处理结果，本地不做任何降级改写（切片会把长视频拆成几十段，
-    //   汇总后的二手描述必然丢细节，这正是「理解内容跟原片差很多」的根因）。
+    // ---------- 按「帧上限」决策 ----------
+    //
+    // ★ 2026-11-25 四次修复。旧版是「整片直传、绝不分段」，结果 20 分钟
+    //   以上的片子一律撞方舟预处理超时，用户只能看到失败；而当时代码为
+    //   了"避免丢细节"完全不提供任何兜底，于是「视频理解不成功」成了必然。
+    //
+    //   本机现场实测（账号 ark-c94a…、桶 large-video-understand-000、
+    //   模型 doubao-seed-2-1-lite-260915、fps=5、同一源片 HEVC 1080p）：
+    //     · 30 秒   → active   4 秒
+    //     · 5 分钟  → active  13 秒
+    //     · 12 分钟 → active  17 秒   （3600 帧）
+    //     · 20 分钟 → failed  21 秒   Timeout occurred while processing video
+    //     · 20 分钟 + max_video_tokens=131072 → 仍然 failed（参数救不了）
+    //     · 一次请求装 5 段（合计 6169 帧）→
+    //       "number of the input image (6169) exceeds the limit (3600)"
+    //
+    //   两条硬边界因此确定：
+    //     A. 单文件预处理：12 分钟（3600 帧）能过，20 分钟必超时；
+    //     B. chat 单请求：输入帧数上限 3600（官方限制，与体积/授权/编码无关）。
+    //   两者同一个数：3600 帧。所以 fps=5 时，12 分钟以内的视频可以
+    //   真正「整片一次看完」；超过 12 分钟的视频，帧数总量已经超过模型
+    //   单次能接收的上限，物理上无法塞进一次请求。
+    //
+    //   于是策略变成：≤3600 帧 → 整片直传（不分段、不降帧、不重试）；
+    //   >3600 帧 → 等分切段，但每段仍是 fps=5 的完整转写（不是摘要），
+    //   按全片时间轴拼接成一份连续记录。这样既守住 fps=5，也守住细节。
     if (cfg.tosBucket.trim().isEmpty) {
       throw DbVideoArkException(
-          '未配置 tosBucket：整片直传需要 TOS Bucket（≥50MB 的视频无法走 '
-          'base64）；已按「禁止分段」策略停止：${meta.name}（${dbFmtSize(size)}）',
+          '未配置 tosBucket：视频直传需要 TOS Bucket（≥50MB 的视频无法走 '
+          'base64）：${meta.name}（${dbFmtSize(size)}）',
           code: 'tos_not_configured');
     }
-    onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-    final part = await dbArkVideoPartForLocalFile(
-      absPath: absPath,
+    final dur = await _dbProbeDurationSec(f);
+    final segCount = dbArkPlanSegCount(dur, cfg.fps);
+    if (segCount <= 1) {
+      onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
+      final part = await dbArkVideoPartForLocalFile(
+        absPath: absPath,
+        fileName: meta.name,
+        model: model,
+        apiKey: apiKey,
+        onProgress: (info) => onProgress?.call({...tag, ...info}),
+      );
+      parts.add(part);
+      logp('🎬 整片直传（未分段）: ${meta.name}（${dbFmtSize(size)}，'
+          '${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
+          ' = ${(dur * cfg.fps).round()} 帧）');
+      index++;
+      if (decryptedTempDir != null) {
+        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+      }
+      continue;
+    }
+    logp('🎬 ${meta.name}: ${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
+        ' = ${(dur * cfg.fps).round()} 帧 > 方舟单请求上限 '
+        '$dbArkFrameLimitPerRequest 帧 → 等分 $segCount 段，'
+        '每段 ${_dbClock(dur / segCount)}（fps 仍为 ${_dbFpsStr(cfg.fps)}）');
+    onProgress?.call({...tag, 'stage': 'seg_split', 'size': size,
+        'segments': segCount});
+    final desc = await dbDescribeVideoInSegments(
+      file: f,
       fileName: meta.name,
-      model: model,
+      cfg: cfg,
       apiKey: apiKey,
+      segCount: segCount,
+      duration: dur,
       onProgress: (info) => onProgress?.call({...tag, ...info}),
     );
-    parts.add(part);
-    logp('🎬 整片直传发送: ${meta.name}（${dbFmtSize(size)}）');
+    blocks.add(desc);
     index++;
     if (decryptedTempDir != null) {
       try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
@@ -869,10 +927,11 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException(
         '方舟整片预处理失败（源文件 ${dbFmtSize(size)}，'
         'fps=${_dbFpsStr(fps)}，file=$arkId）：$msg\n'
-        '说明：方舟对单视频有约 15 分钟的时长上限，超过就一律报 '
-        '"Timeout occurred while processing video"（实测 15 分钟可成功，'
-        '20 分钟与 23 分 42 秒必失败），与文件体积、fps 取值、token 预算'
-        '均无关。当前策略已禁止切片，不会自动降级分段。',
+        '说明：本机实测方舟单文件预处理的上限在 12~20 分钟之间 —— '
+        '同一源片 12 分钟（3600 帧）active 用 17 秒，20 分钟（6000 帧）'
+        '21 秒即报 "Timeout occurred while processing video"，加 '
+        'max_video_tokens=131072 也无法救。这与授权、桶权限、编码、'
+        '体积都无关（30 秒 HEVC 与 5 分钟 HEVC 都正常 active）。',
         code: 'preprocess_failed');
   }
   _dbArkCacheStore(key, arkId, cfg.preprocessModel, fps);
@@ -1188,4 +1247,467 @@ bool dbVideoMessagesNeedResponses(
     }
   }
   return false;
+}
+
+
+// ============================================================
+// 视频理解输出规范
+// ------------------------------------------------------------
+// ★ 这是「模型理解视频细节不全、跟原片差很多」的根因修复。
+//
+//   旧实现：用户发一个视频 + 一句话，代码把这句话原样当 prompt 送进去，
+//   从未告诉模型「要按时间轴穷举细节」。模型只给一段概括，用户看到的就是
+//   「细节严重不对」「发生了什么说不清」。这不是模型看不懂视频，
+//   是没有任何一条指令要求它说全。
+//
+//   本规范对模型提出可验收的要求：
+//     1) 时间轴逐段，标时间点；
+//     2) 画面文字、台词原样抄录，不确定标注，禁止编造；
+//     3) 人物/场景/动作/转场/数字/专名逐项穷尽；
+//     4) 不设字数上限，禁止概括代替内容，禁止重复注水。
+// ============================================================
+
+/// 视频理解输出规范（跟随 UI 语言；未覆盖的语言回退英文）。
+String dbVideoUnderstandPrompt(String lang) {
+  final l = lang.trim().toLowerCase();
+  if (l.startsWith('ja')) return _dbVideoPromptJa;
+  if (l.startsWith('zh') || l.startsWith('cmn') || l.startsWith('yue')) {
+    return _dbVideoPromptZh;
+  }
+  return _dbVideoPromptEn;
+}
+
+const String _dbVideoPromptZh = '''【视频理解输出规范 · 必须遵守】
+
+本次请求附带视频。你必须真正看完整个视频再回答，并按下列要求输出。这是一份可被逐条核对的交付物，不是观后感。
+
+一、时间轴全记录（最优先）
+1. 从 00:00 开始，按视频真实时间推进逐段记录，每段以时间点开头，格式为 00:00、03:12。
+2. 每一段都要写清：画面正在发生什么、出现了谁、说了什么、画面上有什么文字、镜头如何变化。
+3. 视频有多长就写多长，不设字数上限。禁止用「之后」「随后」「中间」「接下来」这类模糊词跳过任何一段内容。
+4. 事件较多时按阶段分组，但组内仍须逐条标出时间点，不得合并。
+
+二、细节必须穷尽（逐项写清，缺一项就补上）
+1. 人物：出现几个人、各自外观、衣着、发型、身份线索、表情变化、具体动作。
+2. 场景：地点、环境、光线、天气、时间、道具、背景里的元素。
+3. 画面文字：字幕、标题、弹幕、界面元素、招牌、包装、屏幕上的数字，一律原样抄录，不得改写、不得翻译（可另附说明）。
+4. 对话与声音：能听清的台词、旁白、音效、背景音乐变化，原样抄录并标时间点；听不清的地方写「此处无法确认」，严禁编造。
+5. 动作与事件：谁做了什么、先后顺序、彼此因果、结果如何。
+6. 转场与镜头：切换方式、剪辑点、视角变化、加速减速、特效、重复画面。
+7. 数字与专名：出现的所有数字、价格、日期、时长、人名、地名、品牌、型号、链接，必须准确抄录，一个不许漏、一个不许猜。
+
+三、绝对禁止
+1. 禁止只给概括、主题思想、观后感，或用「内容很丰富」「值得一看」代替实际内容。
+2. 禁止写出没看到的内容。无法确认必须标注（不确定）。
+3. 禁止因为视频长就压缩：宁可写更多段，也不许合并省略。
+4. 禁止重复同一信息凑字数，也不许注水。
+
+四、输出结构
+1. 开头一句话给结论：主题 + 主线 + 结局。
+2. 然后按时间轴展开全部细节，遵守上面第一、二节。
+3. 最后单列「关键信息清单」：视频里出现的所有数字、专名、结论、待办事项。
+
+五、与用户问题的关系
+用户的问题如果只针对其中某一点，你仍然要先给出完整时间轴与细节记录，然后再回答问题。不得因为用户问得简单就只答那一句。''';
+
+const String _dbVideoPromptEn = '''[Video Understanding Output Contract — mandatory]
+
+A video is attached. You must actually watch the whole video before answering, and follow the rules below. This is a verifiable deliverable, not an impression.
+
+1. Full timeline
+1.1 Start at 00:00 and proceed chronologically; begin each entry with a timestamp formatted as 00:00 or 03:12.
+1.2 Each entry must state what is happening on screen, who appears, what is said, what text is visible, and how the camera changes.
+1.3 Write as long as the video requires. No length limit. Never skip sections with vague words such as "then", "later", "in the middle".
+1.4 For dense content, group by phase, but keep per-entry timestamps and never merge.
+
+2. Exhaustive detail (cover every item)
+2.1 People: count, appearance, clothing, hair, identity cues, facial expression changes, concrete actions.
+2.2 Scene: location, environment, lighting, weather, time of day, props, background elements.
+2.3 On-screen text: subtitles, titles, comments, UI elements, signage, packaging, numbers. Transcribe verbatim; do not paraphrase or translate away the original.
+2.4 Dialogue and sound: transcribe audible lines, narration, sound effects and music changes verbatim with timestamps. Where inaudible, write "cannot be confirmed here". Never invent.
+2.5 Actions and events: who did what, in what order, with what cause and result.
+2.6 Transitions and camera: cuts, edit points, angle changes, speed changes, effects, repeated frames.
+2.7 Numbers and proper nouns: every number, price, date, duration, person name, place, brand, model number and link must be transcribed exactly. Omit none, guess none.
+
+3. Hard prohibitions
+3.1 No summary-only answers, no thematic essays, no "rich content" / "worth watching" filler.
+3.2 Never describe what you did not see. Mark uncertainty as (uncertain).
+3.3 Never compress because the video is long; add more entries instead.
+3.4 Never pad with repeated information.
+
+4. Structure
+4.1 Open with one-sentence conclusion: topic + throughline + outcome.
+4.2 Then the full timeline with all required detail.
+4.3 End with a "Key facts" list: all numbers, proper nouns, conclusions, action items.
+
+5. Relation to the user question
+Even if the user asks about only one point, you must first deliver the full timeline and detail record, then answer the question. Do not answer only that one point.''';
+
+const String _dbVideoPromptJa = '''【動画理解の出力規約 · 必須】
+
+本リクエストには動画が添付されています。動画全体を実際に視聴したうえで回答し、以下の規約に従ってください。これは検証可能な成果物であり、感想文ではありません。
+
+一、タイムラインの全記録
+1. 00:00 から時系列に進み、各項目の先頭に 00:00、03:12 の形式で時刻を付けます。
+2. 各項目には、画面で何が起きているか、誰が現れるか、何が話されるか、画面にどんな文字があるか、カメラがどう動くかを書きます。
+3. 動画の長さに応じて書きます。字数制限はありません。「その後」「続いて」「途中で」などの曖昧な語で区間を飛ばすことは禁止です。
+4. 内容が多い場合は段階ごとにまとめてよいですが、各項目の時刻は保持し、統合してはいけません。
+
+二、細部の網羅（項目ごとに記述）
+1. 人物：人数、外見、服装、髪型、身元の手がかり、表情の変化、具体的な動作。
+2. 場景：場所、環境、光、天気、時間帯、小道具、背景の要素。
+3. 画面内の文字：字幕、タイトル、コメント、UI 要素、看板、パッケージ、数字。原文のまま転記し、言い換えない。
+4. 会話と音：聞き取れる台詞、ナレーション、効果音、音楽の変化を時刻付きで原文のまま転記。聞き取れない箇所は「ここは確認できない」と明記し、創作してはいけません。
+5. 動作と出来事：誰が何をしたか、順序、因果、結果。
+6. トランジションとカメラ：カット、編集点、視点の変化、速度変化、エフェクト、繰り返し。
+7. 数字と固有名詞：数字、価格、日付、時間、人名、地名、ブランド、型番、リンクを正確に転記。省略も推測も禁止。
+
+三、禁止事項
+1. 要約のみ、主題の感想、「内容が豊富」「一見の価値あり」などの埋め草は禁止。
+2. 見ていない内容を書くことは禁止。不確実な点は（不確実）と明記。
+3. 長いからといって圧縮しない。項目を増やすこと。
+4. 同じ情報の繰り返しで字数を稼ぐことは禁止。
+
+四、構成
+1. 冒頭に一文で結論：主題＋筋＋結末。
+2. その後、タイムラインに沿って全細部を展開。
+3. 最後に「重要情報一覧」：登場した数字、固有名詞、結論、TODO。
+
+五、ユーザーの質問との関係
+質問が一点だけを尋ねていても、まず完全なタイムラインと細部を提示し、その後に回答します。''';
+
+
+// ============================================================
+// 2026-11-25 四次修复：帧上限决策 + 等分完整转写
+// ------------------------------------------------------------
+// 全部数值来自本机现场实测，不是推测：
+//   · 30 秒  HEVC 1080p fps=5 → active 4 秒
+//   · 5 分钟 HEVC 1080p fps=5 → active 13 秒
+//   · 12 分钟 HEVC 1080p fps=5 → active 17 秒（3600 帧）
+//   · 20 分钟 HEVC 1080p fps=5 → failed 21 秒（Timeout ...）
+//   · 一次请求 5 段合计 6169 帧 → exceeds the limit (3600)
+//   · -c copy 切片的 AAC 音频被方舟判成 3.6ms →
+//     "duration of the input audio (3.625ms) is shorter than the limit (10ms)"
+//     改成 -c:v copy -c:a aac 后同一片段请求成功，输出 4876 字，
+//     含逐秒时间点、日语台词原文与中文字幕抄录。
+// ============================================================
+
+/// 方舟 chat 单请求的输入帧数上限（实测硬限制：3600）。
+const int dbArkFrameLimitPerRequest = 3600;
+
+/// 秒 → 分:秒 / 时:分:秒
+String _dbClock(num sec) {
+  final s = sec < 0 ? 0 : sec.round();
+  final h = s ~/ 3600;
+  final m = (s % 3600) ~/ 60;
+  final ss = s % 60;
+  String p2(int v) => v < 10 ? '0$v' : '$v';
+  if (h > 0) return '$h:${p2(m)}:${p2(ss)}';
+  return '${p2(m)}:${p2(ss)}';
+}
+
+/// ffprobe 读时长（秒）；失败返回 0，绝不猜。
+Future<double> _dbProbeDurationSec(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=nw=1:nk=1',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final d = double.tryParse('${r.stdout}'.trim());
+      if (d != null && d > 0) return d;
+    }
+  } catch (_) {}
+  return 0;
+}
+
+/// 按帧总数规划段数：≤3600 帧就是 1 段（整片直传，不分段）。
+int dbArkPlanSegCount(double durationSec, double fps) {
+  if (durationSec <= 0) return 1;
+  final f = fps <= 0 ? 1.0 : fps;
+  final frames = durationSec * f;
+  if (frames <= dbArkFrameLimitPerRequest) return 1;
+  var n = (frames / dbArkFrameLimitPerRequest).ceil();
+  if (n < 2) n = 2;
+  if (n > 200) n = 200;
+  return n;
+}
+
+/// 等分切段：视频流 -c copy（不重编码、不改分辨率/帧率、不失真），
+/// 音频重编码为 AAC。
+///
+/// 为什么音频必须重编码：实测 -c copy 切出的片段，AAC 的时长元数据会被
+/// 方舟解析成 3.625ms，直接拒收：
+///   "The request failed because the duration of the input audio (3.625ms)
+///    is shorter than the limit (10ms)"（param: audio_url duration）。
+/// 同一片段把音频用 -c:a aac 重编码后立刻成功。视频流不受影响。
+Future<List<File>> _dbSplitByTime({
+  required File src,
+  required int segCount,
+  required double duration,
+  void Function(int index, int total)? onSeg,
+}) async {
+  final tmpDir = Directory(
+      '${Directory.systemTemp.path}/kewe_vseg_${DateTime.now().microsecondsSinceEpoch}');
+  tmpDir.createSync(recursive: true);
+  final segSec = duration / segCount;
+  final out = <File>[];
+  for (var i = 0; i < segCount; i++) {
+    final start = segSec * i;
+    final len = (i == segCount - 1) ? (duration - start) : segSec;
+    if (len <= 0.5) continue;
+    final path = '${tmpDir.path}/seg_${i.toString().padLeft(3, '0')}.mp4';
+    onSeg?.call(i, segCount);
+    final r = await Process.run('ffmpeg', [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-ss', start.toStringAsFixed(3),
+      '-t', len.toStringAsFixed(3),
+      '-i', src.path,
+      '-map', '0:v:0',
+      '-map', '0:a?',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      '-avoid_negative_ts', 'make_zero',
+      '-movflags', '+faststart',
+      path,
+    ]);
+    if (r.exitCode != 0) {
+      throw DbVideoArkException(
+          '视频等分切段失败（第 ${i + 1}/$segCount 段，'
+          'ffmpeg exit=${r.exitCode}）：${'${r.stderr}'.trim()}');
+    }
+    final f = File(path);
+    if (!f.existsSync() || f.lengthSync() <= 0) {
+      throw DbVideoArkException('视频等分切段失败（第 ${i + 1}/$segCount 段无输出）');
+    }
+    out.add(f);
+  }
+  if (out.isEmpty) {
+    throw DbVideoArkException('视频等分切段后没有得到任何片段');
+  }
+  return out;
+}
+
+/// 用 file_id 做一次非流式视频理解，返回模型文本。
+Future<String> _dbArkChatByFileId({
+  required String apiKey,
+  required String model,
+  required String fileId,
+  required String prompt,
+  int maxTokens = 8000,
+}) async {
+  final body = <String, dynamic>{
+    'model': model,
+    'messages': <Map<String, dynamic>>[
+      <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'video_url',
+            'video_url': <String, dynamic>{'file_id': fileId},
+          },
+          <String, dynamic>{'type': 'text', 'text': prompt},
+        ],
+      },
+    ],
+    'max_tokens': maxTokens,
+    'temperature': 0.2,
+  };
+  final url = '${dbBaseUrl(null)}/chat/completions';
+  final client = globalHTTPClient;
+  final req = await client.postUrl(Uri.parse(url));
+  req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
+  req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+  final bytes = utf8.encode(jsonEncode(body));
+  req.headers.contentLength = bytes.length;
+  req.add(bytes);
+  final resp = await req.close().timeout(const Duration(minutes: 30));
+  final out = <int>[];
+  await for (final c in resp) {
+    out.addAll(c);
+  }
+  if (resp.statusCode != 200) {
+    throw DbVideoArkException(
+        '视频分段理解失败（HTTP ${resp.statusCode}）：${_dbErrText(out)}');
+  }
+  final j = asMap(jsonDecode(utf8.decode(out, allowMalformed: true)));
+  final choices = asList(j['choices']);
+  if (choices.isEmpty) {
+    throw DbVideoArkException('视频分段理解返回空响应');
+  }
+  final msg = asMap(asMap(choices[0])['message']);
+  var text = mStr(msg, 'content').trim();
+  if (text.isEmpty) text = mStr(msg, 'reasoning_content').trim();
+  if (text.isEmpty) {
+    throw DbVideoArkException('视频分段理解返回空内容');
+  }
+  return text;
+}
+
+/// 段级提示词：要求按全片时间轴穷举细节，禁止概括、禁止跨段猜测。
+String _dbSegFullPrompt({
+  required String videoName,
+  required int index,
+  required int total,
+  required double startSec,
+  required double endSec,
+}) {
+  final a = _dbClock(startSec);
+  final b = _dbClock(endSec);
+  return '这是一条完整视频《$videoName》的第 ${index + 1}/$total 段，'
+      '覆盖全片时间轴 $a - $b（视频被等分只为绕过单次输入帧数上限，'
+      '内容本身连续，不要当成独立短片）。\n'
+      '请真正看完这一段，然后按下面的要求输出，这是一份可逐条核对的记录：\n'
+      '1. 从 $a 开始按时间推进，每个事件以时间点开头（格式 分:秒，'
+      '沿用全片时间轴，不要从 0 重新计时）；\n'
+      '2. 逐项写清：场景与环境、人物外观与动作、表情变化、'
+      '对话与旁白（能听清的写原文）、画面文字与字幕（原样抄录）、'
+      '镜头与转场；\n'
+      '3. 数字、专名、日期、价格、人名、地名必须准确抄录，不许猜；\n'
+      '4. 不设字数上限，视频有多长就写多长，禁止用「随后」「接下来」'
+      '跳过任何片段；\n'
+      '5. 只写你真实看到的内容，看不清听不清就标注（不确定），严禁编造，'
+      '严禁猜测其他段落的内容。';
+}
+
+/// 分段完整理解：逐段上传（fps 严格等于配置值，不降帧、不重试）、
+/// 逐段做完整转写，最后按全片时间轴拼接成一份连续记录。
+Future<String> dbDescribeVideoInSegments({
+  required File file,
+  required String fileName,
+  required DbVideoArkConfig cfg,
+  required String apiKey,
+  required int segCount,
+  required double duration,
+  void Function(Map<String, dynamic> info)? onProgress,
+}) async {
+  final fps = cfg.fps <= 0 ? 1.0 : cfg.fps;
+  final model = cfg.preprocessModel.trim().isNotEmpty
+      ? cfg.preprocessModel.trim()
+      : 'doubao-seed-2-1-lite-260915';
+  Directory? tmpDir;
+  try {
+    onProgress?.call({'stage': 'seg_split', 'segments': segCount});
+    final segs = await _dbSplitByTime(
+      src: file,
+      segCount: segCount,
+      duration: duration,
+      onSeg: (i, total) {
+        onProgress?.call({
+          'stage': 'seg_split',
+          'segment': i + 1,
+          'segments': total,
+          'percent': ((i + 1) * 100) ~/ total,
+        });
+      },
+    );
+    tmpDir = segs.first.parent;
+
+    // 用实测时长重建时间轴（-ss 按关键帧对齐，理论等分会有微小偏差）
+    final durs = <double>[];
+    var total = 0.0;
+    for (final s in segs) {
+      final d = await _dbProbeDurationSec(s);
+      durs.add(d > 0 ? d : 0);
+      total += d > 0 ? d : 0;
+    }
+    if (total <= 0) total = duration;
+
+    final blocks = <String>[];
+    var cursor = 0.0;
+    for (var i = 0; i < segs.length; i++) {
+      final start = cursor;
+      final end = cursor + durs[i];
+      onProgress?.call({
+        'stage': 'segment_start',
+        'segment': i + 1,
+        'segments': segs.length,
+        'start': start.round(),
+        'end': end.round(),
+      });
+      final segSize = segs[i].lengthSync();
+      final fileId = await _dbArkUploadToTosBucket(
+        file: segs[i],
+        fileName: _dbSegFileName(fileName, i, segs.length),
+        bucket: cfg.tosBucket,
+        prefix: cfg.tosPrefix,
+        model: cfg.preprocessModel,
+        apiKey: apiKey,
+        fps: fps,
+        maxVideoTokens: cfg.maxVideoTokens,
+        minFrames: cfg.minFrames,
+      );
+      await dbArkWaitFileActive(
+        apiKey: apiKey,
+        fileId: fileId,
+        timeout: dbArkPreprocessTimeoutFor(segSize),
+        onTick: (status, waitedSec) {
+          onProgress?.call({
+            'stage': 'preprocess',
+            'segment': i + 1,
+            'segments': segs.length,
+            'status': status,
+            'waited': waitedSec,
+          });
+        },
+      );
+      final text = await _dbArkChatByFileId(
+        apiKey: apiKey,
+        model: model,
+        fileId: fileId,
+        prompt: _dbSegFullPrompt(
+          videoName: fileName,
+          index: i,
+          total: segs.length,
+          startSec: start,
+          endSec: end,
+        ),
+      );
+      logp('🎬 第 ${i + 1}/${segs.length} 段完整理解完成'
+          '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
+      if (segs.length > 1) {
+        blocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$text');
+      } else {
+        blocks.add(text);
+      }
+      onProgress?.call({
+        'stage': 'segment_done',
+        'segment': i + 1,
+        'segments': segs.length,
+        'percent': ((i + 1) * 100) ~/ segs.length,
+      });
+      cursor = end;
+    }
+
+    if (blocks.length == 1) return blocks.first;
+    return '''【《$fileName》完整理解 · 全片 ${_dbClock(total)} · ${_dbFpsStr(fps)} fps · 等分 ${blocks.length} 段】
+（下面按全片时间轴顺序连续记录；分段只为绕过方舟「单次请求 3600 帧」的上限，内容本身是一整条视频，段与段自然衔接。）
+
+${blocks.join('\n\n')}''';
+  } finally {
+    if (tmpDir != null) {
+      try {
+        if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
+      } catch (e) {
+        logp('⚠️ 分段临时文件删除失败: $e');
+      }
+    }
+  }
+}
+
+/// 段文件名：ASCII、带段号，避免 TOS 上同名覆盖。
+String _dbSegFileName(String videoName, int index, int total) {
+  var base = videoName.trim();
+  final dot = base.lastIndexOf('.');
+  var stem = dot > 0 ? base.substring(0, dot) : base;
+  final ext = dot > 0 ? base.substring(dot).toLowerCase() : '.mp4';
+  if (stem.length > 50) stem = stem.substring(0, 50);
+  stem = stem.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+  if (stem.isEmpty) stem = 'video';
+  final no = (index + 1).toString().padLeft(2, '0');
+  final all = total.toString().padLeft(2, '0');
+  return '${stem}_s${no}of$all$ext';
 }

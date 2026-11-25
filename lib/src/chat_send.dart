@@ -181,8 +181,18 @@ Future<void> handleDsChatSendStream(
           sse.send('media_progress', info);
         },
       );
-      final promptOut =
+      var promptOut =
           vid.text.isEmpty ? userPrompt : '$userPrompt\n\n${vid.text}';
+      // ★ 视频理解规范：用户要求「模型必须把视频细节全部说出来、发生了什么
+      //   全部说清」。仅把用户原话当 prompt 时，模型只会给一段概括，
+      //   于是出现「细节跟原片差很多」。这里在真正送出视频时注入穷举式
+      //   输出规范（时间轴逐段、画面文字原样抄录、数字专名准确、不设上限）。
+      if ((vid.parts.isNotEmpty || vid.text.isNotEmpty) &&
+          dbVideoArkConfig().promptEnabled) {
+        promptOut =
+            '$promptOut\n\n${dbVideoUnderstandPrompt(lang)}';
+        logp('🎯 已注入视频理解输出规范（时间轴穷举 + 画面文字原样抄录）');
+      }
       apiMessages.add({
         'role': 'user',
         'content': <Map<String, dynamic>>[
@@ -1402,6 +1412,14 @@ Future<void> handleDsChatSend(HttpRequest req) async {
           // 大视频：分段理解结果以文本形式并入用户提示词
           userPrompt = '$userPrompt\n\n${vid.text}';
           logp('🧾 把视频分段理解结果合并到提示词（${runeLen(vid.text)} 字）');
+        }
+        // ★ 与流式一致：视频真的送出时注入穷举式输出规范，
+        //   否则模型只回答用户那一句话，细节必然缺失。
+        if ((vid.parts.isNotEmpty || vid.text.isNotEmpty) &&
+            dbVideoArkConfig().promptEnabled) {
+          userPrompt =
+              '$userPrompt\n\n${dbVideoUnderstandPrompt(mediaLang)}';
+          logp('🎯 已注入视频理解输出规范（时间轴穷举 + 画面文字原样抄录）');
         }
       } on DbVideoArkException catch (e) {
         logp('❌ 视频准备失败: ${e.message}');
