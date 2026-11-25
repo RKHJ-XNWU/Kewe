@@ -62,13 +62,16 @@ const int dbArkTosMaxBytes = 2 * 1024 * 1024 * 1024;
 /// 方舟文件默认保留 7 天，本地缓存按 6 天失效
 const int _dbArkFileTtlMs = 6 * 24 * 3600 * 1000;
 
-/// 方舟视频抽帧预处理的实测安全体积：原文件超过它时，方舟会直接返回
-/// InvalidParameter("Timeout occurred while processing video")。
-/// 2026-11 用户实测：>100MB 的视频在抽帧阶段必失败。
-const int dbArkPreprocessSafeBytes = 100 * 1024 * 1024;
+/// 方舟视频抽帧预处理的实测上限：原文件超过 720p 或 480MB 时，会在
+/// 5 分钟预处理窗口内直接返回 InvalidParameter("Timeout occurred while processing video")。
+/// 旧版本正是靠「>720p 先转 720p、>480MB 压到 480MB」才传得动 512MB+ 大视频。
+const int dbArkPreprocessSafeBytes = 480 * 1024 * 1024;
 
-/// 自动适配后的目标体积（100MB 上限留 5MB 余量）
-const int dbArkPreprocessTargetBytes = 95 * 1024 * 1024;
+/// 自动适配后的目标体积（480MB 上限留 20MB 余量）
+const int dbArkPreprocessTargetBytes = 460 * 1024 * 1024;
+
+/// 仍被方舟拒绝时再压一档的硬目标（防体积上限更严的账号）
+const int dbArkHardTargetBytes = 95 * 1024 * 1024;
 
 // ------------------------------------------------------------
 // 异常
@@ -1105,30 +1108,62 @@ Future<void> dbArkWaitFileActive({
       throw DbVideoArkException(
           '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}\n'
           '请确认：TOS Bucket 已授权给方舟项目；视频不是损坏文件；'
-          '本机已安装 ffmpeg（pkg install ffmpeg）。'
-          'autoCompact=true 时 >100MB 的视频会自动适配到 '
-          '≤${dbFmtSize(dbArkPreprocessTargetBytes)} 后重试。');
+          '本机已安装 ffmpeg（pkg install ffmpeg）。autoCompact=true 时 '
+          '>720p 或 >${dbFmtSize(dbArkPreprocessSafeBytes)} 的视频会自动转 720p/'
+          '≤${dbFmtSize(dbArkPreprocessTargetBytes)}；仍被拒绝会再压到 '
+          '≤${dbFmtSize(dbArkHardTargetBytes)} 重试。');
     }
     await Future<void>.delayed(Duration(milliseconds: intervalMs));
     if (intervalMs < 5000) intervalMs += 500;
   }
 }
 
-/// 按「帧预算 + 体积」折算实际抽帧密度。
-/// 方舟预处理按总帧数消耗算力：fps=5 的长视频（几千帧）必然在抽帧阶段超时。
-double _dbEffectiveVideoFps(double baseFps, double durSec, int sizeBytes) {
+/// 读取视频分辨率；失败返回 0x0（调用方按体积兜底决定是否转码）
+Future<({int width, int height})> _dbProbeVideoSize(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'json',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final j = asMap(jsonDecode('${r.stdout}'));
+      final streams = asList(j['streams']);
+      if (streams.isNotEmpty) {
+        final st = asMap(streams.first);
+        final w = intArgDefault(st, 'width', 0);
+        final h = intArgDefault(st, 'height', 0);
+        if (w > 0 && h > 0) return (width: w, height: h);
+      }
+    }
+  } catch (_) {}
+  return (width: 0, height: 0);
+}
+
+/// 与旧版一致：>720p、或 >480MB、或分辨率未知但 >256MB，先转 720p 再交给方舟。
+bool _dbNeedArkNormalize(int width, int height, int size) {
+  if (width > 1280 || height > 720) return true;
+  if (width <= 0 || height <= 0) return size > (256 * 1024 * 1024);
+  return size > dbArkPreprocessSafeBytes;
+}
+
+/// 按视频时长降低抽帧密度（与旧版阈值保持一致，5fps 短/中视频不降）。
+double _dbEffectiveVideoFps(double baseFps, double durSec) {
   var fps = baseFps;
-  // 总帧预算 1500 帧：10 分钟内保持原 fps，1 小时降到 ~0.4，2 小时 0.2 兜底。
-  const maxFrames = 1500.0;
-  if (durSec > 0) {
-    final budgetFps = maxFrames / durSec;
-    if (fps > budgetFps) fps = budgetFps;
-  }
-  // 体积越大，单帧解码成本越高：>100MB 限 1fps，>512MB 限 0.5fps。
-  if (sizeBytes > 512 * 1024 * 1024 && fps > 0.5) {
+  if (durSec > 7200 && fps > 0.2) {
+    fps = 0.2;
+  } else if (durSec > 3600 && fps > 0.3) {
+    fps = 0.3;
+  } else if (durSec > 1800 && fps > 0.5) {
     fps = 0.5;
-  } else if (sizeBytes > dbArkPreprocessSafeBytes && fps > 1.0) {
-    fps = 1.0;
+  } else if (durSec > 600 && fps > 0.7) {
+    fps = 0.7;
   }
   if (fps < 0.2) fps = 0.2;
   if (fps > 5) fps = 5;
@@ -1145,8 +1180,8 @@ bool _dbIsArkPreprocessReject(Object e) {
       s.contains('invalidargument');
 }
 
-/// 把超过方舟安全体积的原文件自动适配成 H.264/AAC 的 MP4（≤ [targetBytes]）。
-/// 只在原文件被方舟拒绝（或预判必失败）时执行；≤100MB 仍然原文件直传。
+/// 把方舟无法直接预处理的原文件（>720p / >480MB）自动适配成 H.264/AAC 的
+/// MP4（≤ [targetBytes]）。只在需要时执行；≤720p 且 ≤480MB 仍原文件直传。
 /// 用 -progress 解析真实进度，避免像旧版一样看起来「卡在转换阶段」。
 Future<File> dbCompactVideoForArk(
   File src, {
@@ -1155,8 +1190,8 @@ Future<File> dbCompactVideoForArk(
 }) async {
   if (!await _dbHasBin('ffmpeg')) {
     throw DbVideoArkException(
-        '视频 ${dbFmtSize(src.lengthSync())} 超过方舟预处理安全体积（'
-        '${dbFmtSize(dbArkPreprocessSafeBytes)}），需要在本地自动适配，'
+        '视频 ${dbFmtSize(src.lengthSync())} 超过方舟预处理上限'
+        '（720p / ${dbFmtSize(dbArkPreprocessSafeBytes)}），需要在本地自动适配，'
         '但本机没有 ffmpeg。请执行 pkg install ffmpeg 后重试。',
         code: 'need_ffmpeg');
   }
@@ -1181,10 +1216,10 @@ Future<File> dbCompactVideoForArk(
     if (totalKbps < 140) audioKbps = 32.0;
     var videoKbps = totalKbps - audioKbps;
     if (videoKbps < 60) videoKbps = 60;
-    if (videoKbps > 2500) videoKbps = 2500;
-    final height = videoKbps >= 900
+    if (videoKbps > 6000) videoKbps = 6000;
+    final height = videoKbps >= 300
         ? 720
-        : (videoKbps >= 400 ? 540 : (videoKbps >= 200 ? 480 : 360));
+        : (videoKbps >= 180 ? 540 : (videoKbps >= 100 ? 480 : 360));
     final preset = srcSize > 300 * 1024 * 1024 ? 'ultrafast' : 'veryfast';
     if (out.existsSync()) out.deleteSync();
 
@@ -1292,25 +1327,24 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
   File? compacted;
   int uploadSize = size;
 
-  var durSec = await _dbProbeDuration(f);
+  final durSec = await _dbProbeDuration(f);
+  // 抽帧密度只按时长降档（与旧版阈值一致）：5fps 的短/中视频不降。
+  var arkFps = _dbEffectiveVideoFps(cfg.fps, durSec);
 
-  // 缓存按「原文件 + 压缩后的目标体积」折算 fps：命中时直接复用，
-  // 不必为同一个 >100MB 视频反复重编码。
-  final cacheFps = _dbEffectiveVideoFps(
-      cfg.fps,
-      durSec,
-      size > dbArkPreprocessSafeBytes ? dbArkPreprocessTargetBytes : size);
+  // 缓存按原文件+mtime+实际 fps：命中直接复用，不重复转码。
   final key = _dbArkCacheKey(f, size);
-  final cached = _dbArkCacheLookup(key, cacheFps);
+  final cached = _dbArkCacheLookup(key, arkFps);
   if (cached != null) {
     onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
-    return dbArkVideoPartByFileId(cached, fps: cacheFps);
+    return dbArkVideoPartByFileId(cached, fps: arkFps);
   }
 
-  // 体积超过方舟安全线时，直传必然在抽帧阶段失败：先自动适配成 ≤95MB。
-  // ≤100MB 仍然原文件直传，不做任何转换；本机没有 ffmpeg 时退回直传。
   final hasFFmpeg = await _dbHasBin('ffmpeg');
-  if (cfg.autoCompact && hasFFmpeg && size > dbArkPreprocessSafeBytes) {
+  final dims = await _dbProbeVideoSize(f);
+  // ★ 旧版能传 512MB+ 大视频的关键：>720p 或 >480MB 的原文件先转 720p，
+  //   否则方舟 5 分钟预处理窗口内必然报 Timeout。≤720p 且 ≤480MB 原样直传。
+  final needNormalize = _dbNeedArkNormalize(dims.width, dims.height, size);
+  if (cfg.autoCompact && hasFFmpeg && needNormalize) {
     onProgress?.call({'stage': 'compact_start', 'size': size});
     final c = await dbCompactVideoForArk(
       f,
@@ -1324,13 +1358,10 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     compacted = c;
     uploadFile = c;
     uploadSize = c.lengthSync();
-    final d = await _dbProbeDuration(c);
-    if (d > 0) durSec = d;
     onProgress?.call({'stage': 'compact_done', 'size': uploadSize});
+    logp('🎬 方舟预处理前已规整: ${dims.width}x${dims.height} / '
+        '${dbFmtSize(size)} → ${dbFmtSize(uploadSize)}');
   }
-
-  // 抽帧密度：fps=5 + 长视频会在方舟抽帧阶段直接超时，必须按帧预算降下来。
-  var arkFps = _dbEffectiveVideoFps(cfg.fps, durSec, uploadSize);
 
   if (cfg.tosBucket.trim().isEmpty) {
     throw DbVideoArkException(
@@ -1338,8 +1369,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         code: 'tos_not_configured');
   }
 
-  // 最多两次：原文件直传 1 次；若方舟拒绝预处理且开启 autoCompact，
-  // 自动适配后再传 1 次。全部失败才报错，错误信息里带上真实原因。
+  // 最多两次：先按 720p/460MB 规整上传；方舟仍拒绝时按 95MB 硬压再传一次。
   var attempt = 0;
   try {
     while (true) {
@@ -1394,17 +1424,20 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
           },
         );
       } catch (e) {
+        // 只有「原文件直传」或「规整后仍 >95MB」才值得再硬压一档；
+        // 已经是小文件（≤95MB）还被拒绝，说明不是体积问题，重编无意义。
         final canRetry = attempt == 1 &&
-            compacted == null &&
             cfg.autoCompact &&
             hasFFmpeg &&
+            (compacted == null || uploadSize > dbArkHardTargetBytes) &&
             _dbIsArkPreprocessReject(e);
         if (!canRetry) rethrow;
-        logp('⚠️ 方舟拒绝原文件预处理，自动适配后重试: $e');
+        // 二次兜底：按 95MB 硬上限再压一档（个别账号预处理体积上限更严）。
+        logp('⚠️ 方舟仍拒绝预处理，按 ${dbFmtSize(dbArkHardTargetBytes)} 硬压重试: $e');
         onProgress?.call({'stage': 'compact_start', 'size': size});
         final c = await dbCompactVideoForArk(
           f,
-          targetBytes: dbArkPreprocessTargetBytes,
+          targetBytes: dbArkHardTargetBytes,
           onProgress: (pct) => onProgress?.call({
             'stage': 'compact',
             'percent': pct,
@@ -1414,9 +1447,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         compacted = c;
         uploadFile = c;
         uploadSize = c.lengthSync();
-        final d = await _dbProbeDuration(c);
-        if (d > 0) durSec = d;
-        arkFps = _dbEffectiveVideoFps(cfg.fps, durSec, uploadSize);
+        arkFps = _dbEffectiveVideoFps(cfg.fps, durSec);
         onProgress?.call({'stage': 'compact_done', 'size': uploadSize});
         continue;
       }
