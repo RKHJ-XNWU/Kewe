@@ -410,8 +410,9 @@ Future<void> _serveMain(List<String> args) async {
   // HTTP 层不压缩不影响前端功能，只牺牲一点传输体积。
   server.autoCompress = false;
   // ★ 视频分片上传可能在手机弱网下单块耗时数分钟；120 秒会直接掐断。
-  //   SSE 有 15 秒心跳，长连接不会被这段超时影响；这里只放宽上传容忍度。
-  server.idleTimeout = const Duration(seconds: 300);
+  //   按用户要求放宽到 14400 秒（4 小时），SSE 仍有 15 秒心跳，
+  //   长连接不受影响，这里只放宽上传/大文件处理的容忍度。
+  server.idleTimeout = const Duration(seconds: 14400);
 
   logp('✅ サーバーが起動しました。http://localhost:$PORT/ でアクセスできます');
 

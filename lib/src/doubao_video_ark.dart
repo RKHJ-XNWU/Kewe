@@ -33,14 +33,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'ds_crypto.dart';
 import 'doubao.dart';
 import 'files.dart';
 import 'globals.dart';
 import 'net.dart';
-import 'sha256.dart';
 import 'ds_usage.dart';
 
 /// 对外承诺的最大视频体积：2GB
@@ -63,9 +61,6 @@ const int dbArkTosMaxBytes = 2 * 1024 * 1024 * 1024;
 
 /// 超过托管上限时自动压缩的目标体积（仅 Files API 路径使用）
 const int dbArkCompactTargetBytes = 480 * 1024 * 1024;
-
-/// Files API 上传分块（读盘 + flush 粒度）
-const int _dbArkUploadBlock = 4 * 1024 * 1024;
 
 /// 方舟文件默认保留 7 天，本地缓存按 6 天失效
 const int _dbArkFileTtlMs = 6 * 24 * 3600 * 1000;
@@ -114,22 +109,23 @@ class DbVideoArkConfig {
   /// 默认留空（实测未绑定 project 的 Key 传了会 400）
   String preprocessModel;
 
-  /// 视频抽帧上限(透传 preprocess_configs[video][max_tokens];0=不传)
+  /// 视频抽帧上限(透传 preprocess_configs[video][max_video_tokens];0=不传)
   int maxVideoTokens;
 
   /// 最少抽帧数(透传 preprocess_configs[video][min_frames];0=不传)
   int minFrames;
 
-  /// TOS 通道：对象存储 AccessKey（填了才启用「网站自动上传 TOS」，替代手动 tosutil）
+  /// 旧版 TOS 自动上传字段，保留兼容；当前 TOS 通道走 Files API
+  /// 的二进制上传 + tos[bucket]/tos[prefix]，不需要 TOS AK/SK。
   String tosAccessKey;
 
-  /// TOS 通道：对象存储 SecretKey
+  /// 旧版 TOS SecretKey，保留兼容
   String tosSecretKey;
 
-  /// TOS Endpoint（不含 scheme，如 tos-cn-beijing.volces.com）
+  /// 旧版 TOS Endpoint（保留兼容；当前不使用）
   String tosEndpoint;
 
-  /// TOS Region（如 cn-beijing）
+  /// 旧版 TOS Region（保留兼容；当前不使用）
   String tosRegion;
 
   DbVideoArkConfig({
@@ -318,6 +314,50 @@ Future<double> _dbProbeDuration(File f) async {
   return 0;
 }
 
+/// 读取视频分辨率；失败返回 0x0（调用方按体积兜底决定是否转码）
+Future<({int width, int height})> _dbProbeVideoSize(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=width,height',
+      '-of', 'json',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final j = asMap(jsonDecode('${r.stdout}'));
+      final streams = asList(j['streams']);
+      if (streams.isNotEmpty) {
+        final st = asMap(streams.first);
+        final w = intArgDefault(st, 'width', 0);
+        final h = intArgDefault(st, 'height', 0);
+        if (w > 0 && h > 0) return (width: w, height: h);
+      }
+    }
+  } catch (_) {}
+  return (width: 0, height: 0);
+}
+
+/// 方舟视频预处理有 5 分钟硬超时，官方明确建议 1080p 先压到 720p 及以下。
+/// 这里只做「上传 TOS 前的 720p 规整」，不是本地理解；真正预处理仍由方舟 TOS 完成。
+bool _dbNeedTosNormalize(int width, int height, int size) {
+  if (width > 1280 || height > 720) return true;
+  // 分辨率未知时，大文件也先压缩，避免 2GB 原片直接触发预处理超时。
+  if (width <= 0 || height <= 0) return size > (256 * 1024 * 1024);
+  return size > dbArkCompactTargetBytes;
+}
+
+/// 大视频按 720p / 480MB 目标重编码；输出临时文件，上传 TOS 后即删除。
+Future<File> _dbNormalizeForTos(File src, Directory tmpDir) async {
+  final out = File('${tmpDir.path}/ark_tos_720p.mp4');
+  await _dbCompressTo(src, dbArkCompactTargetBytes, out);
+  if (!out.existsSync() || out.lengthSync() <= 0) {
+    throw DbVideoArkException('TOS 预处理前的 720p 转码失败：输出为空',
+        code: 'tos_normalize_failed');
+  }
+  return out;
+}
+
 String _dbVideoMime(String name) {
   final e = name.toLowerCase();
   if (e.endsWith('.avi')) return 'video/x-msvideo';
@@ -469,6 +509,9 @@ Future<void> _dbCompressTo(File src, int targetBytes, File out) async {
     final audioKbps = 64.0;
     var videoKbps = (targetBytes * 8 / dur / 1000 * factor) - audioKbps;
     if (videoKbps < 120) videoKbps = 120;
+    // 短视频按目标体积反推会得到离谱码率（例如 1 秒视频 480MB →
+    // 5Gbps，libx264 的 maxrate 直接溢出）。720p 封顶 6000kbps。
+    if (videoKbps > 6000) videoKbps = 6000;
     final r = await Process.run('ffmpeg', [
       '-y',
       '-loglevel',
@@ -706,39 +749,30 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       'fileName': meta.name,
     };
 
-    // ---------- Files API / TOS 只是一个加速通道，绝不能成为单点死路 ----------
-    //   实测方舟会在预处理阶段返回：
-    //   InvalidArgumentError('Timeout occurred while processing video...')
-    //   用户看到「视频预处理失败」，整条消息也发不出去。
-    //   因此这里失败后必须回退到本项目的本地切片 + 分段理解，
-    //   视频照样能被完整看完，而不是把上传/理解直接判死刑。
-    if (cfg.useFilesApi && cfg.tosBucket.trim().isNotEmpty) {
-      try {
-        onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-        final part = await dbArkVideoPartForLocalFile(
-          absPath: absPath,
-          fileName: meta.name,
-          model: model,
-          apiKey: apiKey,
-          onProgress: (info) => onProgress?.call({...tag, ...info}),
-        );
-        parts.add(part);
-        logp('🎬 经由 TOS 发送: ${meta.name}');
-        index++;
-        if (decryptedTempDir != null) {
-          try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
-        }
-        continue;
-      } catch (e) {
-        logp('⚠️ Files API/TOS 通道失败，回退本地分段理解: $e');
-        onProgress?.call({
-          ...tag,
-          'stage': 'fallback',
-          'reason': '$e',
-          'size': size,
-        });
-        // 不 continue：继续走下面的 _dbDescribeLargeVideo。
+    // ---------- Files API / TOS：启用后只走方舟 TOS 预处理 ----------
+    //   用户明确要求使用 TOS 预处理，不再回退本地切片。
+    //   若 TOS 未配置或方舟预处理失败，直接返回明确错误，绝不偷偷改用本地。
+    if (cfg.useFilesApi || cfg.tosBucket.trim().isNotEmpty) {
+      if (cfg.tosBucket.trim().isEmpty) {
+        throw DbVideoArkException(
+            '已启用 Files API，但未配置 tosBucket；TOS 预处理需要先配置 TOS Bucket。',
+            code: 'tos_not_configured');
       }
+      onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
+      final part = await dbArkVideoPartForLocalFile(
+        absPath: absPath,
+        fileName: meta.name,
+        model: model,
+        apiKey: apiKey,
+        onProgress: (info) => onProgress?.call({...tag, ...info}),
+      );
+      parts.add(part);
+      logp('🎬 经由 TOS 发送: ${meta.name}');
+      index++;
+      if (decryptedTempDir != null) {
+        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+      }
+      continue;
     }
     logp('🎬 分割理解大容量视频: ${meta.name} (${dbFmtSize(size)})');
     final desc = await _dbDescribeLargeVideo(
@@ -859,19 +893,8 @@ Future<String> _dbDescribeLargeVideo({
 }
 
 // ============================================================
-// 以下为 Files API（file_id）通道：默认关闭，仅当配置 useFilesApi=true 时使用
+// 以下为 Files API（file_id / TOS）通道：配置了 TOS Bucket 后强制使用，不回退本地
 // ============================================================
-String? _dbArkAsciiName(String name, {String fallback = 'video.mp4'}) {
-  final base = name.isEmpty ? fallback : name;
-  final dot = base.lastIndexOf('.');
-  var stem = dot > 0 ? base.substring(0, dot) : base;
-  var ext = dot > 0 ? base.substring(dot + 1).toLowerCase() : '';
-  if (!RegExp(r'^[a-z0-9]{1,5}$').hasMatch(ext)) ext = 'mp4';
-  final safeStem = stem.replaceAll(RegExp(r'[^A-Za-z0-9_\-\.]'), '_');
-  final stemOut = safeStem.isEmpty ? 'video' : safeStem;
-  return '$stemOut.$ext';
-}
-
 Map<String, dynamic> dbArkVideoPartByFileId(String fileId, {double? fps}) {
   // ★ 方舟 Chat API 引用 Files API 视频 file_id 的正确类型是 video_url：
   //   {"type":"video_url","video_url":{"file_id":"..."}}
@@ -945,20 +968,31 @@ void _dbArkCacheStore(String key, String arkFileId, String model, double fps) {
   _dbArkCacheSave(all);
 }
 
-Future<String> _dbArkUploadLocalFile({
+/// 直接以二进制方式上传到方舟 Files API，同时传 tos[bucket]/tos[prefix]：
+/// 文件落在用户 TOS 桶，预处理也在方舟侧完成。
+/// 这是用户要求的「TOS 预处理」路径，不需要 TOS AK/SK，也不走本地理解。
+Future<String> _dbArkUploadToTosBucket({
   required File file,
   required String fileName,
+  required String bucket,
+  required String prefix,
   required String model,
   required String apiKey,
   required double fps,
+  int maxVideoTokens = 0,
+  int minFrames = 0,
   void Function(int sent, int total)? onProgress,
 }) async {
   final total = await file.length();
   if (total <= 0) {
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
+  var destPrefix = prefix.trim();
+  if (destPrefix.isEmpty) destPrefix = 'arkfiles/';
+  if (!destPrefix.endsWith('/')) destPrefix = '$destPrefix/';
+
   final boundary =
-      '----keweArk${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
+      '----keweTosUpload${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
   final head = StringBuffer();
   void field(String n, String v) {
     head.write('--$boundary\r\n');
@@ -967,16 +1001,28 @@ Future<String> _dbArkUploadLocalFile({
   }
 
   field('purpose', 'user_data');
-  // model 只有显式配置时才传：未绑定 project 的 Key 传了会被方舟以
-  // 400 "Project is invalid" 拒绝（已实测）。
+  field('tos[bucket]', bucket);
+  // 官方文档：TOS 目标路径；预处理产物会落在 <prefix>/ark_processed/<file_id>/
+  field('tos[prefix]', destPrefix);
   if (model.trim().isNotEmpty) {
     field('preprocess_configs[video][model]', model.trim());
   }
   field('preprocess_configs[video][fps]', _dbFpsStr(fps));
+  if (maxVideoTokens > 0) {
+    field('preprocess_configs[video][max_video_tokens]', '$maxVideoTokens');
+  }
+  if (minFrames > 0) {
+    field('preprocess_configs[video][min_frames]', '$minFrames');
+  }
+
+  final safeName = fileName
+      .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+      .replaceAll(RegExp(r'^_+'), '');
+  final uploadName = safeName.isEmpty ? 'video.mp4' : safeName;
   head.write('--$boundary\r\n');
   head.write('Content-Disposition: form-data; name="file"; '
-      'filename="${_dbArkAsciiName(fileName)}"\r\n');
-  head.write('Content-Type: video/mp4\r\n\r\n');
+      'filename="$uploadName"\r\n');
+  head.write('Content-Type: ${_dbVideoMime(fileName)}\r\n\r\n');
 
   final headBytes = utf8.encode(head.toString());
   final tailBytes = utf8.encode('\r\n--$boundary--\r\n');
@@ -986,50 +1032,48 @@ Future<String> _dbArkUploadLocalFile({
   try {
     req = await client.openUrl('POST', Uri.parse('${dbBaseUrl(null)}/files'));
   } catch (e) {
-    throw DbVideoArkException('连接方舟失败（无法建立上传请求）：$e');
+    throw DbVideoArkException('连接方舟 Files API 失败：$e');
   }
   req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
   req.headers.set(HttpHeaders.contentTypeHeader,
       'multipart/form-data; boundary=$boundary');
   req.headers.contentLength = headBytes.length + total + tailBytes.length;
 
-  logp('☁️ 开始上传到方舟 Files API: $fileName '
-      '(${dbFmtSize(total)}, fps=${_dbFpsStr(fps)})');
+  logp('☁️ 开始上传到方舟 TOS: $uploadName '
+      '(${dbFmtSize(total)}, fps=${_dbFpsStr(fps)}, prefix=$destPrefix)');
 
   final raf = await file.open();
   var sent = 0;
   try {
     req.add(headBytes);
+    const block = 4 * 1024 * 1024;
     while (sent < total) {
-      final chunk = await raf.read(_dbArkUploadBlock);
+      final chunk = await raf.read(block);
       if (chunk.isEmpty) break;
       req.add(chunk);
-      // 单块 4MB 超过 2 分钟没有任何进展，说明上行已经卡死。
-      // 超时会 abort 请求并由上层回退到本地分段，不能让 UI 无限转圈。
-      await req.flush().timeout(const Duration(seconds: 120));
+      // 分块 flush 不设短超时：手机弱网 + 2GB 大视频本来就慢，
+      // 由 server.idleTimeout=14400 秒兜底；绝不偷偷回退本地。
+      await req.flush();
       sent += chunk.length;
       onProgress?.call(sent, total);
     }
   } catch (e) {
-    try {
-      await raf.close();
-    } catch (_) {}
-    try {
-      req.abort();
-    } catch (_) {}
-    throw DbVideoArkException('上传中断：$e');
+    try { await raf.close(); } catch (_) {}
+    try { req.abort(); } catch (_) {}
+    throw DbVideoArkException('TOS/方舟上传中断：$e', code: 'upload_failed');
   }
-  try {
-    await raf.close();
-  } catch (_) {}
+  try { await raf.close(); } catch (_) {}
 
   req.add(tailBytes);
-  final timeoutSec = 300 + (total ~/ (1024 * 1024));
+  // 与 server.idleTimeout 一致：4 小时总超时，避免大文件被客户端提前掐断。
+  const timeoutSec = 14400;
   HttpClientResponse resp;
   try {
     resp = await req.close().timeout(Duration(seconds: timeoutSec));
   } catch (e) {
-    throw DbVideoArkException('上传超时或网络中断（${dbFmtSize(total)}）：$e');
+    throw DbVideoArkException(
+        'TOS/方舟上传超时或网络中断（${dbFmtSize(total)}）：$e',
+        code: 'upload_failed');
   }
   final body = <int>[];
   await for (final c in resp) {
@@ -1037,7 +1081,7 @@ Future<String> _dbArkUploadLocalFile({
   }
   if (resp.statusCode != 200) {
     throw DbVideoArkException(
-        '方舟文件上传失败（HTTP ${resp.statusCode}）：${_dbErrText(body)}',
+        '方舟 TOS 上传失败（HTTP ${resp.statusCode}）：${_dbErrText(body)}',
         code: 'upload_failed');
   }
   final j = asMap(jsonDecode(utf8.decode(body, allowMalformed: true)));
@@ -1045,66 +1089,7 @@ Future<String> _dbArkUploadLocalFile({
   if (id.isEmpty) {
     throw DbVideoArkException('方舟未返回 file id：${_dbErrText(body)}');
   }
-  logp('✅ 方舟文件创建: $id (status=${mStr(j, 'status')})');
-  return id;
-}
-
-Future<String> _dbArkUploadFromTos({
-  required String bucket,
-  required String prefix,
-  required String tosKey,
-  required String model,
-  required String apiKey,
-  required double fps,
-  int maxVideoTokens = 0,
-  int minFrames = 0,
-}) async {
-  final boundary =
-      '----keweTos${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
-  final sb = StringBuffer();
-  void field(String n, String v) {
-    sb.write('--$boundary\r\n');
-    sb.write('Content-Disposition: form-data; name="$n"\r\n\r\n');
-    sb.write('$v\r\n');
-  }
-
-  field('purpose', 'user_data');
-  field('url', 'tos://$bucket/$tosKey');
-  field('tos[bucket]', bucket);
-  if (prefix.isNotEmpty) field('tos[prefix]', prefix);
-  if (model.trim().isNotEmpty) {
-    field('preprocess_configs[video][model]', model.trim());
-  }
-  field('preprocess_configs[video][fps]', _dbFpsStr(fps));
-  if (maxVideoTokens > 0) {
-    field('preprocess_configs[video][max_tokens]', '$maxVideoTokens');
-  }
-  if (minFrames > 0) {
-    field('preprocess_configs[video][min_frames]', '$minFrames');
-  }
-  sb.write('--$boundary--\r\n');
-  final body = utf8.encode(sb.toString());
-
-  final client = globalHTTPClient;
-  final req = await client.openUrl('POST', Uri.parse('${dbBaseUrl(null)}/files'));
-  req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $apiKey');
-  req.headers.set(HttpHeaders.contentTypeHeader,
-      'multipart/form-data; boundary=$boundary');
-  req.headers.contentLength = body.length;
-  req.add(body);
-  final resp = await req.close().timeout(const Duration(seconds: 180));
-  final out = <int>[];
-  await for (final c in resp) {
-    out.addAll(c);
-  }
-  if (resp.statusCode != 200) {
-    throw DbVideoArkException(
-        'TOS 引用式上传失败（HTTP ${resp.statusCode}）：${_dbErrText(out)}',
-        code: 'upload_failed');
-  }
-  final j = asMap(jsonDecode(utf8.decode(out, allowMalformed: true)));
-  final id = mStr(j, 'id');
-  if (id.isEmpty) throw DbVideoArkException('方舟未返回 file id：${_dbErrText(out)}');
+  logp('✅ 方舟 TOS 文件创建: $id (status=${mStr(j, 'status')})');
   return id;
 }
 
@@ -1157,20 +1142,13 @@ Future<void> dbArkWaitFileActive({
     if (status == 'failed' || status == 'error') {
       final err = info['error'] ?? info['error_message'] ?? info['message'];
       throw DbVideoArkException(
-          '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}');
+          '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}\n'
+          '请确认：TOS Bucket 已授权给方舟项目；视频已自动规整为 720p 以内；'
+          'tos[bucket]/tos[prefix] 与方舟控制台授权一致（当前不走本地回退）。');
     }
     await Future<void>.delayed(Duration(milliseconds: intervalMs));
     if (intervalMs < 5000) intervalMs += 500;
   }
-}
-
-String? _dbArkTosKey(DbVideoArkConfig cfg, String fileName) {
-  if (cfg.tosBucket.trim().isEmpty) return null;
-  final name = fileName.trim();
-  if (name.isEmpty) return null;
-  final prefix = cfg.tosPrefix.trim();
-  if (prefix.isNotEmpty && !prefix.endsWith('/')) return '$prefix/$name';
-  return '$prefix$name';
 }
 
 /// Files API 单文件通道（仅在 useFilesApi=true 且非大视频分段路径时使用）
@@ -1197,86 +1175,82 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
 
-  final key = _dbArkCacheKey(f, size);
-  final cached = _dbArkCacheLookup(key, cfg.fps);
-  if (cached != null) {
-    onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
-    return dbArkVideoPartByFileId(cached, fps: cfg.fps);
-  }
-
   Directory? tmpDir;
   var uploaded = f;
   var arkId = '';
   try {
-    final tosKey = _dbArkTosKey(cfg, fileName);
-    // 强制 TOS:只要配了 tosBucket,任何大小都走 TOS 引用
-    if (tosKey != null) {
-      // ★ 网站自动上传 TOS：填了 AK/SK 时，先把本地视频自动上传到 TOS 桶，
-      //   再走方舟 tos:// 引用。用户无需再手动用 tosutil 传一遍。
-      if (cfg.tosAccessKey.isNotEmpty && cfg.tosSecretKey.isNotEmpty) {
-        onProgress?.call({'stage': 'tos_upload_start', 'size': size});
-        await _dbTosUploadFile(
-          file: uploaded,
-          bucket: cfg.tosBucket,
-          objectKey: tosKey,
-          accessKey: cfg.tosAccessKey,
-          secretKey: cfg.tosSecretKey,
-          endpoint: cfg.tosEndpoint,
-          region: cfg.tosRegion,
-          onProgress: (sent, total) => onProgress?.call({
-            'stage': 'tos_upload',
-            'sent': sent,
-            'total': total,
-            'percent': total <= 0 ? 0 : ((sent * 100) ~/ total),
-          }),
-        );
-        onProgress?.call({'stage': 'tos_upload_done', 'size': size});
-      }
-      onProgress?.call({'stage': 'tos_reference', 'size': size});
-      arkId = await _dbArkUploadFromTos(
-        bucket: cfg.tosBucket,
-        prefix: cfg.tosPrefix,
-        tosKey: tosKey,
-        model: cfg.preprocessModel,
-        apiKey: apiKey,
-        fps: cfg.fps,
-        maxVideoTokens: cfg.maxVideoTokens,
-        minFrames: cfg.minFrames,
-      );
-    } else {
-      if (size > dbArkStorageMaxBytes) {
-        if (!cfg.autoCompact) {
-          throw DbVideoArkException(
-              '视频 ${dbFmtSize(size)} 超过方舟托管存储上限 '
-              '${dbFmtSize(dbArkStorageMaxBytes)}，且 autoCompact 已关闭。',
-              code: 'too_large');
-        }
-        onProgress?.call({'stage': 'compact_start', 'size': size});
-        tmpDir = Directory(
-            '${Directory.systemTemp.path}/kewe_arkc_${DateTime.now().microsecondsSinceEpoch}');
-        tmpDir.createSync(recursive: true);
-        final out = File('${tmpDir.path}/compact.mp4');
-        await _dbCompressTo(f, dbArkCompactTargetBytes, out);
-        uploaded = out;
-        size = out.lengthSync();
-        onProgress?.call({'stage': 'compact_done', 'size': size});
-      }
-      onProgress?.call({'stage': 'upload_start', 'size': size});
-      arkId = await _dbArkUploadLocalFile(
+    final key = _dbArkCacheKey(f, size);
+    final cached = _dbArkCacheLookup(key, cfg.fps);
+    if (cached != null) {
+      onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
+      return dbArkVideoPartByFileId(cached, fps: cfg.fps);
+    }
+
+    // ★ 方舟 Files API 视频预处理的官方硬超时是 5 分钟，且明确建议
+    //   1080p 先压到 720p 及以下。2GB 原片直接 tos:// 引用时，方舟常见
+    //   报错就是 InvalidArgumentError('Timeout occurred while processing video')。
+    //   这里在上传 TOS 前把大视频/高分辨率视频规整成 720p（最高 480MB），
+    //   再交给方舟做 TOS 预处理；不改变「只走 TOS、不回退本地」的路径。
+    final dims = await _dbProbeVideoSize(uploaded);
+    if (_dbNeedTosNormalize(dims.width, dims.height, size)) {
+      onProgress?.call({
+        'stage': 'tos_normalize_start',
+        'size': size,
+        'srcWidth': dims.width,
+        'srcHeight': dims.height,
+      });
+      tmpDir = Directory(
+          '${Directory.systemTemp.path}/kewe_tos720_${DateTime.now().microsecondsSinceEpoch}');
+      tmpDir.createSync(recursive: true);
+      uploaded = await _dbNormalizeForTos(uploaded, tmpDir);
+      size = uploaded.lengthSync();
+      onProgress?.call({'stage': 'tos_normalize_done', 'size': size});
+      logp('🎬 TOS 预处理前已规整为 720p: ${fileName} (${dbFmtSize(size)})');
+    }
+
+    // 2GB/长视频如果仍按 1fps 抽帧，方舟 5 分钟预处理窗口依然可能超时；
+    // 按时长只降低、不提高抽帧密度，给 TOS 预处理留足余量。
+    var arkFps = cfg.fps;
+    final durSec = await _dbProbeDuration(uploaded);
+    if (durSec > 7200 && arkFps > 0.2) {
+      arkFps = 0.2;
+    } else if (durSec > 3600 && arkFps > 0.3) {
+      arkFps = 0.3;
+    } else if (durSec > 1800 && arkFps > 0.5) {
+      arkFps = 0.5;
+    } else if (durSec > 600 && arkFps > 0.7) {
+      arkFps = 0.7;
+    }
+
+    if (cfg.tosBucket.trim().isNotEmpty) {
+      // 二进制上传 + tos[bucket]/tos[prefix]：文件落到用户 TOS，
+      // 预处理由方舟完成；不需要 TOS AK/SK，也不检查/依赖 TOS 对象路径。
+      onProgress?.call({'stage': 'tos_upload_start', 'size': size});
+      arkId = await _dbArkUploadToTosBucket(
         file: uploaded,
         fileName: fileName,
+        bucket: cfg.tosBucket,
+        prefix: cfg.tosPrefix,
         model: cfg.preprocessModel,
         apiKey: apiKey,
-        fps: cfg.fps,
+        fps: arkFps,
+        maxVideoTokens: cfg.maxVideoTokens,
+        minFrames: cfg.minFrames,
         onProgress: (sent, total) {
           onProgress?.call({
-            'stage': 'upload',
+            'stage': 'tos_upload',
             'sent': sent,
             'total': total,
             'percent': total <= 0 ? 0 : ((sent * 100) ~/ total),
           });
         },
       );
+      onProgress?.call({'stage': 'tos_upload_done', 'size': size});
+      onProgress?.call({'stage': 'tos_reference', 'size': size});
+    } else {
+      throw DbVideoArkException(
+          'TOS Bucket 未配置，已按「只走 TOS 预处理」策略停止，不回退本地。',
+          code: 'tos_not_configured');
     }
     // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
     //   旧实现有 2 处损坏：
@@ -1300,8 +1274,8 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         });
       },
     );
-    _dbArkCacheStore(key, arkId, cfg.preprocessModel, cfg.fps);
-    return dbArkVideoPartByFileId(arkId, fps: cfg.fps);
+    _dbArkCacheStore(key, arkId, cfg.preprocessModel, arkFps);
+    return dbArkVideoPartByFileId(arkId, fps: arkFps);
   } finally {
     if (tmpDir != null) {
       try {
@@ -1312,391 +1286,6 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     }
   }
 }
-
-// ============================================================
-// 火山引擎 TOS 对象存储上传（网站自动上传，替代手动 tosutil）
-//
-//   用户在网站上选择视频后，后端自动把视频上传到配置的 TOS 桶，
-//   再走方舟 Files API 的 tos:// 引用，实现「一次上传、无需手动传桶」。
-//   签名对齐官方 TOS V4（TOS4-HMAC-SHA256），大文件走分片上传（multipart）。
-// ============================================================
-
-/// 分片大小：16MB（TOS 分片下限 5MB，上限 5GB）
-const int _dbTosPartSize = 16 * 1024 * 1024;
-
-String _dbTosHex(List<int> bytes) {
-  final sb = StringBuffer();
-  for (final b in bytes) {
-    sb.write(b.toRadixString(16).padLeft(2, '0'));
-  }
-  return sb.toString();
-}
-
-/// TOS UriEncode：除 A-Z a-z 0-9 - . _ ~ 外全部编码为 %XX（大写）。
-/// [encodeSlash] 为 false 时保留对象名中的 / 作为路径分隔。
-String _dbTosUriEncode(String s, {bool encodeSlash = true}) {
-  final sb = StringBuffer();
-  for (final code in utf8.encode(s)) {
-    final c = String.fromCharCode(code);
-    final unreserved = (code >= 0x41 && code <= 0x5A) ||
-        (code >= 0x61 && code <= 0x7A) ||
-        (code >= 0x30 && code <= 0x39) ||
-        c == '-' ||
-        c == '.' ||
-        c == '_' ||
-        c == '~';
-    if (unreserved) {
-      sb.write(c);
-    } else if (c == '/' && !encodeSlash) {
-      sb.write('/');
-    } else {
-      sb.write('%${code.toRadixString(16).toUpperCase().padLeft(2, '0')}');
-    }
-  }
-  return sb.toString();
-}
-
-/// 计算 TOS V4 签名头（TOS4-HMAC-SHA256）
-Map<String, String> _dbTosSign({
-  required String accessKey,
-  required String secretKey,
-  required String region,
-  required String method,
-  required String host,
-  required String canonicalUri,
-  required String canonicalQuery,
-  required String payloadHash,
-  String? contentType,
-}) {
-  final now = DateTime.now().toUtc();
-  String p2(int v) => v.toString().padLeft(2, '0');
-  final xTosDate = '${now.year}${p2(now.month)}${p2(now.day)}'
-      'T${p2(now.hour)}${p2(now.minute)}${p2(now.second)}Z';
-  final date = xTosDate.substring(0, 8);
-
-  final headers = <String, String>{
-    'host': host,
-    'x-tos-content-sha256': payloadHash,
-    'x-tos-date': xTosDate,
-    if (contentType != null && contentType.isNotEmpty) 'content-type': contentType,
-  };
-  final sortedKeys = headers.keys.toList()..sort();
-  final canonicalHeaders =
-      sortedKeys.map((k) => '$k:${headers[k]}').join('\n') + '\n';
-  final signedHeaders = sortedKeys.join(';');
-
-  final canonicalRequest = '$method\n$canonicalUri\n$canonicalQuery\n'
-      '$canonicalHeaders\n$signedHeaders\n$payloadHash';
-
-  final credentialScope = '$date/$region/tos/request';
-  final stringToSign = 'TOS4-HMAC-SHA256\n$xTosDate\n$credentialScope\n'
-      '${_dbTosHex(sha256(utf8.encode(canonicalRequest)))}';
-
-  final kDate = hmacSha256(utf8.encode(secretKey), utf8.encode(date));
-  final kRegion = hmacSha256(kDate, utf8.encode(region));
-  final kService = hmacSha256(kRegion, utf8.encode('tos'));
-  final kSigning = hmacSha256(kService, utf8.encode('request'));
-  final signature = _dbTosHex(hmacSha256(kSigning, utf8.encode(stringToSign)));
-
-  final authorization = 'TOS4-HMAC-SHA256 Credential=$accessKey/$credentialScope,'
-      'SignedHeaders=$signedHeaders, Signature=$signature';
-
-  return <String, String>{
-    'Authorization': authorization,
-    'Host': host,
-    'x-tos-date': xTosDate,
-    'x-tos-content-sha256': payloadHash,
-    if (contentType != null && contentType.isNotEmpty) 'Content-Type': contentType,
-  };
-}
-
-class _DbTosResp {
-  final int code;
-  final List<int> bytes;
-  final HttpHeaders headers;
-  _DbTosResp(this.code, this.bytes, this.headers);
-
-  String header(String name) => headers.value(name) ?? '';
-
-  String bodyText() => utf8.decode(bytes, allowMalformed: true);
-}
-
-/// 发送 TOS 请求，返回状态码 + 响应体 + 响应头
-Future<_DbTosResp> _dbTosRequest({
-  required String method,
-  required String url,
-  required Map<String, String> headers,
-  List<int>? body,
-  Duration timeout = const Duration(seconds: 600),
-}) async {
-  final client = globalHTTPClient;
-  final req = await client.openUrl(method, Uri.parse(url));
-  headers.forEach(req.headers.set);
-  if (body != null && body.isNotEmpty) {
-    req.headers.contentLength = body.length;
-    req.add(body);
-  }
-  final resp = await req.close().timeout(timeout);
-  final out = <int>[];
-  await for (final c in resp) {
-    out.addAll(c);
-  }
-  return _DbTosResp(resp.statusCode, out, resp.headers);
-}
-
-String _dbTosBucketHost(String bucket, String endpoint) {
-  var ep = endpoint.trim();
-  if (ep.isEmpty) ep = 'tos-cn-beijing.volces.com';
-  ep = ep.replaceFirst(RegExp(r'^https?://'), '');
-  while (ep.endsWith('/')) {
-    ep = ep.substring(0, ep.length - 1);
-  }
-  return '$bucket.$ep';
-}
-
-String _dbTosObjectUrl(String host, String objectKey) =>
-    'https://$host/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
-
-/// 读满 want 字节（或读到 EOF），返回实际读到的数据
-Future<Uint8List> _dbTosReadFully(RandomAccessFile raf, int want) async {
-  final data = Uint8List(want);
-  var got = 0;
-  while (got < want) {
-    final chunk = await raf.read(want - got);
-    if (chunk.isEmpty) break;
-    data.setRange(got, got + chunk.length, chunk);
-    got += chunk.length;
-  }
-  if (got == want) return data;
-  return Uint8List.sublistView(data, 0, got);
-}
-
-/// Initiate Multipart Upload → 返回 UploadId
-Future<String> _dbTosInitMultipart({
-  required String objectKey,
-  required String bucket,
-  required String accessKey,
-  required String secretKey,
-  required String endpoint,
-  required String region,
-}) async {
-  final host = _dbTosBucketHost(bucket, endpoint);
-  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
-  const emptyHash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
-  final headers = _dbTosSign(
-    accessKey: accessKey,
-    secretKey: secretKey,
-    region: region,
-    method: 'POST',
-    host: host,
-    canonicalUri: canonicalUri,
-    canonicalQuery: 'uploads=',
-    payloadHash: emptyHash,
-  );
-  final url = '${_dbTosObjectUrl(host, objectKey)}?uploads=';
-  final resp = await _dbTosRequest(method: 'POST', url: url, headers: headers);
-  if (resp.code < 200 || resp.code >= 300) {
-    throw DbVideoArkException(
-        'TOS 初始化分片上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
-        code: 'tos_init_failed');
-  }
-  final bodyText = resp.bodyText();
-  var uploadId = '';
-
-  // TOS 的 CreateMultipartUpload 可能返回 XML（标准）或 JSON 两种格式：
-  // 标准返回 <InitiateMultipartUploadResult><UploadId>...</UploadId></...>，
-  // 部分桶/版本会返回 {"Bucket":...,"Key":...,"UploadId":...}。
-  // 两种都要兼容，否则会出现「TOS 未返回 UploadId」的假报错。
-  try {
-    final j = jsonDecode(bodyText);
-    if (j is Map) {
-      final v = j['UploadId'] ?? j['uploadId'];
-      if (v is String && v.trim().isNotEmpty) uploadId = v.trim();
-    }
-  } catch (_) {
-    // 非 JSON（XML 或其它），走下方 XML 解析
-  }
-  if (uploadId.isEmpty) {
-    final m = RegExp(r'<UploadId>([^<]+)</UploadId>').firstMatch(bodyText);
-    uploadId = m?.group(1)?.trim() ?? '';
-  }
-  if (uploadId.isEmpty) {
-    throw DbVideoArkException('TOS 未返回 UploadId：$bodyText',
-        code: 'tos_init_failed');
-  }
-  return uploadId;
-}
-
-/// Upload Part → 返回 ETag（带引号）
-Future<String> _dbTosUploadPart({
-  required String objectKey,
-  required String bucket,
-  required String accessKey,
-  required String secretKey,
-  required String endpoint,
-  required String region,
-  required String uploadId,
-  required int partNumber,
-  required List<int> data,
-}) async {
-  final host = _dbTosBucketHost(bucket, endpoint);
-  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
-  final q = <String, String>{'partNumber': '$partNumber', 'uploadId': uploadId};
-  final keys = q.keys.toList()..sort();
-  final canonicalQuery =
-      keys.map((k) => '${_dbTosUriEncode(k)}=${_dbTosUriEncode(q[k]!)}').join('&');
-  final payloadHash = _dbTosHex(sha256(data));
-  final headers = _dbTosSign(
-    accessKey: accessKey,
-    secretKey: secretKey,
-    region: region,
-    method: 'PUT',
-    host: host,
-    canonicalUri: canonicalUri,
-    canonicalQuery: canonicalQuery,
-    payloadHash: payloadHash,
-  );
-  final url = '${_dbTosObjectUrl(host, objectKey)}?$canonicalQuery';
-  final resp = await _dbTosRequest(
-      method: 'PUT', url: url, headers: headers, body: data);
-  if (resp.code < 200 || resp.code >= 300) {
-    throw DbVideoArkException(
-        'TOS 分片 $partNumber 上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
-        code: 'tos_part_failed');
-  }
-  final etag = resp.header('etag');
-  if (etag.isEmpty) {
-    throw DbVideoArkException('TOS 分片 $partNumber 未返回 ETag',
-        code: 'tos_part_failed');
-  }
-  return etag;
-}
-
-/// Complete Multipart Upload
-Future<void> _dbTosCompleteMultipart({
-  required String objectKey,
-  required String bucket,
-  required String accessKey,
-  required String secretKey,
-  required String endpoint,
-  required String region,
-  required String uploadId,
-  required List<MapEntry<int, String>> parts,
-}) async {
-  final host = _dbTosBucketHost(bucket, endpoint);
-  final canonicalUri = '/${_dbTosUriEncode(objectKey, encodeSlash: false)}';
-  final canonicalQuery = 'uploadId=${_dbTosUriEncode(uploadId)}';
-
-  // TOS 的 CompleteMultipartUpload 请求体是 JSON（非 S3 的 XML）：
-  //   {"Parts":[{"PartNumber":N,"ETag":"..."}]}
-  // 分片上传响应头里的 ETag 带引号，请求体里要去掉引号。
-  final partsJson = parts.map((p) {
-    var etag = p.value;
-    if (etag.startsWith('"') && etag.endsWith('"')) {
-      etag = etag.substring(1, etag.length - 1);
-    }
-    return <String, dynamic>{'PartNumber': p.key, 'ETag': etag};
-  }).toList();
-  final body = utf8.encode(jsonEncode(<String, dynamic>{'Parts': partsJson}));
-  final payloadHash = _dbTosHex(sha256(body));
-
-  final headers = _dbTosSign(
-    accessKey: accessKey,
-    secretKey: secretKey,
-    region: region,
-    method: 'POST',
-    host: host,
-    canonicalUri: canonicalUri,
-    canonicalQuery: canonicalQuery,
-    payloadHash: payloadHash,
-    contentType: 'application/json',
-  );
-  final url =
-      '${_dbTosObjectUrl(host, objectKey)}?uploadId=${_dbTosUriEncode(uploadId)}';
-  final resp = await _dbTosRequest(
-      method: 'POST', url: url, headers: headers, body: body);
-  if (resp.code < 200 || resp.code >= 300) {
-    throw DbVideoArkException(
-        'TOS 完成分片上传失败（HTTP ${resp.code}）：${resp.bodyText()}',
-        code: 'tos_complete_failed');
-  }
-}
-
-/// 主函数：把本地文件分片上传到 TOS（不整文件读入内存）
-Future<void> _dbTosUploadFile({
-  required File file,
-  required String bucket,
-  required String objectKey,
-  required String accessKey,
-  required String secretKey,
-  required String endpoint,
-  required String region,
-  void Function(int sent, int total)? onProgress,
-}) async {
-  final total = await file.length();
-  if (total <= 0) {
-    throw DbVideoArkException('TOS 上传：文件为空', code: 'tos_empty');
-  }
-  final partCount = (total + _dbTosPartSize - 1) ~/ _dbTosPartSize;
-  logp('☁️ 开始自动上传到 TOS: $objectKey '
-      '(${dbFmtSize(total)}, $partCount 分片)');
-
-  final uploadId = await _dbTosInitMultipart(
-    objectKey: objectKey,
-    bucket: bucket,
-    accessKey: accessKey,
-    secretKey: secretKey,
-    endpoint: endpoint,
-    region: region,
-  );
-
-  final raf = await file.open();
-  final parts = <MapEntry<int, String>>[];
-  var sent = 0;
-  try {
-    for (var i = 0; i < partCount; i++) {
-      final partNumber = i + 1;
-      final data = await _dbTosReadFully(raf, _dbTosPartSize);
-      if (data.isEmpty) {
-        throw DbVideoArkException('TOS 上传：读取分片 $partNumber 失败',
-            code: 'tos_read_failed');
-      }
-      final etag = await _dbTosUploadPart(
-        objectKey: objectKey,
-        bucket: bucket,
-        accessKey: accessKey,
-        secretKey: secretKey,
-        endpoint: endpoint,
-        region: region,
-        uploadId: uploadId,
-        partNumber: partNumber,
-        data: data,
-      );
-      parts.add(MapEntry(partNumber, etag));
-      sent += data.length;
-      onProgress?.call(sent, total);
-      logp('☁️ TOS 分片 $partNumber/$partCount 上传完成');
-    }
-  } finally {
-    try {
-      await raf.close();
-    } catch (_) {}
-  }
-
-  parts.sort((a, b) => a.key.compareTo(b.key));
-  await _dbTosCompleteMultipart(
-    objectKey: objectKey,
-    bucket: bucket,
-    accessKey: accessKey,
-    secretKey: secretKey,
-    endpoint: endpoint,
-    region: region,
-    uploadId: uploadId,
-    parts: parts,
-  );
-  logp('✅ TOS 上传完成: $objectKey (${dbFmtSize(total)})');
-}
-
 
 // ============================================================
 // DeepSeek V4 系列视频理解：走 Responses API（input_video + file_id）
