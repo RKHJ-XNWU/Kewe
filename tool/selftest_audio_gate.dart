@@ -292,6 +292,49 @@ Future<void> main() async {
           'HTTP 400：audio_url duration (8ms) shorter than the limit (10ms)'),
       '');
 
+  stdout.writeln('=== I. 边界矩阵：极短 / 静音 / 容器-流不一致 / 分段规划');
+  final ultraShort = await _mk('ultra_short.mp4', [
+    '-f', 'lavfi', '-i', 'testsrc=duration=0.6:size=320x180:rate=25',
+    '-f', 'lavfi', '-i', 'sine=frequency=440:duration=0.6',
+    '-c:v', 'libx264', '-c:a', 'aac', '-shortest',
+  ]);
+  final r1 = await dbArkEnsureSegmentAudioSafe(ultraShort,
+      label: '极短视频', targetSec: 0.6);
+  final p1 = await _probeAudio(ultraShort);
+  _check('极短视频保留音轨且 ≥10ms',
+      r1.hasAudio && !r1.degraded && (p1['duration'] as double) >= 0.5,
+      'duration=${p1['duration']}s');
+
+  final silent = await _mk('silent.mp4', [
+    '-f', 'lavfi', '-i', 'testsrc=duration=2:size=320x180:rate=25',
+    '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+    '-t', '2', '-c:v', 'libx264', '-c:a', 'aac',
+  ]);
+  final r2 = await dbArkEnsureSegmentAudioSafe(silent,
+      label: '静音视频', targetSec: 2);
+  final p2 = await _probeAudio(silent);
+  _check('纯静音不被误判为坏轨',
+      r2.hasAudio && !r2.degraded && (p2['duration'] as double) >= 1.9,
+      'duration=${p2['duration']}s');
+
+  final mismatch = await _mk('mismatch.mp4', [
+    '-f', 'lavfi', '-i', 'testsrc=duration=3:size=320x180:rate=25',
+    '-i', tinyA.path, '-map', '0:v:0', '-map', '1:a:0',
+    '-c:v', 'libx264', '-c:a', 'copy',
+  ]);
+  final r3 = await dbArkEnsureSegmentAudioSafe(mismatch,
+      label: '容器-流不一致', targetSec: 3);
+  final p3 = await _probeAudio(mismatch);
+  _check('容器时长 3s / 音频流 0.008s 被修复为视频长度',
+      r3.hasAudio && !r3.degraded && (p3['duration'] as double) >= 3.0,
+      'duration=${p3['duration']}s');
+
+  _check('分段规划：3000 帧以内不分段', dbArkPlanSegCount(600, 5) == 1,
+      'segs=${dbArkPlanSegCount(600, 5)}');
+  _check('分段规划：2400s×5fps=12000 帧 → 4 段',
+      dbArkPlanSegCount(2400, 5) == 4, 'segs=${dbArkPlanSegCount(2400, 5)}');
+  _check('分段规划：时长为 0 时按 1 段', dbArkPlanSegCount(0, 5) == 1, '');
+
   stdout.writeln('');
   stdout.writeln(_fail == 0 ? '全部通过（0 失败）' : '存在失败项：$_fail');
   exit(_fail == 0 ? 0 : 1);

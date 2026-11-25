@@ -368,7 +368,7 @@ DSH_BASE="$PWD" dart run bin/main.dart
 
 2026-11-25：
 
-- 根治视频分段理解 `HTTP 400 / InvalidParameter / audio_url duration 8ms`：根因是上传时没写 `preprocess_configs.video.model`（该字段缺省时方舟不处理视频音频，只挂约 8ms 占位音频）。现在带音轨的视频一律显式指定该字段：优先复用推理模型，非方舟原生 id 才兜底 `doubao-seed-2-0-lite-260428`；`file_id` 缓存加入预处理模型判定，避免复用旧的无音频产物；服务端仍判音频过短时先换音频模型重传，只有最后一步才降级为纯视频，并在结果里显式标注「降级」。自测脚本 `tool/selftest_audio_gate.dart` 的 28 项断言全部通过，`dart analyze lib tool` 零问题。
+- 根治视频分段理解 `HTTP 400 / InvalidParameter / audio_url duration 8ms`：根因是上传时没写 `preprocess_configs.video.model`（该字段缺省时方舟不处理视频音频，只挂约 8ms 占位音频）。现在带音轨的视频一律显式指定该字段：优先复用推理模型，非方舟原生 id 才兜底 `doubao-seed-2-0-lite-260428`；`file_id` 缓存加入预处理模型判定，避免复用旧的无音频产物；服务端仍判音频过短时先换音频模型重传，只有最后一步才降级为纯视频，并在结果里显式标注「降级」。自测脚本 `tool/selftest_audio_gate.dart` 的 34 项断言全部通过，`dart analyze lib tool` 零问题。
 - 新增「已知问题（Known Issues）」章节与 `KI-xxx` 编号规则，登记 KI-001（加载更多历史消息后滚动位置异常，需多次上滑才能到达顶部；P3，未修复）。
 
 2026-11-23：
