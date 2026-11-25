@@ -54,11 +54,25 @@ import 'ds_usage.dart';
 /// 对外承诺的最大视频体积：2GB
 const int dbVideoMaxBytes = 2 * 1024 * 1024 * 1024;
 
-/// base64 通道的硬限制（官方：文件 ≤50MB、请求体 ≤64MB）
-const int dbVideoBase64HardMaxBytes = 50 * 1024 * 1024;
-
-/// 单片默认上限：留 5MB 余量给 JSON / 文本
+/// 单片默认上限：留 5MB 余量给 JSON / 文本（仅兼容旧配置，内核不读取）
 const int dbVideoDefaultSegmentBytes = 45 * 1024 * 1024;
+
+/// ★ 路由层限制，绝不下沉到切片内核。
+///
+/// 只有目标推理模型明确要求「单分片 ≤50MB」时，路由层才把它作为参数传进
+/// 规划函数；切片内核本身不读这个常数、不按体积主动缩片，否则长视频会被
+/// 切成大量碎段（帧预算与音频边界都会被打乱，正是 8ms 碎片的高发来源）。
+const int dbDeepSeek1017SegmentMaxBytes = 48 * 1024 * 1024;
+
+/// 目标模型对应的「路由层单分片体积上限」；0 = 不限制（保留长分片）。
+///
+/// 火山方舟上的 DeepSeek-V4.1-Flash（短视频理解）单次请求有 50MB 上限，
+/// 因此路由层在规划分片数时叠加体积维度；豆包音视频模型没有这条限制。
+int dbRouteSegmentMaxBytes(String model) {
+  final m = model.trim().toLowerCase();
+  if (m == 'deepseek-v4-1-flash-261017') return dbDeepSeek1017SegmentMaxBytes;
+  return 0;
+}
 
 /// 方舟「平台托管存储」的单文件上限：512MB（仅 Files API 路径使用）
 const int dbArkStorageMaxBytes = 512 * 1024 * 1024;
@@ -239,19 +253,9 @@ class DbVideoArkConfig {
     if (fps < 0.2) fps = 0.2;
     if (fps > 5) fps = 5;
 
-    var seg = intArgDefault(j, 'segmentMaxBytes', dbVideoDefaultSegmentBytes);
-    // 必须小于 base64 硬上限，且不能小到切出太多段。
-    // 注意：segmentMaxBytes 只管「分段后每段多大」，与「单文件能不能走
-    // TOS 2GB 直传」无关；写 2GB 在这里会被无损钳制回 45MB（base64 上限
-    // 是 50MB 请求体，物理上不可能一段 2GB）。钳制时明确打日志，避免
-    // 配置看起来生效、实际没生效。
-    if (seg > dbVideoBase64HardMaxBytes - 1024 * 1024) {
-      logp('⚠️ segmentMaxBytes=$seg 超过分段上限，已回退为 '
-          '${dbFmtSize(dbVideoDefaultSegmentBytes)}'
-          '（该值只管分段大小，单文件 TOS 上限由 maxBytes 决定）');
-      seg = dbVideoDefaultSegmentBytes;
-    }
-    if (seg < 5 * 1024 * 1024) seg = dbVideoDefaultSegmentBytes;
+    // 兼容旧配置字段：切片内核不再按体积切分。体积维度只在路由层按目标
+    // 模型决定（见 dbRouteSegmentMaxBytes），内核只负责帧预算与音频帧边界。
+    final seg = intArgDefault(j, 'segmentMaxBytes', dbVideoDefaultSegmentBytes);
 
     return DbVideoArkConfig(
       maxBytes: maxBytes,
@@ -511,7 +515,19 @@ Future<({List<Map<String, dynamic>> parts, String text})>
           code: 'tos_not_configured');
     }
     final dur = await _dbProbeDurationSec(f);
-    final segCount = dbArkPlanSegCount(dur, cfg.fps);
+    // ★ 路由层与切片内核解耦：只有目标模型（DeepSeek 1017）要求 50MB 时，
+    //   才在「段数规划」里叠加体积维度；切片内核本身不读 50MB、不主动缩片。
+    final routeSegMax = dbRouteSegmentMaxBytes(model);
+    final segCount = dbArkPlanSegCount(
+      dur,
+      cfg.fps,
+      fileBytes: size,
+      maxSegmentBytes: routeSegMax,
+    );
+    if (routeSegMax > 0) {
+      logp('🧩 路由层：$model 单分片 ≤${dbFmtSize(routeSegMax)}，'
+          '段数按体积叠加为 $segCount（内核仍按帧/音频帧边界裁切）');
+    }
     if (segCount <= 1) {
       // ★ 整片直传前的音频前置拦截（根治 audio_url duration 400）：
       //   源视频若带「8ms 级」坏音频轨（元数据塌缩 / 只剩一两个包 /
@@ -580,6 +596,7 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       apiKey: apiKey,
       segCount: segCount,
       duration: dur,
+      model: model,
       onProgress: (info) => onProgress?.call({...tag, ...info}),
     );
     blocks.add(desc);
@@ -717,32 +734,10 @@ Future<({String fileId, String model})> _dbArkUploadWithModelFallback({
     if (model.trim().isEmpty || !dbArkIsPreprocessModelRejected(e)) rethrow;
     logp('⚠️ ${label ?? fileName} 预处理模型 $model 被服务端拒绝（$e）');
 
-    // 第二跳：换官方音频推荐模型（账号未必开通，失败才继续退）。
-    if (model.trim() != dbArkAudioPreprocessModel) {
-      logp('   → 改用音频推荐模型 $dbArkAudioPreprocessModel 重试预处理');
-      try {
-        final id = await _dbArkUploadToTosBucket(
-          file: file,
-          fileName: fileName,
-          bucket: bucket,
-          prefix: prefix,
-          model: dbArkAudioPreprocessModel,
-          apiKey: apiKey,
-          fps: fps,
-          maxVideoTokens: maxVideoTokens,
-          minFrames: minFrames,
-          onProgress: onProgress,
-        );
-        return (fileId: id, model: dbArkAudioPreprocessModel);
-      } catch (e2) {
-        logp('   → 音频推荐模型仍被拒绝：$e2');
-      }
-    }
-
-    // 最后一跳：退回「不指定模型」的原通道 —— 上传仍成功，但音频可能不被抽取，
-    // 由后续 400 自愈与降级标注兜住，绝不把整条视频判死。
+    // 只允许「去掉服务端不认的 model 参数」这一种退化，不做换模型重试：
+    // 换预处理模型属于已被证伪的偷懒兜底，会让音频链路再次回到不可控状态。
     logp('⚠️ ${label ?? fileName} 退回未指定模型的默认预处理'
-        '（该片音频可能不被抽取）');
+        '（该片音频可能不被抽取，后续逐段校验会拦截）');
     final id = await _dbArkUploadToTosBucket(
       file: file,
       fileName: fileName,
@@ -2356,13 +2351,28 @@ void _dbCleanupDirs(List<Directory?> dirs) {
 }
 
 /// 按帧总数规划段数：≤安全帧上限（3000 帧）就是 1 段（整片直传，不分段）。
-int dbArkPlanSegCount(double durationSec, double fps) {
+///
+/// [fileBytes] / [maxSegmentBytes] 是「路由层」按目标模型传入的可选约束：
+/// 两者都 >0 时才叠加体积维度（如 DeepSeek 1017 的 50MB 上限）。切片内核
+/// 默认不读任何体积常数，豆包系列模型保持长分片。
+int dbArkPlanSegCount(
+  double durationSec,
+  double fps, {
+  int fileBytes = 0,
+  int maxSegmentBytes = 0,
+}) {
   if (durationSec <= 0) return 1;
   final f = fps <= 0 ? 1.0 : fps;
   final frames = durationSec * f;
-  if (frames <= dbArkFrameSafePerRequest) return 1;
-  var n = (frames / dbArkFrameSafePerRequest).ceil();
-  if (n < 2) n = 2;
+  var n = 1;
+  if (frames > dbArkFrameSafePerRequest) {
+    n = (frames / dbArkFrameSafePerRequest).ceil();
+    if (n < 2) n = 2;
+  }
+  if (fileBytes > 0 && maxSegmentBytes > 0) {
+    final bySize = (fileBytes / maxSegmentBytes).ceil();
+    if (bySize > n) n = bySize;
+  }
   if (n > 200) n = 200;
   return n;
 }
@@ -2372,6 +2382,14 @@ class _DbSegPart {
   final File file;
   final int startMs;
   final int endMs;
+
+  /// 等分规划时的「目标结束时间」（毫秒），未做音频帧对齐前的原始值。
+  /// 仅用于日志核对：对齐偏移 = endMs - targetEndMs，必须 ≤ 单帧时长。
+  final int targetEndMs;
+
+  /// 合并来源说明；空字符串 = 未经合并。
+  final String mergeNote;
+
   bool hasAudio;
   int audioMs;
   bool rebuilt;
@@ -2386,6 +2404,8 @@ class _DbSegPart {
     required this.file,
     required this.startMs,
     required this.endMs,
+    this.targetEndMs = 0,
+    this.mergeNote = '',
     required this.hasAudio,
     required this.audioMs,
     required this.rebuilt,
@@ -2424,8 +2444,65 @@ Future<double> _dbVideoFps(File f) async {
   return 25;
 }
 
-/// 视频关键帧时间点（毫秒）。切段边界对齐关键帧，避免 `-ss` 回退到上一个
-/// 关键帧导致前后两段内容重叠、时间轴对不上原片。
+/// 音频采样帧栅格：裁切点必须落在「帧结束边界」上。
+///
+/// 8ms 碎片的根因不是毫秒取整，而是刀口切进了音频采样帧内部：容器里只剩下
+/// 不足一帧的残样本，服务端一量就是几毫秒。这里按 a:0 的采样率与编码帧长
+/// 算出真实帧栅格，所有分片边界向最近的帧结束点取整（浮动 ≤ 单帧）。
+class _DbAudioGrid {
+  final double startSec;
+  final double frameSec;
+
+  const _DbAudioGrid(this.startSec, this.frameSec);
+
+  bool get valid => frameSec > 0.0001;
+
+  /// 把时间点（秒）对齐到最近的音频帧结束边界。
+  double align(double t) {
+    if (!valid) return t;
+    final idx = ((t - startSec) / frameSec + 0.5).floor();
+    return startSec + idx * frameSec;
+  }
+}
+
+/// 读取 a:0 的采样率 / 编码 / 起始时间，换算音频帧栅格。
+///
+/// 不整段读帧列表（几分钟的 AAC 就有上万帧，2GB 长片更会拖垮内存与 IO）：
+/// 帧长只由编码器每帧样本数与采样率决定，属于常量，解析流元数据即可。
+Future<_DbAudioGrid> _dbAudioGrid(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'a:0',
+      '-show_entries', 'stream=sample_rate,codec_name,start_time',
+      '-of', 'json',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final j = asMap(jsonDecode('${r.stdout}'));
+      final streams = asList(j['streams']);
+      if (streams.isNotEmpty) {
+        final s = asMap(streams[0]);
+        final sr = intArgDefault(s, 'sample_rate', 0);
+        final codec = mStr(s, 'codec_name').toLowerCase();
+        final start = double.tryParse(mStr(s, 'start_time')) ?? 0;
+        if (sr > 0) {
+          final frameSamples = switch (codec) {
+            'mp3' => 1152,
+            'ac3' || 'eac3' => 1536,
+            'opus' => 960,
+            _ => 1024, // AAC / 其他主流音频编码
+          };
+          return _DbAudioGrid(start, frameSamples / sr.toDouble());
+        }
+      }
+    }
+  } catch (_) {}
+  return const _DbAudioGrid(0, 0);
+}
+
+/// 视频关键帧时间点（毫秒）。`-c:v copy` 只能从关键帧起切，边界必须落在
+/// 关键帧上，否则视频会从上一关键帧开始、时间轴与内容整体前移。
 Future<List<int>> _dbKeyframeMs(File f) async {
   try {
     final r = await Process.run('ffprobe', [
@@ -2464,14 +2541,25 @@ Future<List<int>> _dbKeyframeMs(File f) async {
 /// 重编码 + apad 后音频轨真实解码时长等于段长，服务端不会再量出 8ms。
 Future<File> _dbCutSegment({
   required File src,
-  required ({int start, int end}) range,
+  required ({int start, int end, int targetEnd}) range,
   required String outPath,
   required bool srcHasAudio,
+  double audioFrameSec = 0,
   void Function(int elapsedSec)? onTick,
 }) async {
   final startSec = (range.start / 1000.0).toStringAsFixed(3);
   final lenD = (range.end - range.start) / 1000.0;
   final lenSec = lenD.toStringAsFixed(3);
+  // ★ 音频长度向下取整到整数个采样帧：末帧必须是完整帧，否则容器里会
+  //   留下不足一帧的残样本，服务端一量就是几毫秒（audio_url 400）。
+  var audioLenD = lenD;
+  if (srcHasAudio && audioFrameSec > 0.0001) {
+    final whole = (lenD / audioFrameSec).floor();
+    audioLenD = whole * audioFrameSec;
+    if (audioLenD < audioFrameSec) audioLenD = audioFrameSec;
+    if (audioLenD > lenD) audioLenD = lenD;
+  }
+  final audioLenSec = audioLenD.toStringAsFixed(6);
   // ★ 视频必须用「帧数」收口：实测 `-c:v copy` + 输入 seek 时 `-t` 只截住
   //   音频，视频会一路复制到片尾（20s 的段实测写出 40s、内容与时间轴错位）。
   final fps = await _dbVideoFps(src);
@@ -2491,8 +2579,9 @@ Future<File> _dbCutSegment({
       '-c:a', 'aac',
       '-b:a', '128k',
       // 输入 seek 后音频首帧 pts 可能不为 0，异步对齐到 0；
-      // apad 把音频补齐到段长（由下面的输出侧 -t 收口）。
-      '-af', 'aresample=async=1:first_pts=0,apad',
+      // apad 补静音到段长，再用 atrim 精确收口到「整帧长度」。
+      '-af', 'aresample=async=1:first_pts=0,apad,'
+          'atrim=duration=$audioLenSec',
     ],
     // ★ 输出侧 -t 必须放在 -i 之后：放在输入侧只限制「读取多少」，
     //   apad 会无限产帧，封装器会一直写下去（实测卡死十几小时）。
@@ -2533,43 +2622,69 @@ Future<List<_DbSegPart>> _dbSplitByTime({
   final totalMs = (duration * 1000).round();
   if (totalMs <= 0) throw DbVideoArkException('视频时长为 0，无法切段');
 
-  // 等分目标边界（毫秒整数），再对齐到关键帧：
-  // 输入 seek 只能从关键帧开始，边界不落在关键帧上就会与上一段内容重叠、
-  // 时间轴整体前移。关键帧离目标超过 6 秒则保持等分目标（宁可轻微重叠，
-  // 也不把某一段拉得过大）。
+  // ★ 双约束，各管各的刀口：
+  //   · 视频：`-c:v copy` 只能从关键帧起切，边界必须落在关键帧上，
+  //     否则视频会从上一关键帧开始、内容与时间轴整体前移（上一版实测
+  //     20s 的段只写进 18.07s 音频，就是被这个前滚截断的）。
+  //   · 音频：重编码后长度向下取整到「整数个采样帧」，末帧永远是完整帧，
+  //     不会在容器里留下几毫秒的残样本（audio_url duration 400 的源头）。
+  //   等分目标只提供方向；两者取整误差都在一帧 / 一个 GOP 内。
+  final aGrid = srcHasAudio ? await _dbAudioGrid(src) : const _DbAudioGrid(0, 0);
+  if (srcHasAudio) {
+    if (aGrid.valid) {
+      final frameMs = (aGrid.frameSec * 1000).toStringAsFixed(2);
+      logp('🎯 音频帧栅格：起点 ${(aGrid.startSec * 1000).toStringAsFixed(1)}ms，'
+          '单帧 $frameMs ms（每段音频长度向下取整到整帧）');
+    } else {
+      logp('⚠️ 读不到音频帧栅格，音频长度退回毫秒等分（仍会逐段校验 audio 时长）');
+    }
+  }
   final keyframes = await _dbKeyframeMs(src);
   final bounds = <int>[0];
+  final targetByBound = <int>[0];
   for (var i = 1; i < segCount; i++) {
     final target = (totalMs * i) ~/ segCount;
+    var b = target;
     int? pick;
     for (final k in keyframes) {
       if (k <= bounds.last + 800) continue;
       if (k >= totalMs - 500) continue;
       if (pick == null || (k - target).abs() < (pick - target).abs()) pick = k;
     }
-    if (pick != null && (pick - target).abs() <= 6000) {
-      bounds.add(pick);
-      logp('✂️ 分段边界 ${target}ms → 关键帧 ${pick}ms');
-    } else {
-      bounds.add(target);
-    }
+    if (pick != null && (pick - target).abs() <= 6000) b = pick;
+    bounds.add(b);
+    targetByBound.add(target);
+    final frameMs = aGrid.valid ? (aGrid.frameSec * 1000).toStringAsFixed(2) : '-';
+    logp('✂️ 分片边界 ${i}: 目标结束 ${target}ms → 视频关键帧 ${b}ms'
+        '（偏移 ${b - target >= 0 ? '+' : ''}${b - target}ms，'
+        '音频按 $frameMs ms/帧收整）');
   }
   bounds.add(totalMs);
+  targetByBound.add(totalMs);
 
-  final ranges = <({int start, int end})>[];
+  final ranges = <({int start, int end, int targetEnd})>[];
   for (var i = 0; i < bounds.length - 1; i++) {
     if (bounds[i + 1] > bounds[i]) {
-      ranges.add((start: bounds[i], end: bounds[i + 1]));
+      ranges.add((
+        start: bounds[i],
+        end: bounds[i + 1],
+        targetEnd: targetByBound[i + 1]
+      ));
     }
   }
   // 尾部残段（<500ms）并进上一段，绝不单独成一个分片。
   if (ranges.length > 1 && ranges.last.end - ranges.last.start < 500) {
     final last = ranges.removeLast();
     final prev = ranges.removeLast();
-    ranges.add((start: prev.start, end: last.end));
+    ranges.add((
+      start: prev.start,
+      end: last.end,
+      targetEnd: last.targetEnd
+    ));
   }
 
   final files = <File>[];
+  final rangeMerged = List<bool>.filled(ranges.length, false);
   for (var i = 0; i < ranges.length; i++) {
     onSeg?.call(i, ranges.length, 0);
     files.add(await _dbCutSegment(
@@ -2577,6 +2692,7 @@ Future<List<_DbSegPart>> _dbSplitByTime({
       range: ranges[i],
       outPath: '${tmpDir.path}/seg_${i.toString().padLeft(3, '0')}.mp4',
       srcHasAudio: srcHasAudio,
+      audioFrameSec: aGrid.frameSec,
       onTick: (sec) => onSeg?.call(i, ranges.length, sec),
     ));
   }
@@ -2589,6 +2705,7 @@ Future<List<_DbSegPart>> _dbSplitByTime({
           file: files[i],
           startMs: ranges[i].start,
           endMs: ranges[i].end,
+          targetEndMs: ranges[i].targetEnd,
           hasAudio: false,
           audioMs: 0,
           rebuilt: false,
@@ -2617,8 +2734,8 @@ Future<List<_DbSegPart>> _dbSplitByTime({
             '（可信 ${m.audioMs}ms，起点 ${m.health.startMs}ms）');
         continue;
       }
-      logp('⚠️ 第 ${i + 1}/${files.length} 段音频过短'
-          '（${m.audioMs}ms < ${dbArkAudioHardMinMs}ms）'
+      logp('⚠️ 第 ${i + 1}/${files.length} 段音频不合格'
+          '（${m.health.riskReason}，可信 ${m.audioMs}ms）'
           '→ 本地重建音频轨（保留原样本，不剥离）');
       if (await _dbRepairAudioInPlace(files[i],
           label: '第 ${i + 1}/${files.length} 段')) {
@@ -2635,8 +2752,8 @@ Future<List<_DbSegPart>> _dbSplitByTime({
     // 合并：与相邻分片并成一段，重新切割、重新探测（全程保留音频）。
     if (files.length <= 1) {
       throw DbVideoArkException(
-          '整片只有 1 个分片且音频无法修复到 ≥${dbArkAudioHardMinMs}ms'
-          '（音频已完整保留，绝不剥离）',
+          '整片只有 1 个分片：'
+          '对齐裁切、分片合并均已尝试，仍触发校验，需核查该模型接口规则',
           code: dbArkAudioTooShortCode);
     }
     guard++;
@@ -2652,6 +2769,9 @@ Future<List<_DbSegPart>> _dbSplitByTime({
     final e = ranges[bad].end > ranges[nb].end
         ? ranges[bad].end
         : ranges[nb].end;
+    final tEnd = ranges[bad].targetEnd > ranges[nb].targetEnd
+        ? ranges[bad].targetEnd
+        : ranges[nb].targetEnd;
     for (final k in <int>[bad, nb]) {
       try {
         files[k].deleteSync();
@@ -2662,16 +2782,19 @@ Future<List<_DbSegPart>> _dbSplitByTime({
     logp('🔗 第 ${bad + 1}/${files.length} 段与相邻段合并为 '
         '${_dbClock(s / 1000.0)} - ${_dbClock(e / 1000.0)}'
         '（${e - s}ms）后重切（音频不剥离）');
-    ranges[keep] = (start: s, end: e);
+    ranges[keep] = (start: s, end: e, targetEnd: tEnd);
     files[keep] = await _dbCutSegment(
       src: src,
-      range: (start: s, end: e),
+      range: (start: s, end: e, targetEnd: tEnd),
       outPath: '${tmpDir.path}/seg_merge_${guard}_${s}_$e.mp4',
       srcHasAudio: true,
+      audioFrameSec: aGrid.frameSec,
       onTick: (sec) => onSeg?.call(keep, ranges.length, sec),
     );
     ranges.removeAt(drop);
     files.removeAt(drop);
+    rangeMerged[keep] = true;
+    rangeMerged.removeAt(drop);
   }
 
   final parts = <_DbSegPart>[];
@@ -2681,6 +2804,8 @@ Future<List<_DbSegPart>> _dbSplitByTime({
       file: files[i],
       startMs: ranges[i].start,
       endMs: ranges[i].end,
+      targetEndMs: ranges[i].targetEnd,
+      mergeNote: rangeMerged[i] ? '源分段碎片合并' : '',
       hasAudio: m.health.hasAudio,
       audioMs: m.audioMs,
       rebuilt: false,
@@ -2881,11 +3006,15 @@ Future<String> dbDescribeVideoInSegments({
   required String apiKey,
   required int segCount,
   required double duration,
+  required String model,
   void Function(Map<String, dynamic> info)? onProgress,
 }) async {
   final fps = cfg.fps <= 0 ? 1.0 : cfg.fps;
-  final model = cfg.preprocessModel.trim().isNotEmpty
-      ? cfg.preprocessModel.trim()
+  // ★ 推理模型必须用调用方本次真正路由到的模型（model 参数），
+  //   不能拿 preprocessModel 顶替：后者只决定上传时的音频预处理能力，
+  //   两者混用会导致「路由到 DeepSeek 1017、实际却用 2.1-lite 转写」。
+  final inferenceModel = model.trim().isNotEmpty
+      ? model.trim()
       : 'doubao-seed-2-1-lite-260915';
   // 推理模型与预处理模型是两件事：预处理必须显式指定模型（否则音频不被
   // 抽出、只剩 8ms 占位）；推理模型保持用户配置，绝不做静默替换。
@@ -2960,7 +3089,7 @@ Future<String> dbDescribeVideoInSegments({
           '文件 ${dbFmtSize(segSize)}）');
       return _dbArkDescribeSegment(
         apiKey: apiKey,
-        model: model,
+        model: inferenceModel,
         fileId: fileId,
         prompt: _dbSegFullPrompt(
           videoName: fileName,
@@ -3014,8 +3143,8 @@ Future<String> dbDescribeVideoInSegments({
         merges++;
         if (merges > 3) {
           throw DbVideoArkException(
-              '$segLabel 音频被判过短（$cause），已与相邻分片合并重试 '
-              '3 次仍失败；音频全程保留、未剥离，任务中止',
+              '$segLabel 音频被判过短（$cause）：'
+              '对齐裁切、分片合并均已尝试，仍触发校验，需核查该模型接口规则',
               code: dbArkAudioTooShortCode);
         }
         logp('⚠️ $segLabel 音频仍被判过短（$cause）→ '
@@ -3048,17 +3177,25 @@ Future<String> dbDescribeVideoInSegments({
           var ppModel = dbArkVideoPreprocessModel(
             configured: cfg.preprocessModel,
             hasAudio: p.hasAudio,
-            inference: model,
+            inference: inferenceModel,
           );
           logp('🎛️ $segLabel 预处理模型: $ppModel'
-              '（音轨=${p.hasAudio ? '有' : '无'}，推理模型=$model）');
+              '（音轨=${p.hasAudio ? '有' : '无'}，推理模型=$inferenceModel）');
+          final alignOff = p.endMs - p.targetEndMs;
+          final tAlign = p.startMs + p.audioMs;
+          final audioOff = tAlign - p.endMs;
+          logp('📊 分片清单 | 段=${i + 1}/${parts.length} | '
+              '等分目标=${p.targetEndMs}ms | 裁切T=${p.endMs}ms'
+              '（视频关键帧，规划偏移=${alignOff >= 0 ? '+' : ''}${alignOff}ms） | '
+              'T_align=${tAlign}ms | 音频对齐偏移='
+              '${audioOff >= 0 ? '+' : ''}${audioOff}ms | '
+              '音频=${p.audioMs}ms | 大小=${dbFmtSize(p.file.lengthSync())} | '
+              '路由模型=$inferenceModel | '
+              '合并=${p.mergeNote.isEmpty ? '否' : '是（${p.mergeNote}）'}');
 
-          // ★ 两级自愈（顺序固定，不允许跳级）：
-          //   1) 当前预处理模型正常跑完；
-          //   2) 服务端仍判「音频过短」→ 换官方音频推荐模型重新预处理一次
-          //      （换名上传，避免 TOS 同名覆盖）——这一步仍然保留音频；
-          //   3) 第 2 步仍失败 → 与相邻分片合并重切后重试（最多 3 次）。
-          //      全程不剥离音频、不生成 noaud、不走无声重试。
+          // ★ 唯一自愈路径：服务端仍判「音频过短」→ 与相邻分片合并重切
+          //   （最多 3 次）。不做「分片二次预处理 / 换预处理模型 / _audpp 变体
+          //   重传」——这些是已被证伪的偷懒兜底，只会掩盖刀口问题。
           final segBudget = dbVideoTranscriptMaxTokens(
               p.lenSec > 0 ? p.lenSec : duration / parts.length);
           Object? audioErr;
@@ -3075,26 +3212,6 @@ Future<String> dbDescribeVideoInSegments({
           } catch (e) {
             if (!dbArkIsAudioTooShortError(e)) rethrow;
             audioErr = e;
-          }
-          if (audioErr != null && ppModel.trim() != dbArkAudioPreprocessModel) {
-            logp('⚠️ $segLabel 方舟仍报音频过短（$audioErr）→ '
-                '换预处理模型 $dbArkAudioPreprocessModel 重新预处理一次（音频不剥离）');
-            ppModel = dbArkAudioPreprocessModel;
-            try {
-              text = await describePart(
-                index: i,
-                p: p,
-                uploadName: _dbSegAudioModelName(_dbSegFileName(
-                    fileName, i, parts.length,
-                    variant: uploadSeq++)),
-                ppModel: ppModel,
-                maxTokens: segBudget,
-              );
-              audioErr = null;
-            } catch (e2) {
-              if (!dbArkIsAudioTooShortError(e2)) rethrow;
-              audioErr = e2;
-            }
           }
           if (audioErr != null) {
             await mergeAndRetry(audioErr);
@@ -3178,6 +3295,7 @@ Future<int> _dbMergeSegParts(
 }) async {
   var idx = i;
   var guard = 0;
+  final aGrid = srcHasAudio ? await _dbAudioGrid(src) : const _DbAudioGrid(0, 0);
   while (parts.length > 1) {
     guard++;
     if (guard > parts.length + 3) break;
@@ -3188,14 +3306,18 @@ Future<int> _dbMergeSegParts(
     final e = parts[idx].endMs > parts[nb].endMs
         ? parts[idx].endMs
         : parts[nb].endMs;
+    final tEnd = parts[idx].targetEndMs > parts[nb].targetEndMs
+        ? parts[idx].targetEndMs
+        : parts[nb].targetEndMs;
     final tmpPath =
         '${parts[idx].file.parent.path}/seg_merge_srv_${s}_${e}_'
         '${DateTime.now().microsecondsSinceEpoch}.mp4';
     final f = await _dbCutSegment(
       src: src,
-      range: (start: s, end: e),
+      range: (start: s, end: e, targetEnd: tEnd),
       outPath: tmpPath,
       srcHasAudio: srcHasAudio,
+      audioFrameSec: aGrid.frameSec,
     );
     var hasAudio = false;
     var audioMs = 0;
@@ -3233,6 +3355,8 @@ Future<int> _dbMergeSegParts(
       file: f,
       startMs: s,
       endMs: e,
+      targetEndMs: tEnd,
+      mergeNote: '服务端400后与第 ${nb + 1} 段合并',
       hasAudio: hasAudio,
       audioMs: audioMs,
       rebuilt: rebuilt,
@@ -3244,7 +3368,8 @@ Future<int> _dbMergeSegParts(
     return keep;
   }
   throw DbVideoArkException(
-      '音频仍被判过短且已无可合并的相邻分片（音频全程保留，未剥离）',
+      '音频仍被判过短且已无可合并的相邻分片：'
+      '对齐裁切、分片合并均已尝试，仍触发校验，需核查该模型接口规则',
       code: dbArkAudioTooShortCode);
 }
 
@@ -3263,11 +3388,4 @@ String _dbSegFileName(String videoName, int index, int total,
   final all = total.toString().padLeft(2, '0');
   final v = variant > 0 ? '_v$variant' : '';
   return '${stem}_s${no}of$all$v$ext';
-}
-
-/// 换音频预处理模型重传的文件名：带 _audpp 后缀，避免覆盖 TOS 上同名对象。
-String _dbSegAudioModelName(String name) {
-  final dot = name.lastIndexOf('.');
-  if (dot <= 0) return '${name}_audpp';
-  return '${name.substring(0, dot)}_audpp${name.substring(dot)}';
 }
