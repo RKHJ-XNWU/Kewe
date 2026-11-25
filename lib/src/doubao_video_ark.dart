@@ -102,11 +102,6 @@ class DbVideoArkConfig {
   /// Files API 通道：TOS 对象前缀
   String tosPrefix;
 
-  /// TOS 预处理前是否自动把 1080p/大视频规整为 720p。
-  /// 方舟 Files API 预处理有固定 5 分钟超时；关闭后 1080p/2GB 原片很容易失败。
-  /// 默认 true。
-  bool tosNormalize720p;
-
   /// Files API 通道：超过 512MB 且无 TOS 时用 ffmpeg 压缩后再上传
   bool autoCompact;
 
@@ -140,7 +135,6 @@ class DbVideoArkConfig {
     this.useFilesApi = false,
     this.tosBucket = '',
     this.tosPrefix = '',
-    this.tosNormalize720p = true,
     this.autoCompact = true,
     this.preprocessModel = '',
     this.maxVideoTokens = 0,
@@ -156,15 +150,13 @@ class DbVideoArkConfig {
             'fps 为抽帧密度（0.2~5，分段描述建议 0.5~1）；'
             'segmentMaxBytes 为单片上限（必须 <50MB，默认 45MB）；'
             'useFilesApi=true 时会优先尝试 Files API（需要 project 级 Key / TOS）；'
-            'tosBucket/tosPrefix 仅 Files API 通道使用；'
-            'tosNormalize720p=false 可关闭上传前 720p 规整（不推荐）。',
+            'tosBucket/tosPrefix 仅 Files API 通道使用。',
         'maxBytes': maxBytes,
         'fps': fps,
         'segmentMaxBytes': segmentMaxBytes,
         'useFilesApi': useFilesApi,
         'tosBucket': tosBucket,
         'tosPrefix': tosPrefix,
-        'tosNormalize720p': tosNormalize720p,
         'autoCompact': autoCompact,
         'preprocessModel': preprocessModel,
         'maxVideoTokens': maxVideoTokens,
@@ -203,7 +195,6 @@ class DbVideoArkConfig {
       useFilesApi: mBool(j, 'useFilesApi', false),
       tosBucket: mStr(j, 'tosBucket').trim(),
       tosPrefix: mStr(j, 'tosPrefix').trim(),
-      tosNormalize720p: mBool(j, 'tosNormalize720p', true),
       autoCompact: mBool(j, 'autoCompact', true),
       preprocessModel: mStr(j, 'preprocessModel').trim(),
       maxVideoTokens: intArgDefault(j, 'maxVideoTokens', 0),
@@ -1201,8 +1192,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     //   这里在上传 TOS 前把大视频/高分辨率视频规整成 720p（最高 480MB），
     //   再交给方舟做 TOS 预处理；不改变「只走 TOS、不回退本地」的路径。
     final dims = await _dbProbeVideoSize(uploaded);
-    if (cfg.tosNormalize720p &&
-        _dbNeedTosNormalize(dims.width, dims.height, size)) {
+    if (_dbNeedTosNormalize(dims.width, dims.height, size)) {
       onProgress?.call({
         'stage': 'tos_normalize_start',
         'size': size,
@@ -1216,8 +1206,6 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
       size = uploaded.lengthSync();
       onProgress?.call({'stage': 'tos_normalize_done', 'size': size});
       logp('🎬 TOS 预处理前已规整为 720p: ${fileName} (${dbFmtSize(size)})');
-    } else if (!cfg.tosNormalize720p) {
-      logp('🎬 tosNormalize720p=false，跳过 720p 规整，按原视频送 TOS 预处理');
     }
 
     // 2GB/长视频如果仍按 1fps 抽帧，方舟 5 分钟预处理窗口依然可能超时；
