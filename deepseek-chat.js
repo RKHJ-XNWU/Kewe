@@ -3476,10 +3476,6 @@
                                 mpLine = dscT('🎬 動画 {0} 件を準備します', (obj.count || 1));
                             } else if (mpStage === 'cache_hit') {
                                 mpLine = dscT('♻️ アップロード済みの動画を再利用します');
-                            } else if (mpStage === 'tos_normalize_start' || mpStage === 'tos_normalize') {
-                                mpLine = dscT('🎬 方舟の 5 分前処理制限に合わせ、720p へ変換中（元 {0}）…', dscFmtBytes(obj.size));
-                            } else if (mpStage === 'tos_normalize_done') {
-                                mpLine = dscT('🎬 720p 変換完了（{0}）。TOS へアップロードします…', dscFmtBytes(obj.size));
                             } else if (mpStage === 'compact_start') {
                                 mpLine = dscT('🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります', dscFmtBytes(obj.size));
                             } else if (mpStage === 'compact_done') {

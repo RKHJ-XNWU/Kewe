@@ -59,9 +59,6 @@ const int dbArkStorageMaxBytes = 512 * 1024 * 1024;
 /// 火山引擎 TOS 通道的单文件上限：2GB（仅 Files API 路径使用）
 const int dbArkTosMaxBytes = 2 * 1024 * 1024 * 1024;
 
-/// 超过托管上限时自动压缩的目标体积（仅 Files API 路径使用）
-const int dbArkCompactTargetBytes = 480 * 1024 * 1024;
-
 /// 方舟文件默认保留 7 天，本地缓存按 6 天失效
 const int _dbArkFileTtlMs = 6 * 24 * 3600 * 1000;
 
@@ -312,50 +309,6 @@ Future<double> _dbProbeDuration(File f) async {
     }
   } catch (_) {}
   return 0;
-}
-
-/// 读取视频分辨率；失败返回 0x0（调用方按体积兜底决定是否转码）
-Future<({int width, int height})> _dbProbeVideoSize(File f) async {
-  try {
-    final r = await Process.run('ffprobe', [
-      '-v', 'error',
-      '-select_streams', 'v:0',
-      '-show_entries', 'stream=width,height',
-      '-of', 'json',
-      f.path,
-    ]);
-    if (r.exitCode == 0) {
-      final j = asMap(jsonDecode('${r.stdout}'));
-      final streams = asList(j['streams']);
-      if (streams.isNotEmpty) {
-        final st = asMap(streams.first);
-        final w = intArgDefault(st, 'width', 0);
-        final h = intArgDefault(st, 'height', 0);
-        if (w > 0 && h > 0) return (width: w, height: h);
-      }
-    }
-  } catch (_) {}
-  return (width: 0, height: 0);
-}
-
-/// 方舟视频预处理有 5 分钟硬超时，官方明确建议 1080p 先压到 720p 及以下。
-/// 这里只做「上传 TOS 前的 720p 规整」，不是本地理解；真正预处理仍由方舟 TOS 完成。
-bool _dbNeedTosNormalize(int width, int height, int size) {
-  if (width > 1280 || height > 720) return true;
-  // 分辨率未知时，大文件也先压缩，避免 2GB 原片直接触发预处理超时。
-  if (width <= 0 || height <= 0) return size > (256 * 1024 * 1024);
-  return size > dbArkCompactTargetBytes;
-}
-
-/// 大视频按 720p / 480MB 目标重编码；输出临时文件，上传 TOS 后即删除。
-Future<File> _dbNormalizeForTos(File src, Directory tmpDir) async {
-  final out = File('${tmpDir.path}/ark_tos_720p.mp4');
-  await _dbCompressTo(src, dbArkCompactTargetBytes, out);
-  if (!out.existsSync() || out.lengthSync() <= 0) {
-    throw DbVideoArkException('TOS 预处理前的 720p 转码失败：输出为空',
-        code: 'tos_normalize_failed');
-  }
-  return out;
 }
 
 String _dbVideoMime(String name) {
@@ -1143,8 +1096,8 @@ Future<void> dbArkWaitFileActive({
       final err = info['error'] ?? info['error_message'] ?? info['message'];
       throw DbVideoArkException(
           '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}\n'
-          '请确认：TOS Bucket 已授权给方舟项目；视频已自动规整为 720p 以内；'
-          'tos[bucket]/tos[prefix] 与方舟控制台授权一致（当前不走本地回退）。');
+          '请确认：TOS Bucket 已授权给方舟项目；原文件格式、编码和体积可被方舟直接处理；'
+          'tos[bucket]/tos[prefix] 与方舟控制台授权一致（当前不走本地回退或本地转换）。');
     }
     await Future<void>.delayed(Duration(milliseconds: intervalMs));
     if (intervalMs < 5000) intervalMs += 500;
@@ -1175,41 +1128,17 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
 
-  Directory? tmpDir;
-  var uploaded = f;
+  final uploaded = f;
   var arkId = '';
-  try {
-    final key = _dbArkCacheKey(f, size);
+  final key = _dbArkCacheKey(f, size);
     final cached = _dbArkCacheLookup(key, cfg.fps);
     if (cached != null) {
       onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
       return dbArkVideoPartByFileId(cached, fps: cfg.fps);
     }
 
-    // ★ 方舟 Files API 视频预处理的官方硬超时是 5 分钟，且明确建议
-    //   1080p 先压到 720p 及以下。2GB 原片直接 tos:// 引用时，方舟常见
-    //   报错就是 InvalidArgumentError('Timeout occurred while processing video')。
-    //   这里在上传 TOS 前把大视频/高分辨率视频规整成 720p（最高 480MB），
-    //   再交给方舟做 TOS 预处理；不改变「只走 TOS、不回退本地」的路径。
-    final dims = await _dbProbeVideoSize(uploaded);
-    if (_dbNeedTosNormalize(dims.width, dims.height, size)) {
-      onProgress?.call({
-        'stage': 'tos_normalize_start',
-        'size': size,
-        'srcWidth': dims.width,
-        'srcHeight': dims.height,
-      });
-      tmpDir = Directory(
-          '${Directory.systemTemp.path}/kewe_tos720_${DateTime.now().microsecondsSinceEpoch}');
-      tmpDir.createSync(recursive: true);
-      uploaded = await _dbNormalizeForTos(uploaded, tmpDir);
-      size = uploaded.lengthSync();
-      onProgress?.call({'stage': 'tos_normalize_done', 'size': size});
-      logp('🎬 TOS 预处理前已规整为 720p: ${fileName} (${dbFmtSize(size)})');
-    }
-
-    // 2GB/长视频如果仍按 1fps 抽帧，方舟 5 分钟预处理窗口依然可能超时；
-    // 按时长只降低、不提高抽帧密度，给 TOS 预处理留足余量。
+    // 按用户要求不做本地转换/重编码：原文件直接上传 TOS，预处理只由方舟完成。
+    // 2GB/长视频按时长调整抽帧参数，不改变视频字节。
     var arkFps = cfg.fps;
     final durSec = await _dbProbeDuration(uploaded);
     if (durSec > 7200 && arkFps > 0.2) {
@@ -1276,15 +1205,6 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     );
     _dbArkCacheStore(key, arkId, cfg.preprocessModel, arkFps);
     return dbArkVideoPartByFileId(arkId, fps: arkFps);
-  } finally {
-    if (tmpDir != null) {
-      try {
-        if (tmpDir.existsSync()) tmpDir.deleteSync(recursive: true);
-      } catch (e) {
-        logp('⚠️ 临时文件删除失败: $e');
-      }
-    }
-  }
 }
 
 // ============================================================
