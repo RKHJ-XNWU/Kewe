@@ -62,6 +62,14 @@ const int dbArkTosMaxBytes = 2 * 1024 * 1024 * 1024;
 /// 方舟文件默认保留 7 天，本地缓存按 6 天失效
 const int _dbArkFileTtlMs = 6 * 24 * 3600 * 1000;
 
+/// 方舟视频抽帧预处理的实测安全体积：原文件超过它时，方舟会直接返回
+/// InvalidParameter("Timeout occurred while processing video")。
+/// 2026-11 用户实测：>100MB 的视频在抽帧阶段必失败。
+const int dbArkPreprocessSafeBytes = 100 * 1024 * 1024;
+
+/// 自动适配后的目标体积（100MB 上限留 5MB 余量）
+const int dbArkPreprocessTargetBytes = 95 * 1024 * 1024;
+
 // ------------------------------------------------------------
 // 异常
 // ------------------------------------------------------------
@@ -1096,12 +1104,164 @@ Future<void> dbArkWaitFileActive({
       final err = info['error'] ?? info['error_message'] ?? info['message'];
       throw DbVideoArkException(
           '方舟视频预处理失败（file=$fileId）：${err ?? '未知原因'}\n'
-          '请确认：TOS Bucket 已授权给方舟项目；原文件格式、编码和体积可被方舟直接处理；'
-          'tos[bucket]/tos[prefix] 与方舟控制台授权一致（当前不走本地回退或本地转换）。');
+          '请确认：TOS Bucket 已授权给方舟项目；视频不是损坏文件；'
+          '本机已安装 ffmpeg（pkg install ffmpeg）。'
+          'autoCompact=true 时 >100MB 的视频会自动适配到 '
+          '≤${dbFmtSize(dbArkPreprocessTargetBytes)} 后重试。');
     }
     await Future<void>.delayed(Duration(milliseconds: intervalMs));
     if (intervalMs < 5000) intervalMs += 500;
   }
+}
+
+/// 按「帧预算 + 体积」折算实际抽帧密度。
+/// 方舟预处理按总帧数消耗算力：fps=5 的长视频（几千帧）必然在抽帧阶段超时。
+double _dbEffectiveVideoFps(double baseFps, double durSec, int sizeBytes) {
+  var fps = baseFps;
+  // 总帧预算 1500 帧：10 分钟内保持原 fps，1 小时降到 ~0.4，2 小时 0.2 兜底。
+  const maxFrames = 1500.0;
+  if (durSec > 0) {
+    final budgetFps = maxFrames / durSec;
+    if (fps > budgetFps) fps = budgetFps;
+  }
+  // 体积越大，单帧解码成本越高：>100MB 限 1fps，>512MB 限 0.5fps。
+  if (sizeBytes > 512 * 1024 * 1024 && fps > 0.5) {
+    fps = 0.5;
+  } else if (sizeBytes > dbArkPreprocessSafeBytes && fps > 1.0) {
+    fps = 1.0;
+  }
+  if (fps < 0.2) fps = 0.2;
+  if (fps > 5) fps = 5;
+  return (fps * 10).roundToDouble() / 10;
+}
+
+/// 方舟预处理失败是否属于「原文件体积/编码不被接受」。
+bool _dbIsArkPreprocessReject(Object e) {
+  final s = e.toString().toLowerCase();
+  if (!s.contains('预处理')) return false;
+  return s.contains('timeout') ||
+      s.contains('超时') ||
+      s.contains('invalidparameter') ||
+      s.contains('invalidargument');
+}
+
+/// 把超过方舟安全体积的原文件自动适配成 H.264/AAC 的 MP4（≤ [targetBytes]）。
+/// 只在原文件被方舟拒绝（或预判必失败）时执行；≤100MB 仍然原文件直传。
+/// 用 -progress 解析真实进度，避免像旧版一样看起来「卡在转换阶段」。
+Future<File> dbCompactVideoForArk(
+  File src, {
+  required int targetBytes,
+  required void Function(int percent) onProgress,
+}) async {
+  if (!await _dbHasBin('ffmpeg')) {
+    throw DbVideoArkException(
+        '视频 ${dbFmtSize(src.lengthSync())} 超过方舟预处理安全体积（'
+        '${dbFmtSize(dbArkPreprocessSafeBytes)}），需要在本地自动适配，'
+        '但本机没有 ffmpeg。请执行 pkg install ffmpeg 后重试。',
+        code: 'need_ffmpeg');
+  }
+  final dur = await _dbProbeDuration(src);
+  if (dur <= 0) {
+    throw DbVideoArkException('无法读取视频时长，不能自动适配：${src.path}',
+        code: 'probe_failed');
+  }
+  final srcSize = src.lengthSync();
+  final dir = Directory(
+      '${Directory.systemTemp.path}/kewe_arkfit_${DateTime.now().microsecondsSinceEpoch}');
+  dir.createSync(recursive: true);
+  final out = File('${dir.path}/ark_ready.mp4');
+
+  var attempt = 0;
+  while (attempt < 2) {
+    attempt++;
+    final factor = attempt == 1 ? 1.0 : 0.75;
+    final totalKbps = targetBytes * 8 / dur / 1000 * 0.92 * factor;
+    var audioKbps = 64.0;
+    if (totalKbps < 240) audioKbps = 48.0;
+    if (totalKbps < 140) audioKbps = 32.0;
+    var videoKbps = totalKbps - audioKbps;
+    if (videoKbps < 60) videoKbps = 60;
+    if (videoKbps > 2500) videoKbps = 2500;
+    final height = videoKbps >= 900
+        ? 720
+        : (videoKbps >= 400 ? 540 : (videoKbps >= 200 ? 480 : 360));
+    final preset = srcSize > 300 * 1024 * 1024 ? 'ultrafast' : 'veryfast';
+    if (out.existsSync()) out.deleteSync();
+
+    logp('🎞️ 方舟用自动适配: ${dbFmtSize(srcSize)} → ≤${dbFmtSize(targetBytes)} '
+        '(第 $attempt 次, ${height}p, ${videoKbps.round()}kbps, $preset)');
+    onProgress(0);
+
+    final stderrBuf = StringBuffer();
+    final p = await Process.start('ffmpeg', [
+      '-y',
+      '-loglevel',
+      'error',
+      '-i',
+      src.path,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a?',
+      '-vf',
+      'scale=-2:min($height\\,ih)',
+      '-c:v',
+      'libx264',
+      '-preset',
+      preset,
+      '-b:v',
+      '${videoKbps.round()}k',
+      '-maxrate',
+      '${(videoKbps * 1.2).round()}k',
+      '-bufsize',
+      '${(videoKbps * 2).round()}k',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '${audioKbps.round()}k',
+      '-ac',
+      '2',
+      '-movflags',
+      '+faststart',
+      '-progress',
+      'pipe:1',
+      out.path,
+    ]);
+    p.stderr.listen(
+        (d) => stderrBuf.write(utf8.decode(d, allowMalformed: true)));
+    await for (final line in p.stdout
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())) {
+      final m = RegExp(r'^out_time=(\d+):(\d+):(\d+(?:\.\d+)?)')
+          .firstMatch(line.trim());
+      if (m == null) continue;
+      final sec = int.parse(m.group(1)!) * 3600 +
+          int.parse(m.group(2)!) * 60 +
+          double.parse(m.group(3)!);
+      final pct = (sec / dur * 100).floor();
+      onProgress(pct < 0 ? 0 : (pct > 99 ? 99 : pct));
+    }
+    final code = await p.exitCode;
+    if (code != 0 || !out.existsSync() || out.lengthSync() <= 0) {
+      try { dir.deleteSync(recursive: true); } catch (_) {}
+      throw DbVideoArkException(
+          '视频自动适配失败（ffmpeg exit=$code）：${stderrBuf.toString().trim()}',
+          code: 'compact_failed');
+    }
+    final outSize = out.lengthSync();
+    logp('🎞️ 自动适配完成: ${dbFmtSize(outSize)}（${_dbFmtClock(dur)}）');
+    if (outSize <= targetBytes) {
+      onProgress(100);
+      return out;
+    }
+    logp('⚠️ 自动适配后仍超目标（${dbFmtSize(outSize)}），降低码率重试');
+  }
+  try { dir.deleteSync(recursive: true); } catch (_) {}
+  throw DbVideoArkException(
+      '视频过长，自动适配后仍超过 ${dbFmtSize(targetBytes)}，无法被方舟预处理。',
+      code: 'compact_too_large');
 }
 
 /// Files API 单文件通道（仅在 useFilesApi=true 且非大视频分段路径时使用）
@@ -1128,36 +1288,68 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
 
-  final uploaded = f;
-  var arkId = '';
+  File uploadFile = f;
+  File? compacted;
+  int uploadSize = size;
+
+  var durSec = await _dbProbeDuration(f);
+
+  // 缓存按「原文件 + 压缩后的目标体积」折算 fps：命中时直接复用，
+  // 不必为同一个 >100MB 视频反复重编码。
+  final cacheFps = _dbEffectiveVideoFps(
+      cfg.fps,
+      durSec,
+      size > dbArkPreprocessSafeBytes ? dbArkPreprocessTargetBytes : size);
   final key = _dbArkCacheKey(f, size);
-    final cached = _dbArkCacheLookup(key, cfg.fps);
-    if (cached != null) {
-      onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
-      return dbArkVideoPartByFileId(cached, fps: cfg.fps);
-    }
+  final cached = _dbArkCacheLookup(key, cacheFps);
+  if (cached != null) {
+    onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
+    return dbArkVideoPartByFileId(cached, fps: cacheFps);
+  }
 
-    // 按用户要求不做本地转换/重编码：原文件直接上传 TOS，预处理只由方舟完成。
-    // 2GB/长视频按时长调整抽帧参数，不改变视频字节。
-    var arkFps = cfg.fps;
-    final durSec = await _dbProbeDuration(uploaded);
-    if (durSec > 7200 && arkFps > 0.2) {
-      arkFps = 0.2;
-    } else if (durSec > 3600 && arkFps > 0.3) {
-      arkFps = 0.3;
-    } else if (durSec > 1800 && arkFps > 0.5) {
-      arkFps = 0.5;
-    } else if (durSec > 600 && arkFps > 0.7) {
-      arkFps = 0.7;
-    }
+  // 体积超过方舟安全线时，直传必然在抽帧阶段失败：先自动适配成 ≤95MB。
+  // ≤100MB 仍然原文件直传，不做任何转换；本机没有 ffmpeg 时退回直传。
+  final hasFFmpeg = await _dbHasBin('ffmpeg');
+  if (cfg.autoCompact && hasFFmpeg && size > dbArkPreprocessSafeBytes) {
+    onProgress?.call({'stage': 'compact_start', 'size': size});
+    final c = await dbCompactVideoForArk(
+      f,
+      targetBytes: dbArkPreprocessTargetBytes,
+      onProgress: (pct) => onProgress?.call({
+        'stage': 'compact',
+        'percent': pct,
+        'size': size,
+      }),
+    );
+    compacted = c;
+    uploadFile = c;
+    uploadSize = c.lengthSync();
+    final d = await _dbProbeDuration(c);
+    if (d > 0) durSec = d;
+    onProgress?.call({'stage': 'compact_done', 'size': uploadSize});
+  }
 
-    if (cfg.tosBucket.trim().isNotEmpty) {
+  // 抽帧密度：fps=5 + 长视频会在方舟抽帧阶段直接超时，必须按帧预算降下来。
+  var arkFps = _dbEffectiveVideoFps(cfg.fps, durSec, uploadSize);
+
+  if (cfg.tosBucket.trim().isEmpty) {
+    throw DbVideoArkException(
+        'TOS Bucket 未配置，已按「只走 TOS 预处理」策略停止，不回退本地。',
+        code: 'tos_not_configured');
+  }
+
+  // 最多两次：原文件直传 1 次；若方舟拒绝预处理且开启 autoCompact，
+  // 自动适配后再传 1 次。全部失败才报错，错误信息里带上真实原因。
+  var attempt = 0;
+  try {
+    while (true) {
+      attempt++;
       // 二进制上传 + tos[bucket]/tos[prefix]：文件落到用户 TOS，
       // 预处理由方舟完成；不需要 TOS AK/SK，也不检查/依赖 TOS 对象路径。
-      onProgress?.call({'stage': 'tos_upload_start', 'size': size});
-      arkId = await _dbArkUploadToTosBucket(
-        file: uploaded,
-        fileName: fileName,
+      onProgress?.call({'stage': 'tos_upload_start', 'size': uploadSize});
+      final arkId = await _dbArkUploadToTosBucket(
+        file: uploadFile,
+        fileName: compacted == null ? fileName : 'ark_ready.mp4',
         bucket: cfg.tosBucket,
         prefix: cfg.tosPrefix,
         model: cfg.preprocessModel,
@@ -1174,37 +1366,72 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
           });
         },
       );
-      onProgress?.call({'stage': 'tos_upload_done', 'size': size});
-      onProgress?.call({'stage': 'tos_reference', 'size': size});
-    } else {
-      throw DbVideoArkException(
-          'TOS Bucket 未配置，已按「只走 TOS 预处理」策略停止，不回退本地。',
-          code: 'tos_not_configured');
+      onProgress?.call({'stage': 'tos_upload_done', 'size': uploadSize});
+      onProgress?.call({'stage': 'tos_reference', 'size': uploadSize});
+
+      // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
+      //   旧实现有 2 处损坏：
+      //     1) 发送 preprocess_wait 时没带 waited → 前端 (obj.waited || 0) 恒为 0
+      //     2) 没有把 onTick 传给 dbArkWaitFileActive → 轮询期间
+      //        没有任何进度流动，直到完成都固定显示"0 秒"
+      //   以此处等待开始时刻为起点，每个 tick 下发实际经过秒数。
+      onProgress
+          ?.call({'stage': 'preprocess_wait', 'arkFileId': arkId, 'waited': 0});
+      final waitStartedAt = DateTime.now();
+      try {
+        await dbArkWaitFileActive(
+          apiKey: apiKey,
+          fileId: arkId,
+          onTick: (status, waitedSec) {
+            // 首个 tick 的 waitedSec 可能为 0，用本地经过时间兜底
+            final local = DateTime.now().difference(waitStartedAt).inSeconds;
+            onProgress?.call({
+              'stage': 'preprocess',
+              'arkFileId': arkId,
+              'status': status,
+              'waited': waitedSec > local ? waitedSec : local,
+            });
+          },
+        );
+      } catch (e) {
+        final canRetry = attempt == 1 &&
+            compacted == null &&
+            cfg.autoCompact &&
+            hasFFmpeg &&
+            _dbIsArkPreprocessReject(e);
+        if (!canRetry) rethrow;
+        logp('⚠️ 方舟拒绝原文件预处理，自动适配后重试: $e');
+        onProgress?.call({'stage': 'compact_start', 'size': size});
+        final c = await dbCompactVideoForArk(
+          f,
+          targetBytes: dbArkPreprocessTargetBytes,
+          onProgress: (pct) => onProgress?.call({
+            'stage': 'compact',
+            'percent': pct,
+            'size': size,
+          }),
+        );
+        compacted = c;
+        uploadFile = c;
+        uploadSize = c.lengthSync();
+        final d = await _dbProbeDuration(c);
+        if (d > 0) durSec = d;
+        arkFps = _dbEffectiveVideoFps(cfg.fps, durSec, uploadSize);
+        onProgress?.call({'stage': 'compact_done', 'size': uploadSize});
+        continue;
+      }
+      _dbArkCacheStore(key, arkId, cfg.preprocessModel, arkFps);
+      return dbArkVideoPartByFileId(arkId, fps: arkFps);
     }
-    // ★ 修复"方舟预处理停在 0 秒"的显示 bug（2026-11）
-    //   旧实现有 2 处损坏：
-    //     1) 发送 preprocess_wait 时没带 waited → 前端 (obj.waited || 0) 恒为 0
-    //     2) 没有把 onTick 传给 dbArkWaitFileActive → 轮询期间
-    //        没有任何进度流动，直到完成都固定显示"0 秒"
-    //   以此处等待开始时刻为起点，每个 tick 下发实际经过秒数。
-    onProgress?.call({'stage': 'preprocess_wait', 'arkFileId': arkId, 'waited': 0});
-    final waitStartedAt = DateTime.now();
-    await dbArkWaitFileActive(
-      apiKey: apiKey,
-      fileId: arkId,
-      onTick: (status, waitedSec) {
-        // 首个 tick 的 waitedSec 可能为 0，用本地经过时间兜底
-        final local = DateTime.now().difference(waitStartedAt).inSeconds;
-        onProgress?.call({
-          'stage': 'preprocess',
-          'arkFileId': arkId,
-          'status': status,
-          'waited': waitedSec > local ? waitedSec : local,
-        });
-      },
-    );
-    _dbArkCacheStore(key, arkId, cfg.preprocessModel, arkFps);
-    return dbArkVideoPartByFileId(arkId, fps: arkFps);
+  } finally {
+    if (compacted != null) {
+      try {
+        compacted.parent.deleteSync(recursive: true);
+      } catch (e) {
+        logp('⚠️ 自动适配临时文件删除失败: $e');
+      }
+    }
+  }
 }
 
 // ============================================================

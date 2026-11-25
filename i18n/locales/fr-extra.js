@@ -368,6 +368,9 @@ I18N.add('fr',`
     🎬 動画を準備中…|🎬 Préparation de la vidéo…
     🎬 動画 {0} 件を準備します|🎬 Préparation de {0} vidéo(s)
     🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります|🎞️ Plus de 512 Mo, compression locale (original {0})… cela peut prendre du temps
+    🎞️ 動画が方舟の上限を超えているため、アップロード用に最適化します（元 {0}）…|🎞️ Vidéo au-delà de la limite Ark — optimisation pour l'envoi (original {0})…
+    🎞️ アップロード用に最適化中… {0}%（元 {1}）|🎞️ Optimisation pour l'envoi… {0} % (original {1})
+    🎞️ アップロード用に最適化中…（元 {0}）|🎞️ Optimisation pour l'envoi… (original {0})
     ☁️ 方舟へアップロード開始（{0}）|☁️ Envoi vers Ark lancé ({0})
     ☁️ 方舟へアップロード中 {0}%（{1} / {2}）|☁️ Envoi vers Ark {0}% ({1} / {2})
     ☁️ TOS 上の動画を参照登録中（{0}）|☁️ Enregistrement de la référence vidéo TOS ({0})

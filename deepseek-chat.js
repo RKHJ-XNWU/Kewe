@@ -3477,7 +3477,12 @@
                             } else if (mpStage === 'cache_hit') {
                                 mpLine = dscT('♻️ アップロード済みの動画を再利用します');
                             } else if (mpStage === 'compact_start') {
-                                mpLine = dscT('🎞️ 512MB 超のためローカルで圧縮中（元 {0}）…時間がかかります', dscFmtBytes(obj.size));
+                                mpLine = dscT('🎞️ 動画が方舟の上限を超えているため、アップロード用に最適化します（元 {0}）…', dscFmtBytes(obj.size));
+                            } else if (mpStage === 'compact') {
+                                var cpct = Number(obj.percent);
+                                mpLine = (isFinite(cpct) && cpct > 0)
+                                    ? dscT('🎞️ アップロード用に最適化中… {0}%（元 {1}）', Math.min(99, cpct), dscFmtBytes(obj.size))
+                                    : dscT('🎞️ アップロード用に最適化中…（元 {0}）', dscFmtBytes(obj.size));
                             } else if (mpStage === 'compact_done') {
                                 mpLine = dscT('🎞️ 圧縮完了。アップロードを準備中…');
                             } else if (mpStage === 'upload_start' || mpStage === 'tos_upload_start') {
