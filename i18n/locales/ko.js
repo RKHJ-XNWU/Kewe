@@ -1433,7 +1433,7 @@ I18N.add('ko',`
     テキストを入力してください|텍스트를 입력하세요
     ✅ 音声を生成しました：{0}|✅ 음성을 생성했습니다: {0}
     オフにすると推論レベルはデフォルト Lv.|끄면 추론 레벨이 기본 Lv.
-    音声理解に対応：doubao-seed-2-0-mini / doubao-seed-2-0-lite。動画理解に対応：上記 2 モデルに加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。2.1 系は動画理解のみで音声理解には非対応です。|오디오 이해 지원: doubao-seed-2-0-mini / doubao-seed-2-0-lite. 동영상 이해 지원: 위 2개 모델 외에 doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving. 2.1 계열은 동영상 이해만 지원하며 오디오 이해는 지원하지 않습니다.
+    音声理解に対応：doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite（2.1-lite はネイティブ全モーダルで、音声付き動画もそのまま理解できます）。動画理解に対応：上記に加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。|오디오 이해 지원: doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite (2.1-lite는 네이티브 옴니모달 모델로, 오디오가 포함된 동영상도 그대로 이해합니다). 동영상 이해 지원: 위 모델 외에 doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving.
     文字起こしに使うモデル：{0}（音声理解）／{1}（音声認識）。豆包の用量を消費し、DeepSeek の用量は消費しません。|텍스트 변환에 사용하는 모델: {0}(오디오 이해) / {1}(음성 인식). 더우바오 사용량을 소모하며 DeepSeek 사용량은 소모하지 않습니다.
     （音声理解・動画理解）|(오디오 이해 · 동영상 이해)
     （動画理解）|(동영상 이해)

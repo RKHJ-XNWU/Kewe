@@ -655,7 +655,7 @@ var EDGE_VOICE_POOL = {
         var grid = el('div', 'dsc-db-grid');
         grid.appendChild(field('対話モデル', select('dscDbChatModel', modelsByCat('chat'))));
         card.appendChild(el('div', 'dsc-db-sub',
-            T('音声理解に対応：doubao-seed-2-0-mini / doubao-seed-2-0-lite。動画理解に対応：上記 2 モデルに加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。2.1 系は動画理解のみで音声理解には非対応です。')));
+            T('音声理解に対応：doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite（2.1-lite はネイティブ全モーダルで、音声付き動画もそのまま理解できます）。動画理解に対応：上記に加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。')));
         grid.appendChild(field('画像モデル', select('dscDbImageModel', modelsByCat('image'))));
         grid.appendChild(field('動画モデル', select('dscDbVideoModel', modelsByCat('video'))));
         grid.appendChild(field('音声合成モデル', select('dscDbTtsModel', modelsByCat('tts'))));

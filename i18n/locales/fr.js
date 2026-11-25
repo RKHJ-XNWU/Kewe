@@ -1433,7 +1433,7 @@ I18N.add('fr',`
     テキストを入力してください|Veuillez saisir le texte
     ✅ 音声を生成しました：{0}|✅ Audio généré : {0}
     オフにすると推論レベルはデフォルト Lv.|En le désactivant, le niveau de raisonnement revient à Lv.
-    音声理解に対応：doubao-seed-2-0-mini / doubao-seed-2-0-lite。動画理解に対応：上記 2 モデルに加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。2.1 系は動画理解のみで音声理解には非対応です。|Compréhension audio : doubao-seed-2-0-mini / doubao-seed-2-0-lite. Compréhension vidéo : les deux modèles ci-dessus plus doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving. La série 2.1 ne gère que la vidéo, pas l’audio.
+    音声理解に対応：doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite（2.1-lite はネイティブ全モーダルで、音声付き動画もそのまま理解できます）。動画理解に対応：上記に加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。|Compréhension audio : doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite (2.1-lite est nativement omni-modal et comprend aussi la vidéo avec sa piste audio). Compréhension vidéo : les modèles ci-dessus plus doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving.
     文字起こしに使うモデル：{0}（音声理解）／{1}（音声認識）。豆包の用量を消費し、DeepSeek の用量は消費しません。|Modèle utilisé pour la transcription : {0} (compréhension audio) / {1} (reconnaissance vocale). Consomme le quota Doubao, pas celui de DeepSeek.
     （音声理解・動画理解）|(compréhension audio et vidéo)
     （動画理解）|(compréhension vidéo)

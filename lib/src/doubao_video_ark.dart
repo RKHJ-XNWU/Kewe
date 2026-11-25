@@ -1880,7 +1880,7 @@ const String dbArkAudioPreprocessModel = 'doubao-seed-2-0-lite-260428';
 /// 接入点形如 `ep-2025...`；中转站别名（如 `doubao-2.1-lite`）不在此列，
 /// 写进预处理字段会被服务端判「模型不存在」，所以一律不认。
 bool dbArkLooksLikeArkModel(String model) {
-  final m = model.trim().toLowerCase();
+  final m = dbCanonicalModelValue(model).trim().toLowerCase();
   if (m.startsWith('ep-')) return true;
   return RegExp(r'^doubao-[a-z0-9.-]+-\d{6}$').hasMatch(m);
 }
@@ -1889,23 +1889,27 @@ bool dbArkLooksLikeArkModel(String model) {
 ///
 /// 官方文档：该字段不传时按 doubao-seed-1.8 之前的策略预处理，**视频中的
 /// 音频不会被处理**，服务端只剩一条约 8ms 的占位音频 → chat 阶段必 400。
-/// 所以只要文件带音轨，就必须显式指定一个模型。
+/// 所以只要文件带音轨，就必须显式指定一个**支持音频理解**的模型。
 ///
 /// 优先级（尽量保持用户原有模型选择不变）：
-///   1) 用户显式配置的 preprocessModel；
-///   2) 本次请求的推理模型（方舟原生 id 直接复用，能力与推理侧一致）；
-///   3) 官方音频理解推荐模型 [dbArkAudioPreprocessModel]。
+///   1) 用户显式配置的 preprocessModel（先做别名归一）；
+///   2) 接入点 ep-xxx：能力由用户自建接入点决定，原样复用；
+///   3) 本次推理模型，且它本身具备音频理解（2.1-lite / 2.0-lite / 2.0-mini
+///      原生全模态，音画口径与推理侧一致）；
+///   4) 官方音频理解推荐模型 [dbArkAudioPreprocessModel]。
 /// 无音轨时保持原样（可以为空），行为与修复前完全一致。
+/// ★ 该字段只影响抽帧 / 音频预处理策略，**推理模型不会被改动**。
 String dbArkVideoPreprocessModel({
   required String configured,
   required bool hasAudio,
   String inference = '',
 }) {
-  final c = configured.trim();
+  final c = dbCanonicalModelValue(configured.trim());
   if (!hasAudio) return c;
   if (c.isNotEmpty) return c;
-  final i = inference.trim();
-  if (dbArkLooksLikeArkModel(i)) return i;
+  final i = dbCanonicalModelValue(inference.trim());
+  if (i.toLowerCase().startsWith('ep-')) return i;
+  if (dbArkLooksLikeArkModel(i) && dbSupportsAudioInput(i)) return i;
   return dbArkAudioPreprocessModel;
 }
 
@@ -2997,8 +3001,8 @@ String _dbSegFullPrompt({
 /// 逐段做完整转写，最后按全片时间轴拼接成一份连续记录。
 ///
 /// ★ 音频纪律（2026-11-25 六修）：全程保留音频。8ms 400 的处理顺序是
-///   本地前置校验 → 重建音频轨 → 与相邻分片合并重切 → 换音频预处理模型；
-///   任何分支都不得剥离音轨、不得生成 noaud 文件、不得无声重试。
+///   本地前置校验 → 重建音频轨 → 与相邻分片合并重切（≤3 次）→ 仍不合格如实中止；
+///   任何分支都不得剥离音轨、不得生成 noaud 文件、不得无声重试、不得换模型重试。
 Future<String> dbDescribeVideoInSegments({
   required File file,
   required String fileName,

@@ -280,9 +280,18 @@ String dbLocalized(String lang, String key, [List<String> args = const <String>[
 
 // ------------------------------------------------------------
 // 模型能力表（音频理解 / 视频理解）
-//   只有下表列出的模型才能直接接收原始音频 / 视频。
-//   表外模型（含 2.1 系列）不具备音频理解，传入音频会 400，
-//   因此必须在请求前拦截并如实告知，绝不静默丢弃。
+//
+// ★ 2026-11-25 七修（用户实证 + 官方模型页核对，推翻旧结论）：
+//   doubao-seed-2-1-lite 是**原生全模态**模型，官方模型页原文
+//   「原生支持文本、视觉、音频统一理解」，并单列音频输入单价（12 元/百万 tokens）。
+//   所以旧表里「2.1 系列只支持视频、不支持音频」的判断是错的：
+//     · 2.1-lite 支持音频理解，纯音频可直接 input_audio 送入；
+//     · **带音轨的视频同样可以直接理解**（音画联合），不需要先转写、
+//       更不允许剥离音轨降级成无声视频。
+//   判定与视频侧对齐：白名单 + 家族前缀兜底 + 别名归一，
+//   避免新版本日期（如 261015）或 doubao-seed-2.1-lite / doubao-2.1-lite
+//   这类写法被硬白名单误拦。
+//   仍然表外的模型（如 2.1-turbo / pro 的纯音频输入）如实报错，绝不静默丢弃。
 // ------------------------------------------------------------
 
 /// 支持「音频理解」的模型：可直接把音频字节作为 input_audio 送入对话。
@@ -292,8 +301,29 @@ const Set<String> dbAudioUnderstandModels = <String>{
   'doubao-seed-2-1-lite-260915',
 };
 
+/// 音频理解家族前缀（含点号 / 无 seed 的中转写法）：
+/// 命中即认为具备音频理解，覆盖同家族的其它版本日期。
+const List<String> dbAudioUnderstandPrefixes = <String>[
+  'doubao-seed-2-1-lite',
+  'doubao-seed-2.1-lite',
+  'doubao-2-1-lite',
+  'doubao-2.1-lite',
+  'doubao-seed-2-0-lite',
+  'doubao-seed-2.0-lite',
+  'doubao-2-0-lite',
+  'doubao-2.0-lite',
+  'doubao-seed-2-0-mini',
+  'doubao-seed-2.0-mini',
+  'doubao-2-0-mini',
+  'doubao-2.0-mini',
+];
+
+/// 音频理解兜底模型：2.1-lite 原生全模态，音频 / 带音轨视频都能直接理解。
+const String dbAudioFallbackModel = 'doubao-seed-2-1-lite-260915';
+
 /// 支持「视频理解」的模型：可直接把视频字节作为 video_url 送入对话。
-/// 注意：2.1 系列（turbo / pro / evolving）只支持视频理解，不支持音频理解。
+/// 注意：2.1-lite 同时具备音频理解，带音轨的视频可音画联合理解；
+/// turbo / pro / evolving 走视频理解通道，音频能力以官方模型页为准。
 const Set<String> dbVideoUnderstandModels = <String>{
   'doubao-seed-2-0-mini-260428',
   'doubao-seed-2-0-lite-260428',
@@ -306,8 +336,27 @@ const Set<String> dbVideoUnderstandModels = <String>{
 };
 
 /// 该模型能否直接理解原始音频
-bool dbSupportsAudioInput(String model) =>
-    dbAudioUnderstandModels.contains(model.trim().toLowerCase());
+///
+/// 判定分三层（与视频侧一致，避免硬白名单误拦真实可用的模型）：
+///   1) 别名归一（doubao-seed-2-1-lite → doubao-seed-2-1-lite-260915）；
+///   2) 白名单 dbAudioUnderstandModels；
+///   3) 家族前缀兜底 dbAudioUnderstandPrefixes（含 2.1-lite 全家族）。
+bool dbSupportsAudioInput(String model) {
+  final m = dbCanonicalModelValue(model).trim().toLowerCase();
+  if (m.isEmpty) return false;
+  if (dbAudioUnderstandModels.contains(m)) return true;
+  for (final p in dbAudioUnderstandPrefixes) {
+    if (m.startsWith(p)) return true;
+  }
+  return false;
+}
+
+/// 该模型能否理解「带音轨的视频」（音画联合理解）。
+///
+/// 2.1-lite / 2.0-lite / 2.0-mini 为真：视频里的说话声、环境音与画面
+/// 一起被理解，不需要先转写，也不允许剥离音轨。
+bool dbSupportsAudioInVideo(String model) =>
+    dbSupportsVideoInput(model) && dbSupportsAudioInput(model);
 
 /// 该模型能否直接理解原始视频
 ///
@@ -316,7 +365,7 @@ bool dbSupportsAudioInput(String model) =>
 ///   2) doubao-seed-2.x 系列前缀兜底 —— 实测 doubao-seed-2-1-lite-260915
 ///      等未列入白名单的版本同样能理解视频，硬白名单会误拦真实可用的模型。
 bool dbSupportsVideoInput(String model) {
-  final m = model.trim().toLowerCase();
+  final m = dbCanonicalModelValue(model).trim().toLowerCase();
   if (m.isEmpty) return false;
   if (dbVideoUnderstandModels.contains(m)) return true;
   if (m.startsWith('doubao-seed-evolving')) return true;
@@ -1832,7 +1881,7 @@ Future<List<int>> _ensureMp3Bytes(List<int> audio, String fileName) async {
 /// 只用豆包的语言模型，完全不调用 DeepSeek 的 API（不消耗用量）。
 Future<String> _dbTranscribeViaChatAudio(
     List<int> audio, String fileName, DbConfig cfg) async {
-  final model = _dbPickChatModel('', cfg);
+  final model = _dbPickAudioModel('', cfg);
   final mp3 = await _ensureMp3Bytes(audio, fileName);
   // 若未转换（返回同一实例），则按原格式申报。
   // 若把 format 伪造成 mp3，方舟侧会返回 400，这里按实际格式来。
@@ -1896,7 +1945,7 @@ Future<String> dbTranscribeBytes(
       final t = await _dbTranscribeViaChatAudio(audio, fileName, cfg);
       if (t.trim().isNotEmpty) {
         logp('🎤 已用豆包语音理解识别（${t.runes.length} 字）');
-        onRoute?.call(_dbPickChatModel('', cfg), '/chat/completions (input_audio)');
+        onRoute?.call(_dbPickAudioModel('', cfg), '/chat/completions (input_audio)');
         return t.trim();
       }
     } catch (e) {
@@ -2099,6 +2148,21 @@ String _dbPickChatModel(String model, DbConfig cfg) {
   final c = cfg.chatModel.trim();
   if (c.isNotEmpty && dbIsChatModel(c)) return c;
   return DB_DEFAULT_CHAT_MODEL;
+}
+
+/// 音频理解 / 转写专用模型选择：**必须落在具备音频能力的模型上**。
+///
+/// 修复点：原先转写走 _dbPickChatModel，只校验「是不是聊天模型」。
+/// 用户把聊天模型设成 2.1-pro / turbo（视频通道）时，input_audio 会被
+/// 送到不具备音频理解的模型上，直接 400。
+/// 现在优先级：本次指定模型 → 配置聊天模型（都要求具备音频能力）
+/// → 兜底 2.1-lite（原生全模态，音频与带音轨视频都能理解）。
+String _dbPickAudioModel(String model, DbConfig cfg) {
+  final m = dbCanonicalModelValue(model.trim());
+  if (m.isNotEmpty && dbSupportsAudioInput(m)) return m;
+  final c = dbCanonicalModelValue(cfg.chatModel.trim());
+  if (c.isNotEmpty && dbSupportsAudioInput(c)) return c;
+  return dbAudioFallbackModel;
 }
 
 /// 播客语音合成用的 TTS 模型：只接受 tts 目录内的模型，

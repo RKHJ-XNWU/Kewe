@@ -1433,7 +1433,7 @@ I18N.add('ru',`
     テキストを入力してください|Введите текст
     ✅ 音声を生成しました：{0}|✅ Аудио создано: {0}
     オフにすると推論レベルはデフォルト Lv.|При выключении уровень рассуждений станет по умолчанию Lv.
-    音声理解に対応：doubao-seed-2-0-mini / doubao-seed-2-0-lite。動画理解に対応：上記 2 モデルに加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。2.1 系は動画理解のみで音声理解には非対応です。|Понимание аудио: doubao-seed-2-0-mini / doubao-seed-2-0-lite. Понимание видео: две модели выше, а также doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving. Серия 2.1 поддерживает только видео, без аудио.
+    音声理解に対応：doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite（2.1-lite はネイティブ全モーダルで、音声付き動画もそのまま理解できます）。動画理解に対応：上記に加え doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving。|Понимание аудио: doubao-seed-2-1-lite / doubao-seed-2-0-mini / doubao-seed-2-0-lite (2.1-lite — нативная омнимодальная модель, понимает и видео вместе со звуковой дорожкой). Понимание видео: перечисленные выше модели, а также doubao-seed-2-1-turbo / doubao-seed-2-1-pro / doubao-seed-evolving.
     文字起こしに使うモデル：{0}（音声理解）／{1}（音声認識）。豆包の用量を消費し、DeepSeek の用量は消費しません。|Модель для расшифровки: {0} (понимание аудио) / {1} (распознавание речи). Расходует квоту Doubao, не DeepSeek.
     （音声理解・動画理解）|(понимание аудио и видео)
     （動画理解）|(понимание видео)
