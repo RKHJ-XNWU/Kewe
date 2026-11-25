@@ -513,21 +513,40 @@ Future<({List<Map<String, dynamic>> parts, String text})>
     final dur = await _dbProbeDurationSec(f);
     final segCount = dbArkPlanSegCount(dur, cfg.fps);
     if (segCount <= 1) {
-      onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
-      final part = await dbArkVideoPartForLocalFile(
-        absPath: absPath,
-        fileName: meta.name,
-        model: model,
-        apiKey: apiKey,
-        onProgress: (info) => onProgress?.call({...tag, ...info}),
-      );
-      parts.add(part);
-      logp('🎬 整片直传（未分段）: ${meta.name}（${dbFmtSize(size)}，'
-          '${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
-          ' = ${(dur * cfg.fps).round()} 帧）');
-      index++;
-      if (decryptedTempDir != null) {
-        try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
+      // ★ 整片直传前的音频前置拦截（根治 audio_url duration 400）：
+      //   源视频若带「8ms 级」坏音频轨（元数据塌缩 / 只剩一两个包 /
+      //   PTS 未归零），方舟在 chat 阶段会按 audio_url duration 直接 400。
+      //   命中风险时先生成一份修好的副本上传（原文件绝不改动），用完即清。
+      //   分段路径不在这里做：分段后由 dbArkEnsureSegmentAudioSafe 逐段拦截，
+      //   避免为整片重编码一条几十分钟的音频。
+      Directory? audioFixTempDir;
+      try {
+        final safe = await dbArkPrepareWholeVideoSafe(f);
+        if (safe.file.path != f.path) {
+          f = safe.file;
+          absPath = f.path;
+          audioFixTempDir = safe.tempDir;
+        }
+      } catch (e) {
+        logp('⚠️ 整片音频前置拦截失败（按原样继续）: $e');
+      }
+      try {
+        onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
+        final part = await dbArkVideoPartForLocalFile(
+          absPath: absPath,
+          fileName: meta.name,
+          model: model,
+          apiKey: apiKey,
+          onProgress: (info) => onProgress?.call({...tag, ...info}),
+        );
+        parts.add(part);
+        logp('🎬 整片直传（未分段）: ${meta.name}（${dbFmtSize(size)}，'
+            '${_dbClock(dur)} × ${_dbFpsStr(cfg.fps)} fps'
+            ' = ${(dur * cfg.fps).round()} 帧）');
+        index++;
+      } finally {
+        // 上传（成功或失败）后立刻清掉解密目录与音频修复副本目录。
+        _dbCleanupDirs([decryptedTempDir, audioFixTempDir]);
       }
       continue;
     }
@@ -548,9 +567,7 @@ Future<({List<Map<String, dynamic>> parts, String text})>
     );
     blocks.add(desc);
     index++;
-    if (decryptedTempDir != null) {
-      try { decryptedTempDir.deleteSync(recursive: true); } catch (_) {}
-    }
+    _dbCleanupDirs([decryptedTempDir]);
   }
   return (parts: parts, text: blocks.join('\n\n'));
 }
@@ -1683,35 +1700,172 @@ Future<double> _dbProbeDurationSec(File f) async {
   return 0;
 }
 
-/// 文件里是否存在音频流。只看 codec_type，不依赖时长字段。
-///
-/// 切片 AAC 的 `stream=duration` 经常是 N/A：时长探测读不到不代表没有
-/// 音频轨，必须单独判断流是否存在，否则会把「有坏音频轨」误当成
-/// 「纯视频」跳过修复，坏轨原样上传后被方舟按 audio_url duration 拒收。
-Future<bool> _dbHasAudioStream(File f) async {
-  try {
-    final r = await Process.run('ffprobe', [
-      '-v', 'error',
-      '-show_entries', 'stream=codec_type',
-      '-of', 'default=nw=1:nk=1',
-      f.path,
-    ]);
-    if (r.exitCode == 0) {
-      return '${r.stdout}'.toLowerCase().contains('audio');
+// ============================================================
+// 音频轨前置拦截 —— 根治方舟 `audio_url duration` 400
+// ------------------------------------------------------------
+// 服务端硬性下限 10ms，实测报错原文：
+//   {"error":{"code":"InvalidParameter",
+//     "message":"The request failed because the duration of the input
+//     audio (8ms) is shorter than the limit (10ms).",
+//     "param":"audio_url duration","type":"BadRequest"}}
+//
+// 本机可复现出「8ms 级」音频轨的三条成因（全部被本模块拦掉）：
+//   1) 切片音频的时长元数据塌缩：`-ss` 输入 seek + `-c:v copy` 之后，
+//      音频轨 PTS 常停在原始偏移上，moov 里写出的 duration 只有几毫秒；
+//   2) 音频轨只剩一两个包：源片音频本身极短或损坏，重封装不增加样本，
+//      元数据即使写了 481s，真实样本仍然只有 8ms；
+//   3) 音频轨起点不是 0：服务端按「容器时长」抽音频时窗口内取不到样本。
+//
+// 放行顺序（任何 <10ms 的音频都不许进入请求）：
+//   体检（元数据时长 + 实际包数 + 起点偏移）
+//   → 命中风险：重建「起点 0 / 长度等于视频 / 单一 AAC 轨」再封装
+//   → 重建后仍不合格：剥离音频，出纯视频段（纯视频无 audio_url 可校验）
+//   → 每一次上传前再体检一遍，只让合格文件进 POST /files
+// ============================================================
+
+/// 方舟 chat 对输入音频的硬性下限：10ms。
+const double dbArkAudioHardMinSec = 0.01;
+
+/// 本地放行阈值：比服务端下限留 5 倍余量，绝不贴着 10ms 边界上传。
+const double dbArkAudioSafeMinSec = 0.05;
+
+/// 音频轨起点容差：超过它即视为「PTS 未归零」，服务端抽音频可能取不到样本。
+const double dbArkAudioMaxStartSec = 0.5;
+
+/// 单条音频轨的体检数据（一次 ffprobe 取全，供判定与日志使用）。
+class _DbAudioHealth {
+  final bool hasAudio;
+  final String codec;
+
+  /// 元数据时长：优先 stream.duration，其次 duration_ts × time_base。
+  final double metaDur;
+
+  /// 按实际包数估算的时长（AAC 每包 1024 采样）。
+  final double packetDur;
+
+  /// 音频轨起点（秒）。
+  final double startTime;
+  final int packets;
+
+  const _DbAudioHealth({
+    required this.hasAudio,
+    required this.codec,
+    required this.metaDur,
+    required this.packetDur,
+    required this.startTime,
+    required this.packets,
+  });
+
+  /// 所有会被方舟判成「时长过短」的形态。
+  bool get risky =>
+      hasAudio &&
+      (metaDur < dbArkAudioSafeMinSec ||
+          (packets > 0 && packetDur < dbArkAudioSafeMinSec) ||
+          startTime > dbArkAudioMaxStartSec);
+
+  String get riskReason {
+    if (!hasAudio) return '无音频轨';
+    final why = <String>[];
+    if (metaDur < dbArkAudioSafeMinSec) {
+      why.add('元数据时长 ${metaDur.toStringAsFixed(3)}s');
     }
-  } catch (_) {}
-  return false;
+    if (packets > 0 && packetDur < dbArkAudioSafeMinSec) {
+      why.add('实际仅 $packets 包（约 ${packetDur.toStringAsFixed(3)}s）');
+    }
+    if (startTime > dbArkAudioMaxStartSec) {
+      why.add('起点偏移 ${startTime.toStringAsFixed(3)}s');
+    }
+    return why.isEmpty ? '正常' : why.join('，');
+  }
+
+  String get desc => 'codec=$codec 起点=${startTime.toStringAsFixed(3)}s '
+      '元数据=${metaDur.toStringAsFixed(3)}s 包数=$packets'
+      '${packets > 0 ? '（约 ${packetDur.toStringAsFixed(3)}s）' : ''}';
 }
 
-/// 读取首条音频流的时长（秒）；无音频或读不到返回 0。
-///
-/// 注意：只取音频流自己的 duration，不回退容器时长 —— 容器时长是视频
-/// 的长度，拿它当音频时长会把一条塌缩成 8ms 的坏轨误判成「音频正常」。
-Future<double> _dbProbeAudioDurationSec(File f) async {
+double _dbParseTimeBase(String tb) {
+  final parts = tb.split('/');
+  if (parts.length != 2) return 0;
+  final n = double.tryParse(parts[0]);
+  final d = double.tryParse(parts[1]);
+  if (n == null || d == null || d <= 0) return 0;
+  return n / d;
+}
+
+/// 音频轨体检：把「元数据时长、真实包数、起点偏移」一次取全。
+Future<_DbAudioHealth> _dbAudioHealth(File f) async {
+  const none = _DbAudioHealth(
+    hasAudio: false,
+    codec: '',
+    metaDur: 0,
+    packetDur: 0,
+    startTime: 0,
+    packets: 0,
+  );
   try {
     final r = await Process.run('ffprobe', [
       '-v', 'error',
       '-select_streams', 'a:0',
+      '-count_packets',
+      '-show_entries',
+      'stream=codec_name,duration,duration_ts,time_base,nb_frames,'
+          'sample_rate,start_time,nb_read_packets',
+      '-of', 'json',
+      f.path,
+    ]);
+    if (r.exitCode != 0) return none;
+    final j = asMap(jsonDecode('${r.stdout}'));
+    final streams = asList(j['streams']);
+    if (streams.isEmpty) return none;
+    final s = asMap(streams[0]);
+    var meta = double.tryParse(mStr(s, 'duration')) ?? 0;
+    if (meta <= 0) {
+      final ts = double.tryParse(mStr(s, 'duration_ts')) ?? 0;
+      final tb = _dbParseTimeBase(mStr(s, 'time_base'));
+      if (ts > 0 && tb > 0) meta = ts * tb;
+    }
+    final sr = intArgDefault(s, 'sample_rate', 0);
+    var packets = intArgDefault(s, 'nb_read_packets', 0);
+    if (packets <= 0) packets = intArgDefault(s, 'nb_frames', 0);
+    final packetDur = (packets > 0 && sr > 0) ? packets * 1024.0 / sr : 0.0;
+    final start = double.tryParse(mStr(s, 'start_time')) ?? 0;
+    return _DbAudioHealth(
+      hasAudio: true,
+      codec: mStr(s, 'codec_name').toLowerCase(),
+      metaDur: meta,
+      packetDur: packetDur,
+      startTime: start < 0 ? 0 : start,
+      packets: packets,
+    );
+  } catch (_) {}
+  return none;
+}
+
+/// 音频轨条数（整片直传时用于判断是否会被服务端抽到「非主轨」）。
+Future<int> _dbAudioTrackCount(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'a',
+      '-show_entries', 'stream=index',
+      '-of', 'default=nw=1:nk=1',
+      f.path,
+    ]);
+    if (r.exitCode != 0) return 0;
+    return '${r.stdout}'
+        .split('\n')
+        .where((e) => e.trim().isNotEmpty)
+        .length;
+  } catch (_) {}
+  return 0;
+}
+
+/// 视频流时长（秒）；读不到回退容器时长。
+Future<double> _dbProbeVideoDurationSec(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
       '-show_entries', 'stream=duration',
       '-of', 'default=nw=1:nk=1',
       f.path,
@@ -1721,91 +1875,244 @@ Future<double> _dbProbeAudioDurationSec(File f) async {
       if (d != null && d > 0) return d;
     }
   } catch (_) {}
+  return _dbProbeDurationSec(f);
+}
+
+/// 解码整条音频，返回真实可解码时长（秒）；失败返回 0。
+///
+/// 为什么不能只看元数据：切片后的 AAC 可能「元数据写 481s、实际只有 1 个包」，
+/// 服务端解码/抽取得到的仍是 8ms。解码到 null 才拿得到真实样本长度。
+Future<double> _dbDecodedAudioSec(File f) async {
+  try {
+    final r = await Process.run('ffmpeg', [
+      '-nostdin', '-hide_banner', '-v', 'error', '-progress', 'pipe:1',
+      '-i', f.path, '-map', '0:a:0', '-f', 'null', '-',
+    ]);
+    final out = '${r.stdout}';
+    var d = 0.0;
+    for (final m
+        in RegExp(r'^out_time_us=(\d+)', multiLine: true).allMatches(out)) {
+      final v = double.tryParse(m.group(1) ?? '') ?? 0;
+      if (v > 0) d = v / 1000000;
+    }
+    return d;
+  } catch (_) {}
   return 0;
 }
 
-/// 修复分段后“音频时长塌缩”的片段。
+/// 重建一条「起点 0、长度等于视频」的单一 AAC 音频轨，再与原视频流重新封装。
+/// 视频流始终 `-c:v copy`：不重编码、不改分辨率、不改帧率、不丢画质。
 ///
-/// 2026-11-25 现场：24 分钟 / 330MB 视频切成 3 段后，方舟仍报
-/// audio duration 8ms（下限 10ms）。只做 -c:a aac 并不能保证每个
-/// 分段的音频时间戳都正常，所以输出后再探测一次：
-///
-/// 1. 无音频流 → 纯视频段，直接跳过（方舟不会校验不存在的音频轨）；
-/// 2. 有音频流且时长正常（≥50ms）→ 不动；
-/// 3. 有音频流但时长读不到（0）或短于 50ms → AAC 重编码 + 起点对齐 +
-///    apad 补静音到该段时长，重新封装；视频流仍是 -c:v copy，不丢画质；
-/// 4. 补静音后音频轨依旧过短（<10ms 量级，encoder 救不回来）→ 兜底把
-///    音频轨整个剥离（-an），出纯视频段。与其留一条被方舟拒收的坏音频，
-///    不如不带音频：纯视频不会触发 audio_url duration 那条 400。
-Future<void> _dbFixShortSegmentAudio(File seg, double targetSec) async {
-  final hasAudio = await _dbHasAudioStream(seg);
-  if (!hasAudio) return;
-  final audioDur = await _dbProbeAudioDurationSec(seg);
-  if (audioDur >= 0.05) return;
+/// 这一步同时解决三件事：PTS 归零（asetpts）、样本补齐（apad + -t）、
+/// 单轨化（只取 a:0），因此无论源片音频多烂，产物都是结构规整的 AAC。
+Future<bool> _dbRebuildAudioToCopy({
+  required File src,
+  required File dst,
+  double targetSec = 0,
+}) async {
+  final vDur = await _dbProbeVideoDurationSec(src);
+  final dur = vDur > 0 ? vDur : targetSec;
+  if (dur <= 0) return false;
+  final tmpA = File('${dst.path}.aud.m4a');
+  try {
+    final r1 = await _dbRunFfmpegWithTicks([
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-i', src.path,
+      '-map', '0:a:0', '-vn',
+      '-c:a', 'aac', '-b:a', '128k',
+      '-af', 'aresample=async=1:first_pts=0,asetpts=PTS-STARTPTS,apad',
+      '-t', dur.toStringAsFixed(3),
+      '-movflags', '+faststart',
+      tmpA.path,
+    ]);
+    if (r1.exitCode != 0 || !tmpA.existsSync() || tmpA.lengthSync() <= 0) {
+      logp('⚠️ 音频轨重建失败（ffmpeg exit=${r1.exitCode}）：'
+          '${'${r1.stderr}'.trim()}');
+      return false;
+    }
+    final r2 = await _dbRunFfmpegWithTicks([
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-i', src.path, '-i', tmpA.path,
+      '-map', '0:v:0', '-map', '1:a:0',
+      '-c', 'copy', '-movflags', '+faststart',
+      dst.path,
+    ]);
+    if (r2.exitCode != 0 || !dst.existsSync() || dst.lengthSync() <= 0) {
+      logp('⚠️ 音频轨重建后封装失败（ffmpeg exit=${r2.exitCode}）：'
+          '${'${r2.stderr}'.trim()}');
+      try {
+        dst.deleteSync();
+      } catch (_) {}
+      return false;
+    }
+    return true;
+  } finally {
+    try {
+      if (tmpA.existsSync()) tmpA.deleteSync();
+    } catch (_) {}
+  }
+}
 
-  final fixed = File('${seg.path}.audiofix.mp4');
+/// 剥离音频轨，输出纯视频副本（最终兜底）。
+Future<bool> _dbStripAudioToCopy({
+  required File src,
+  required File dst,
+}) async {
   final r = await _dbRunFfmpegWithTicks([
     '-y', '-hide_banner', '-loglevel', 'error',
-    '-i', seg.path,
-    '-map', '0:v:0',
-    '-map', '0:a:0?',
-    '-c:v', 'copy',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-af', 'aresample=async=1:first_pts=0,apad',
-    '-t', targetSec.toStringAsFixed(3),
-    '-avoid_negative_ts', 'make_zero',
+    '-i', src.path,
+    '-map', '0:v:0', '-an', '-c:v', 'copy',
     '-movflags', '+faststart',
-    fixed.path,
+    dst.path,
   ]);
-  final stderrText = '${r.stderr}'.trim();
-  if (r.exitCode != 0 || !fixed.existsSync() || fixed.lengthSync() <= 0) {
+  if (r.exitCode != 0 || !dst.existsSync() || dst.lengthSync() <= 0) {
+    logp('⚠️ 剥离音频失败（ffmpeg exit=${r.exitCode}）：'
+        '${'${r.stderr}'.trim()}');
     try {
-      fixed.deleteSync();
+      dst.deleteSync();
     } catch (_) {}
-    throw DbVideoArkException(
-        '分段音频修复失败（原音频 ${audioDur.toStringAsFixed(3)}s，'
-        'ffmpeg exit=${r.exitCode}）：$stderrText');
+    return false;
   }
-  final fixedAudio = await _dbProbeAudioDurationSec(fixed);
-  if (fixedAudio >= 0.01) {
-    logp('✅ 分段音频已补静音修复'
-        '（${audioDur.toStringAsFixed(3)}s → ${fixedAudio.toStringAsFixed(3)}s）');
+  return true;
+}
+
+/// 上传前的音频前置拦截（原地修复），保证上传文件不会被方舟判「时长过短」。
+///
+/// 1) 无音频轨 → 放行（纯视频没有 audio_url 可校验）；
+/// 2) 体检合格 → 放行，并记录一行体检日志；
+/// 3) 命中风险 → 重建音频轨；重建后仍不合格 → 剥离音频。
+Future<void> dbArkEnsureSegmentAudioSafe(
+  File seg, {
+  required String label,
+  double targetSec = 0,
+}) async {
+  final health = await _dbAudioHealth(seg);
+  if (!health.hasAudio) {
+    logp('🔇 $label 无音频轨（纯视频），按原样放行');
+    return;
+  }
+  logp('🎚️ $label 音频体检: ${health.desc}');
+  if (!health.risky) return;
+  logp('⚠️ $label 音频异常（${health.riskReason}）→ 重建音频轨（视频流 -c:v copy）');
+
+  final fixed = File('${seg.path}.audfix.mp4');
+  var ok = await _dbRebuildAudioToCopy(
+    src: seg,
+    dst: fixed,
+    targetSec: targetSec,
+  );
+  if (ok) {
+    final h2 = await _dbAudioHealth(fixed);
+    final decoded = await _dbDecodedAudioSec(fixed);
+    ok = !h2.risky && decoded >= dbArkAudioHardMinSec;
+    logp(ok
+        ? '✅ $label 音频已重建: ${h2.desc}，可解码 ${decoded.toStringAsFixed(3)}s'
+        : '⚠️ $label 重建后仍不合格: ${h2.desc}，'
+            '可解码 ${decoded.toStringAsFixed(3)}s');
+  }
+  if (ok) {
     try {
       seg.deleteSync();
     } catch (_) {}
     fixed.renameSync(seg.path);
     return;
   }
-
-  // 兜底：坏音频轨补不回来，剥离音频出纯视频段。
   try {
-    fixed.deleteSync();
+    if (fixed.existsSync()) fixed.deleteSync();
   } catch (_) {}
-  final silent = File('${seg.path}.an.mp4');
-  final r2 = await _dbRunFfmpegWithTicks([
-    '-y', '-hide_banner', '-loglevel', 'error',
-    '-i', seg.path,
-    '-map', '0:v:0',
-    '-an',
-    '-c:v', 'copy',
-    '-avoid_negative_ts', 'make_zero',
-    '-movflags', '+faststart',
-    silent.path,
-  ]);
-  if (r2.exitCode != 0 || !silent.existsSync() || silent.lengthSync() <= 0) {
+
+  final silent = File('${seg.path}.noaud.mp4');
+  if (await _dbStripAudioToCopy(src: seg, dst: silent)) {
+    logp('🩹 $label 音频轨无法修复，已剥离为纯视频'
+        '（永不触发 audio_url duration 校验）');
     try {
-      silent.deleteSync();
+      seg.deleteSync();
     } catch (_) {}
-    throw DbVideoArkException(
-        '分段音频兜底剥离失败（原音频 ${audioDur.toStringAsFixed(3)}s，'
-        'ffmpeg exit=${r2.exitCode}）：${'${r2.stderr}'.trim()}');
+    silent.renameSync(seg.path);
+    return;
   }
-  logp('⚠️ 分段坏音频轨无法修复，已剥离为纯视频段: ${seg.path}');
+  throw DbVideoArkException(
+      '$label 音频轨异常且无法修复/剥离，为避免方舟 400 已中止本段');
+}
+
+/// 原地剥离分段音频（服务端仍报音频过短时的自愈手段）。
+Future<void> _dbStripSegmentAudioInPlace(File seg) async {
+  final tmp = File('${seg.path}.strip.mp4');
+  final ok = await _dbStripAudioToCopy(src: seg, dst: tmp);
+  if (!ok) {
+    throw DbVideoArkException('剥离分段音频失败，无法重试：${seg.path}');
+  }
   try {
     seg.deleteSync();
   } catch (_) {}
-  silent.renameSync(seg.path);
+  tmp.renameSync(seg.path);
+}
+
+/// 判断异常是否就是方舟的「音频时长过短」400。
+bool dbArkIsAudioTooShortError(Object err) {
+  final s = '$err'.toLowerCase();
+  return s.contains('audio_url duration') ||
+      (s.contains('input audio') && s.contains('shorter than the limit')) ||
+      (s.contains('duration of the input audio') && s.contains('10ms'));
+}
+
+/// 整片直传前的前置拦截：源视频音频轨若会被判 8ms，先生成修复副本再上传。
+///
+/// 绝不改动用户原文件：需要修复时只在系统临时目录生成一份副本，
+/// 由调用方在上传结束后连目录一起清理。
+Future<({File file, Directory? tempDir})> dbArkPrepareWholeVideoSafe(
+    File src) async {
+  final health = await _dbAudioHealth(src);
+  if (!health.hasAudio) {
+    logp('🔇 整片无音频轨（纯视频），按原样上传');
+    return (file: src, tempDir: null);
+  }
+  logp('🎚️ 整片音频体检: ${health.desc}');
+  // 多音轨也要重建：服务端可能抽取「非主轨」，抽到一条空轨就是 8ms。
+  final trackCount = await _dbAudioTrackCount(src);
+  final multiTrack = trackCount > 1;
+  if (!health.risky && !multiTrack) return (file: src, tempDir: null);
+  if (!health.risky && multiTrack) {
+    logp('⚠️ 整片存在 $trackCount 条音频轨 → 只保留主轨后上传（原文件不动）');
+  } else {
+    logp('⚠️ 整片音频异常（${health.riskReason}）→ 生成修复副本后上传（原文件不动）');
+  }
+  final tmpDir = Directory.systemTemp.createTempSync('kewe_audfix_');
+  final dst = File('${tmpDir.path}/safe.mp4');
+  var ok = await _dbRebuildAudioToCopy(src: src, dst: dst);
+  if (ok) {
+    final h2 = await _dbAudioHealth(dst);
+    final decoded = await _dbDecodedAudioSec(dst);
+    ok = !h2.risky && decoded >= dbArkAudioHardMinSec;
+    logp(ok
+        ? '✅ 整片音频已重建: ${h2.desc}，可解码 ${decoded.toStringAsFixed(3)}s'
+        : '⚠️ 整片音频重建后仍不合格: ${h2.desc}，'
+            '可解码 ${decoded.toStringAsFixed(3)}s');
+  }
+  if (ok) return (file: dst, tempDir: tmpDir);
+
+  try {
+    if (dst.existsSync()) dst.deleteSync();
+  } catch (_) {}
+  final silent = File('${tmpDir.path}/safe_noaud.mp4');
+  if (await _dbStripAudioToCopy(src: src, dst: silent)) {
+    logp('🩹 整片音频无法修复，已剥离为纯视频副本（原文件不动）');
+    return (file: silent, tempDir: tmpDir);
+  }
+  try {
+    tmpDir.deleteSync(recursive: true);
+  } catch (_) {}
+  throw DbVideoArkException('整片音频异常且无法修复/剥离：${src.path}');
+}
+
+/// 批量清理临时目录（解密目录、音频修复副本目录）。
+void _dbCleanupDirs(List<Directory?> dirs) {
+  for (final d in dirs) {
+    if (d == null) continue;
+    try {
+      if (d.existsSync()) d.deleteSync(recursive: true);
+    } catch (_) {}
+  }
 }
 
 /// 按帧总数规划段数：≤安全帧上限（3000 帧）就是 1 段（整片直传，不分段）。
@@ -1827,8 +2134,9 @@ int dbArkPlanSegCount(double durationSec, double fps) {
 /// 方舟解析成 3.625ms，直接拒收：
 ///   "The request failed because the duration of the input audio (3.625ms)
 ///    is shorter than the limit (10ms)"（param: audio_url duration）。
-/// 重编码后多数片段正常，但 24 分钟 / 330MB 实测仍可能塌缩成 8ms，
-/// 所以输出后还要交给 _dbFixShortSegmentAudio 再探测、补静音。
+/// 重编码后多数片段正常，但 24 分钟 / 330MB 实测仍可能塌缩成 8ms ——
+/// 真正兜底的是上传前的 dbArkEnsureSegmentAudioSafe（重建 / 剥离）。
+/// 这里只保证「只带第一条音频轨」，避免多音轨时服务端抽到一条空轨。
 Future<List<File>> _dbSplitByTime({
   required File src,
   required int segCount,
@@ -1855,7 +2163,9 @@ Future<List<File>> _dbSplitByTime({
         '-t', len.toStringAsFixed(3),
         '-i', src.path,
         '-map', '0:v:0',
-        '-map', '0:a?',
+        // ★ 只取第一条音频轨：`0:a?` 会映射全部音轨，多音轨源片切片后
+        //   服务端可能抽到一条空轨/坏轨，量出 8ms 直接 400。
+        '-map', '0:a:0?',
         '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '128k',
@@ -1877,7 +2187,6 @@ Future<List<File>> _dbSplitByTime({
     if (!f.existsSync() || f.lengthSync() <= 0) {
       throw DbVideoArkException('视频等分切段失败（第 ${i + 1}/$segCount 段无输出）');
     }
-    await _dbFixShortSegmentAudio(f, len);
     out.add(f);
   }
   if (out.isEmpty) {
@@ -2125,13 +2434,17 @@ Future<String> dbDescribeVideoInSegments({
         'start': start.round(),
         'end': end.round(),
       });
-      final segSize = segs[i].lengthSync();
       final segSec = durs[i] > 0 ? durs[i] : duration / segs.length;
       final segBudget = dbVideoTranscriptMaxTokens(segSec);
-      try {
+      final segLabel = '第 ${i + 1}/${segs.length} 段';
+      final segName = _dbSegFileName(fileName, i, segs.length);
+
+      /// 上传 → 等预处理 → 转写，这一段完整跑完才返回正文。
+      Future<String> describeOnce({required String uploadName}) async {
+        final segSize = segs[i].lengthSync();
         final fileId = await _dbArkUploadToTosBucket(
           file: segs[i],
-          fileName: _dbSegFileName(fileName, i, segs.length),
+          fileName: uploadName,
           bucket: cfg.tosBucket,
           prefix: cfg.tosPrefix,
           model: cfg.preprocessModel,
@@ -2160,9 +2473,10 @@ Future<String> dbDescribeVideoInSegments({
           'segments': segs.length,
           'chars': 0,
         });
-        logp('🧠 第 ${i + 1}/${segs.length} 段转写开始'
-            '（段长 ${_dbClock(segSec)}，预算 $segBudget token）');
-        final text = await _dbArkDescribeSegment(
+        logp('🧠 $segLabel 转写开始'
+            '（段长 ${_dbClock(segSec)}，预算 $segBudget token，'
+            '文件 ${dbFmtSize(segSize)}）');
+        return _dbArkDescribeSegment(
           apiKey: apiKey,
           model: model,
           fileId: fileId,
@@ -2187,7 +2501,31 @@ Future<String> dbDescribeVideoInSegments({
             'elapsed': sec,
           }),
         );
-        logp('🎬 第 ${i + 1}/${segs.length} 段完整理解完成'
+      }
+
+      try {
+        // ★ 上传前的音频前置拦截：不合格就地重建，救不回来就剥离音频，
+        //   保证进入 POST /files 的每一段都不会被方舟判「音频 8ms」。
+        await dbArkEnsureSegmentAudioSafe(
+          segs[i],
+          label: segLabel,
+          targetSec: segSec,
+        );
+
+        String text;
+        try {
+          text = await describeOnce(uploadName: segName);
+        } catch (e) {
+          // ★ 自愈重试：本地拦截已生效、服务端仍报「音频时长过短」时，
+          //   说明对方量的是另一条轨或另一套度量。剥离音频出纯视频段
+          //  （没有音频轨就没有 audio_url 可校验），换名重传后只重试一次。
+          if (!dbArkIsAudioTooShortError(e)) rethrow;
+          logp('⚠️ $segLabel 方舟仍报音频过短（$e）→ 剥离音频后重试一次');
+          await _dbStripSegmentAudioInPlace(segs[i]);
+          text = await describeOnce(uploadName: _dbSegNoAudioName(segName));
+        }
+
+        logp('🎬 $segLabel 完整理解完成'
             '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
         if (segs.length > 1) {
           okBlocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$text');
@@ -2253,4 +2591,11 @@ String _dbSegFileName(String videoName, int index, int total) {
   final no = (index + 1).toString().padLeft(2, '0');
   final all = total.toString().padLeft(2, '0');
   return '${stem}_s${no}of$all$ext';
+}
+
+/// 剥离音频后的重传文件名：带 _noaud 后缀，避免覆盖 TOS 上同名对象。
+String _dbSegNoAudioName(String name) {
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0) return '${name}_noaud';
+  return '${name.substring(0, dot)}_noaud${name.substring(dot)}';
 }
