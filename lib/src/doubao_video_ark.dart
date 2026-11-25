@@ -521,12 +521,10 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       //   避免为整片重编码一条几十分钟的音频。
       Directory? audioFixTempDir;
       var wholeHasAudio = true; // 拦截失败时按「有音频」处理，强制音频预处理模型
-      var wholeDegraded = false;
-      var wholeNote = '';
+      String wholeNote = '';
       try {
         final safe = await dbArkPrepareWholeVideoSafe(f);
         wholeHasAudio = safe.hasAudio;
-        wholeDegraded = safe.degraded;
         wholeNote = safe.note;
         if (safe.file.path != f.path) {
           f = safe.file;
@@ -534,10 +532,15 @@ Future<({List<Map<String, dynamic>> parts, String text})>
           audioFixTempDir = safe.tempDir;
         }
       } catch (e) {
+        // 音频无法修复到 ≥10ms：如实报错，绝不剥离音频后假装成功。
+        if (e is DbVideoArkException && e.code == dbArkAudioTooShortCode) {
+          _dbCleanupDirs([decryptedTempDir]);
+          rethrow;
+        }
         logp('⚠️ 整片音频前置拦截失败（按原样继续）: $e');
       }
-      if (wholeDegraded) {
-        logp('⚠️ 整片降级：$wholeNote —— 本次仅按画面理解，音频未参与');
+      if (wholeNote.isNotEmpty && wholeNote != '音频正常' && wholeNote != '无音频轨') {
+        logp('🎚️ 整片音频处理：$wholeNote（音频保留，不剥离）');
       }
       try {
         onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
@@ -1827,6 +1830,21 @@ Future<double> _dbProbeDurationSec(File f) async {
 //     audio (8ms) is shorter than the limit (10ms).",
 //     "param":"audio_url duration","type":"BadRequest"}}
 //
+// ★★ 最高优先级铁律（2026-11-25 六修，不可违背）：
+//   本项目要的是「带音频的视频理解」，2.1lite 原生支持音视频联合理解。
+//   音频是刚需输入，绝不是可选附件。任何情况下都禁止：
+//     · 剥离音轨、`-an`、生成 noaud 文件、无声重试；
+//     · 把「删掉音频」当作 400 的兜底；
+//     · 把「无音频」当成 8ms 报错的容错方案。
+//   接口限制只是「单个分片的音频时长必须 ≥10ms」，不是不让传音频。
+//   正确的修法只有四条：从切片源头不产生 <10ms 碎片、本地前置校验、
+//   极短碎片与相邻分片合并、服务端仍报错时合并相邻分片重试（≤3 次）；
+//   全程保留原音频流。
+//
+// ★ 2026-11-25 六修：已彻底删除 `_dbStripAudioToCopy`、noaud 文件生成、
+//   无声重试三条降级路径（连同 `_dbStripSegmentAudioInPlace`、
+//   `_dbSegNoAudioName`），代码中不存在任何「自动剥离音频」的分支。
+//
 // 本机可复现出「8ms 级」音频轨的三条成因（全部被本模块拦掉）：
 //   1) 切片音频的时长元数据塌缩：`-ss` 输入 seek + `-c:v copy` 之后，
 //      音频轨 PTS 常停在原始偏移上，moov 里写出的 duration 只有几毫秒；
@@ -1835,25 +1853,25 @@ Future<double> _dbProbeDurationSec(File f) async {
 //   3) 音频轨起点不是 0：服务端按「容器时长」抽音频时窗口内取不到样本。
 //
 // 放行顺序（任何 <10ms 的音频都不许进入请求）：
-//   体检（元数据时长 + 实际包数 + 起点偏移）
-//   → 命中风险：重建「起点 0 / 长度等于视频 / 单一 AAC 轨」再封装
-//   → 重建后仍不合格：剥离音频，出纯视频段（纯视频无 audio_url 可校验）
-//   → 每一次上传前再体检一遍，只让合格文件进 POST /files
+//   体检（音频流元数据 + 实际包数 + 实际解码时长 + 起点偏移，全部毫秒整数）
+//   → 命中风险：重建「起点 0 / 长度等于视频 / 单一 AAC 轨」（保留音频样本）
+//   → 重建后仍不合格：与相邻分片合并，重新切割、重新探测
+//   → 合并后仍不合格：抛 audio_too_short，任务中止，绝不剥离音频
 //
-// ★ 2026-11-25 四修：真机 8ms 的根因不在本地文件，而在「上传时没指定
-//   预处理模型」。Files API 文档原文：「如需处理视频中的音频内容，
+// ★ 2026-11-25 四修：真机 8ms 的根因之一在「上传时没指定预处理模型」。
+//   Files API 文档原文：「如需处理视频中的音频内容，
 //   preprocess_configs.video.model 该字段需指定为支持音频理解的模型」；
 //   **不传该字段时**按 doubao-seed-1.8 之前的策略预处理 —— 音频根本不被
 //   处理，服务端只挂一条约 8ms 的占位音频，chat 阶段必然 400。
-//   本项目默认 preprocessModel 为空（为空就不写这个字段），所以本地把音轨
-//   修得再完美也没用：对方读的不是我们上传文件里的音轨。
 //   故：带音轨的视频一律显式指定该字段（优先复用推理模型，其次官方音频
-//   推荐模型）。该字段与推理模型不强耦合，只影响抽帧/音频预处理策略，
-//   推理模型本身与结果口径保持不变。
+//   推荐模型）。该字段只影响抽帧/音频预处理策略，推理模型与结果口径不变。
 // ============================================================
 
-/// 方舟 chat 对输入音频的硬性下限：10ms。
-const double dbArkAudioHardMinSec = 0.01;
+/// 方舟 chat 对输入音频的硬性下限：10ms（毫秒整数，全链路统一单位）。
+const int dbArkAudioHardMinMs = 10;
+
+/// 兼容旧调用：10ms 的秒值。
+const double dbArkAudioHardMinSec = dbArkAudioHardMinMs / 1000.0;
 
 /// 兜底用的音频预处理模型：官方音频理解推荐模型（能真正抽出视频音频）。
 ///
@@ -1896,21 +1914,29 @@ String dbArkVideoPreprocessModel({
   return dbArkAudioPreprocessModel;
 }
 
-/// 本地放行阈值：比服务端下限留 5 倍余量，绝不贴着 10ms 边界上传。
-const double dbArkAudioSafeMinSec = 0.05;
+/// 本地重建阈值：比服务端下限留 5 倍余量。低于它先重建音频轨，
+/// 但最终放行只看 [dbArkAudioHardMinMs]（12ms 这类合法短轨照常放行）。
+const int dbArkAudioSafeMinMs = 50;
 
-/// 音频轨起点容差：超过它即视为「PTS 未归零」，服务端抽音频可能取不到样本。
-const double dbArkAudioMaxStartSec = 0.5;
+/// 音频轨起点容差（毫秒）：超过它即视为「PTS 未归零」，服务端抽音频可能取不到样本。
+const int dbArkAudioMaxStartMs = 500;
 
-/// 单条音频轨的体检数据（一次 ffprobe 取全，供判定与日志使用）。
+/// 「音频分片过短」专用错误码：调用方据此触发合并，绝不剥离音频。
+const String dbArkAudioTooShortCode = 'audio_too_short';
+
+/// 单条音频轨的体检结果（ffprobe 一次取全，内部一律换算成毫秒整数比较）。
+///
+/// 为什么三个时长都要看：
+///   切片后的 AAC 可能「元数据写 481s、实际只有 1 个包」，
+///   服务端抽出来的仍然只有 8ms；任何一项暴露短时长都必须按短处理。
 class _DbAudioHealth {
   final bool hasAudio;
   final String codec;
 
-  /// 元数据时长：优先 stream.duration，其次 duration_ts × time_base。
+  /// 流元数据时长（秒）。
   final double metaDur;
 
-  /// 按实际包数估算的时长（AAC 每包 1024 采样）。
+  /// 按实际包数估算的时长（秒）：AAC 每包 1024 采样。
   final double packetDur;
 
   /// 音频轨起点（秒）。
@@ -1926,31 +1952,37 @@ class _DbAudioHealth {
     required this.packets,
   });
 
-  /// 所有会被方舟判成「时长过短」的形态。
+  /// 音频轨起点偏移（毫秒）。
+  int get startMs => startTime <= 0 ? 0 : (startTime * 1000).round();
+
+  /// 元数据与包数估算中的较小值（毫秒）；0 = 两者都读不到（按不合格处理）。
+  int get metaMs {
+    final vals = <int>[];
+    if (metaDur > 0) vals.add((metaDur * 1000).round());
+    if (packetDur > 0) vals.add((packetDur * 1000).round());
+    if (vals.isEmpty) return 0;
+    var m = vals.first;
+    for (final v in vals) {
+      if (v < m) m = v;
+    }
+    return m;
+  }
+
+  /// 需要先本地重建：过短或起点偏移（阈值比服务端下限宽，留修复余量）。
   bool get risky =>
-      hasAudio &&
-      (metaDur < dbArkAudioSafeMinSec ||
-          (packets > 0 && packetDur < dbArkAudioSafeMinSec) ||
-          startTime > dbArkAudioMaxStartSec);
+      hasAudio && (metaMs < dbArkAudioSafeMinMs || startMs > dbArkAudioMaxStartMs);
+
+  String get desc => 'codec=$codec 起点=${startMs}ms '
+      '元数据=${metaDur > 0 ? '${(metaDur * 1000).round()}ms' : '无'}'
+      '${packetDur > 0 ? ' 包数=$packets（约 ${(packetDur * 1000).round()}ms）' : ''}';
 
   String get riskReason {
     if (!hasAudio) return '无音频轨';
     final why = <String>[];
-    if (metaDur < dbArkAudioSafeMinSec) {
-      why.add('元数据时长 ${metaDur.toStringAsFixed(3)}s');
-    }
-    if (packets > 0 && packetDur < dbArkAudioSafeMinSec) {
-      why.add('实际仅 $packets 包（约 ${packetDur.toStringAsFixed(3)}s）');
-    }
-    if (startTime > dbArkAudioMaxStartSec) {
-      why.add('起点偏移 ${startTime.toStringAsFixed(3)}s');
-    }
+    if (metaMs < dbArkAudioSafeMinMs) why.add('元数据/包数时长 ${metaMs}ms');
+    if (startMs > dbArkAudioMaxStartMs) why.add('起点偏移 ${startMs}ms');
     return why.isEmpty ? '正常' : why.join('，');
   }
-
-  String get desc => 'codec=$codec 起点=${startTime.toStringAsFixed(3)}s '
-      '元数据=${metaDur.toStringAsFixed(3)}s 包数=$packets'
-      '${packets > 0 ? '（约 ${packetDur.toStringAsFixed(3)}s）' : ''}';
 }
 
 double _dbParseTimeBase(String tb) {
@@ -2052,6 +2084,10 @@ Future<double> _dbProbeVideoDurationSec(File f) async {
 ///
 /// 为什么不能只看元数据：切片后的 AAC 可能「元数据写 481s、实际只有 1 个包」，
 /// 服务端解码/抽取得到的仍是 8ms。解码到 null 才拿得到真实样本长度。
+///
+/// ★ 切片时的音频 pts 可能不从 0 开始（例如第 2 段从 20s 起），
+///   `out_time_us` 是沿原始时间轴的，所以用「末值 − 首值」算真实跨度，
+///   否则 20s 的段会被量成 40s，把坏轨放过去。
 Future<double> _dbDecodedAudioSec(File f) async {
   try {
     final r = await Process.run('ffmpeg', [
@@ -2059,15 +2095,95 @@ Future<double> _dbDecodedAudioSec(File f) async {
       '-i', f.path, '-map', '0:a:0', '-f', 'null', '-',
     ]);
     final out = '${r.stdout}';
-    var d = 0.0;
+    var first = -1.0;
+    var last = 0.0;
     for (final m
         in RegExp(r'^out_time_us=(\d+)', multiLine: true).allMatches(out)) {
       final v = double.tryParse(m.group(1) ?? '') ?? 0;
-      if (v > 0) d = v / 1000000;
+      if (first < 0) first = v;
+      if (v > last) last = v;
     }
-    return d;
+    if (last <= 0) return 0;
+    if (first > 0 && last >= first) return (last - first) / 1000000;
+    return last / 1000000;
   } catch (_) {}
   return 0;
+}
+
+/// 可信音频时长（毫秒）：元数据、包数估算、实际解码三者取最小值。
+///
+/// ★ 时长判断只认 ffprobe / ffmpeg 解出来的真实流时长，
+///   绝不读方舟预处理返回的「标注时长」，也不读容器整体时长。
+Future<({_DbAudioHealth health, int audioMs})> _dbMeasureAudio(File f) async {
+  final h = await _dbAudioHealth(f);
+  if (!h.hasAudio) return (health: h, audioMs: 0);
+  final decoded = await _dbDecodedAudioSec(f);
+  var ms = h.metaMs;
+  if (decoded > 0) {
+    final dms = (decoded * 1000).round();
+    if (ms <= 0 || dms < ms) ms = dms;
+  }
+  return (health: h, audioMs: ms);
+}
+
+/// 原地重建音频轨：保留原音频样本，样本不足处用静音补齐到视频全长；
+/// 视频流始终 `-c:v copy`（不重编码、不改画质）。
+///
+/// 重建失败只返回 false，**绝不剥离音频**：由调用方合并相邻分片或抛错。
+Future<bool> _dbRepairAudioInPlace(File seg, {required String label}) async {
+  final fixed = File('${seg.path}.audfix.mp4');
+  final ok = await _dbRebuildAudioToCopy(src: seg, dst: fixed);
+  if (!ok) {
+    try {
+      if (fixed.existsSync()) fixed.deleteSync();
+    } catch (_) {}
+    logp('⚠️ $label 音频轨重建失败（保留原文件，不剥离音频）');
+    return false;
+  }
+  final m = await _dbMeasureAudio(fixed);
+  final pass = m.health.hasAudio &&
+      m.audioMs >= dbArkAudioHardMinMs &&
+      m.health.startMs <= dbArkAudioMaxStartMs;
+  if (!pass) {
+    logp('⚠️ $label 重建后仍不合格：${m.health.desc}，可信 ${m.audioMs}ms');
+    try {
+      fixed.deleteSync();
+    } catch (_) {}
+    return false;
+  }
+  logp('✅ $label 音频轨已重建：${m.health.desc}，可信 ${m.audioMs}ms'
+      '（原样本保留，静音补齐，不剥离）');
+  try {
+    seg.deleteSync();
+  } catch (_) {}
+  fixed.renameSync(seg.path);
+  return true;
+}
+
+/// 源片带音轨、但某一段切出来完全没有音轨（音频结束早于视频结尾）时，
+/// 补一条与视频等长的静音 AAC 轨 —— 保证「源片有音轨 → 每段都带 audio」。
+Future<bool> _dbAddSilentAudioTrack(File seg) async {
+  final out = File('${seg.path}.silent.mp4');
+  final r = await _dbRunFfmpegWithTicks([
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', seg.path,
+    '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000',
+    '-map', '0:v:0', '-map', '1:a:0',
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k',
+    '-shortest', '-movflags', '+faststart',
+    out.path,
+  ]);
+  if (r.exitCode != 0 || !out.existsSync() || out.lengthSync() <= 0) {
+    try {
+      if (out.existsSync()) out.deleteSync();
+    } catch (_) {}
+    return false;
+  }
+  try {
+    seg.deleteSync();
+  } catch (_) {}
+  out.renameSync(seg.path);
+  return true;
 }
 
 /// 重建一条「起点 0、长度等于视频」的单一 AAC 音频轨，再与原视频流重新封装。
@@ -2123,105 +2239,39 @@ Future<bool> _dbRebuildAudioToCopy({
   }
 }
 
-/// 剥离音频轨，输出纯视频副本（最终兜底）。
-Future<bool> _dbStripAudioToCopy({
-  required File src,
-  required File dst,
-}) async {
-  final r = await _dbRunFfmpegWithTicks([
-    '-y', '-hide_banner', '-loglevel', 'error',
-    '-i', src.path,
-    '-map', '0:v:0', '-an', '-c:v', 'copy',
-    '-movflags', '+faststart',
-    dst.path,
-  ]);
-  if (r.exitCode != 0 || !dst.existsSync() || dst.lengthSync() <= 0) {
-    logp('⚠️ 剥离音频失败（ffmpeg exit=${r.exitCode}）：'
-        '${'${r.stderr}'.trim()}');
-    try {
-      dst.deleteSync();
-    } catch (_) {}
-    return false;
-  }
-  return true;
-}
-
-/// 上传前的音频前置拦截（原地修复），保证上传文件不会被方舟判「时长过短」。
+/// 分段上传前的音频前置校验（唯一合法出口：音频全程保留）。
 ///
-/// 1) 无音频轨 → 放行（纯视频没有 audio_url 可校验）；
-/// 2) 体检合格 → 放行，并记录一行体检日志；
-/// 3) 命中风险 → 重建音频轨；重建后仍不合格 → 剥离音频（降级，必须标注）。
+/// 1) 无音频轨 → 源片本身就没音轨，按纯视频放行（合法特例）；
+/// 2) 可信时长 ≥10ms 且起点归零 → 直接放行；
+/// 3) 不合格 → 原地重建音频轨（保留原样本、静音补齐）；
+/// 4) 重建后仍不合格 → 抛 audio_too_short，由调用方合并相邻分片重切。
 ///
-/// 返回 [hasAudio]：最终文件是否仍带音轨（决定预处理模型要不要用音频模型）；
-/// 返回 [degraded]：是否已被迫降级为纯视频。
-Future<({bool hasAudio, bool degraded, String note})>
+/// ★ 任何情况下都不剥离音频、不生成 noaud 文件、不走无声重试。
+Future<({bool hasAudio, bool rebuilt, int audioMs})>
     dbArkEnsureSegmentAudioSafe(
   File seg, {
   required String label,
-  double targetSec = 0,
 }) async {
-  final health = await _dbAudioHealth(seg);
-  if (!health.hasAudio) {
-    logp('🔇 $label 无音频轨（纯视频），按原样放行');
-    return (hasAudio: false, degraded: false, note: '无音频轨');
+  final m = await _dbMeasureAudio(seg);
+  if (!m.health.hasAudio) {
+    logp('🔇 $label 无音频轨（源片本身无音轨），按纯视频放行');
+    return (hasAudio: false, rebuilt: false, audioMs: 0);
   }
-  logp('🎚️ $label 音频体检: ${health.desc}');
-  if (!health.risky) {
-    return (hasAudio: true, degraded: false, note: '音频正常');
+  logp('🎚️ $label 音频体检：${m.health.desc} → 可信 ${m.audioMs}ms');
+  if (m.audioMs >= dbArkAudioHardMinMs &&
+      m.health.startMs <= dbArkAudioMaxStartMs) {
+    return (hasAudio: true, rebuilt: false, audioMs: m.audioMs);
   }
-  logp('⚠️ $label 音频异常（${health.riskReason}）→ 重建音频轨（视频流 -c:v copy）');
-
-  final fixed = File('${seg.path}.audfix.mp4');
-  var ok = await _dbRebuildAudioToCopy(
-    src: seg,
-    dst: fixed,
-    targetSec: targetSec,
-  );
-  if (ok) {
-    final h2 = await _dbAudioHealth(fixed);
-    final decoded = await _dbDecodedAudioSec(fixed);
-    ok = !h2.risky && decoded >= dbArkAudioHardMinSec;
-    logp(ok
-        ? '✅ $label 音频已重建: ${h2.desc}，可解码 ${decoded.toStringAsFixed(3)}s'
-        : '⚠️ $label 重建后仍不合格: ${h2.desc}，'
-            '可解码 ${decoded.toStringAsFixed(3)}s');
-  }
-  if (ok) {
-    try {
-      seg.deleteSync();
-    } catch (_) {}
-    fixed.renameSync(seg.path);
-    return (hasAudio: true, degraded: false, note: '音频已重建');
-  }
-  try {
-    if (fixed.existsSync()) fixed.deleteSync();
-  } catch (_) {}
-
-  final silent = File('${seg.path}.noaud.mp4');
-  if (await _dbStripAudioToCopy(src: seg, dst: silent)) {
-    logp('🩹 $label 音频轨无法修复，已降级为纯视频'
-        '（永不触发 audio_url duration 校验，但本段将听不到音频）');
-    try {
-      seg.deleteSync();
-    } catch (_) {}
-    silent.renameSync(seg.path);
-    return (hasAudio: false, degraded: true, note: '音频轨不可修复，已降级为纯视频');
-  }
-  throw DbVideoArkException(
-      '$label 音频轨异常且无法修复/剥离，为避免方舟 400 已中止本段');
-}
-
-/// 原地剥离分段音频（服务端仍报音频过短时的自愈手段）。
-Future<void> _dbStripSegmentAudioInPlace(File seg) async {
-  final tmp = File('${seg.path}.strip.mp4');
-  final ok = await _dbStripAudioToCopy(src: seg, dst: tmp);
+  logp('⚠️ $label 音频不合格（${m.health.riskReason}）→ 重建音频轨（不剥离）');
+  final ok = await _dbRepairAudioInPlace(seg, label: label);
   if (!ok) {
-    throw DbVideoArkException('剥离分段音频失败，无法重试：${seg.path}');
+    throw DbVideoArkException(
+        '$label 音频真实时长不足 ${dbArkAudioHardMinMs}ms 且无法本地修复'
+        '（音频已完整保留，绝不剥离；将改用合并相邻分片重试）',
+        code: dbArkAudioTooShortCode);
   }
-  try {
-    seg.deleteSync();
-  } catch (_) {}
-  tmp.renameSync(seg.path);
+  final m2 = await _dbMeasureAudio(seg);
+  return (hasAudio: true, rebuilt: true, audioMs: m2.audioMs);
 }
 
 /// 判断异常是否就是方舟的「音频时长过短」400。
@@ -2238,86 +2288,61 @@ bool dbArkIsAudioTooShortError(Object err) {
 /// 由调用方在上传结束后连目录一起清理。
 ///
 /// 返回值里的 [hasAudio] 是「最终上传文件是否仍带音轨」——调用方用它决定
-/// `preprocess_configs.video.model` 要不要强制音频能力模型；[degraded] 表示
-/// 音频已无法修复、被迫降级成纯视频（必须在日志与结果里显式标注）。
-Future<
-    ({
-      File file,
-      Directory? tempDir,
-      bool hasAudio,
-      bool degraded,
-      String note,
-    })> dbArkPrepareWholeVideoSafe(File src) async {
+/// `preprocess_configs.video.model` 要不要强制音频能力模型。
+/// ★ 修复无法完成时直接抛 audio_too_short，绝不剥离音频降级成无声视频。
+Future<({File file, Directory? tempDir, bool hasAudio, String note})>
+    dbArkPrepareWholeVideoSafe(File src) async {
   final health = await _dbAudioHealth(src);
   if (!health.hasAudio) {
     logp('🔇 整片无音频轨（纯视频），按原样上传');
-    return (
-      file: src,
-      tempDir: null,
-      hasAudio: false,
-      degraded: false,
-      note: '无音频轨',
-    );
+    return (file: src, tempDir: null, hasAudio: false, note: '无音频轨');
   }
-  logp('🎚️ 整片音频体检: ${health.desc}');
+  final measured = await _dbMeasureAudio(src);
+  logp('🎚️ 整片音频体检: ${health.desc} → 可信 ${measured.audioMs}ms');
   // 多音轨也要重建：服务端可能抽取「非主轨」，抽到一条空轨就是 8ms。
   final trackCount = await _dbAudioTrackCount(src);
   final multiTrack = trackCount > 1;
-  if (!health.risky && !multiTrack) {
-    return (
-      file: src,
-      tempDir: null,
-      hasAudio: true,
-      degraded: false,
-      note: '音频正常',
-    );
+  if (!health.risky && !multiTrack && measured.audioMs >= dbArkAudioHardMinMs) {
+    return (file: src, tempDir: null, hasAudio: true, note: '音频正常');
   }
   if (!health.risky && multiTrack) {
     logp('⚠️ 整片存在 $trackCount 条音频轨 → 只保留主轨后上传（原文件不动）');
   } else {
-    logp('⚠️ 整片音频异常（${health.riskReason}）→ 生成修复副本后上传（原文件不动）');
+    logp('⚠️ 整片音频异常（${health.riskReason}，可信 ${measured.audioMs}ms）'
+        '→ 生成修复副本后上传（原文件不动，不剥离）');
   }
   final tmpDir = Directory.systemTemp.createTempSync('kewe_audfix_');
   final dst = File('${tmpDir.path}/safe.mp4');
-  var ok = await _dbRebuildAudioToCopy(src: src, dst: dst);
+  final ok = await _dbRebuildAudioToCopy(src: src, dst: dst);
   if (ok) {
-    final h2 = await _dbAudioHealth(dst);
-    final decoded = await _dbDecodedAudioSec(dst);
-    ok = !h2.risky && decoded >= dbArkAudioHardMinSec;
-    logp(ok
-        ? '✅ 整片音频已重建: ${h2.desc}，可解码 ${decoded.toStringAsFixed(3)}s'
-        : '⚠️ 整片音频重建后仍不合格: ${h2.desc}，'
-            '可解码 ${decoded.toStringAsFixed(3)}s');
-  }
-  if (ok) {
-    return (
-      file: dst,
-      tempDir: tmpDir,
-      hasAudio: true,
-      degraded: false,
-      note: '音频已重建',
-    );
+    final m2 = await _dbMeasureAudio(dst);
+    final pass = m2.health.hasAudio &&
+        m2.audioMs >= dbArkAudioHardMinMs &&
+        m2.health.startMs <= dbArkAudioMaxStartMs;
+    if (pass) {
+      logp('✅ 整片音频已重建: ${m2.health.desc}，可信 ${m2.audioMs}ms（不剥离）');
+      return (
+        file: dst,
+        tempDir: tmpDir,
+        hasAudio: true,
+        note: '音频已重建',
+      );
+    }
+    logp('⚠️ 整片音频重建后仍不合格: ${m2.health.desc}，可信 ${m2.audioMs}ms');
+  } else {
+    logp('⚠️ 整片音频重建失败（原文件不动，不剥离）');
   }
 
   try {
     if (dst.existsSync()) dst.deleteSync();
   } catch (_) {}
-  final silent = File('${tmpDir.path}/safe_noaud.mp4');
-  if (await _dbStripAudioToCopy(src: src, dst: silent)) {
-    logp('🩹 整片音频无法修复，已剥离为纯视频副本（原文件不动）—— '
-        '这是降级路径：本片将听不到音频');
-    return (
-      file: silent,
-      tempDir: tmpDir,
-      hasAudio: false,
-      degraded: true,
-      note: '音频轨不可修复，已降级为纯视频',
-    );
-  }
   try {
     tmpDir.deleteSync(recursive: true);
   } catch (_) {}
-  throw DbVideoArkException('整片音频异常且无法修复/剥离：${src.path}');
+  throw DbVideoArkException(
+      '整片音频轨无法修复到 ≥${dbArkAudioHardMinMs}ms'
+      '（音频已完整保留，绝不剥离为无声视频）：${src.path}',
+      code: dbArkAudioTooShortCode);
 }
 
 /// 批量清理临时目录（解密目录、音频修复副本目录）。
@@ -2342,72 +2367,327 @@ int dbArkPlanSegCount(double durationSec, double fps) {
   return n;
 }
 
-/// 等分切段：视频流 -c copy（不重编码、不改分辨率/帧率、不失真），
-/// 音频重编码为 AAC。
+/// 已切好且音频校验通过的分片（时间轴一律毫秒整数，避免浮点尾差）。
+class _DbSegPart {
+  final File file;
+  final int startMs;
+  final int endMs;
+  bool hasAudio;
+  int audioMs;
+  bool rebuilt;
+
+  /// 本段最终转写正文；null = 尚未成功。
+  String? text;
+
+  /// 本段失败原因；null = 正常。
+  String? error;
+
+  _DbSegPart({
+    required this.file,
+    required this.startMs,
+    required this.endMs,
+    required this.hasAudio,
+    required this.audioMs,
+    required this.rebuilt,
+  });
+
+  double get startSec => startMs / 1000.0;
+  double get endSec => endMs / 1000.0;
+  double get lenSec => (endMs - startMs) / 1000.0;
+}
+
+/// 视频帧率（优先 avg_frame_rate）；读不到按 25 兜底。
+Future<double> _dbVideoFps(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_entries', 'stream=avg_frame_rate,r_frame_rate',
+      '-of', 'default=nw=1:nk=1',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      for (final line in '${r.stdout}'.split('\n')) {
+        final t = line.trim();
+        if (t.isEmpty) continue;
+        final parts = t.split('/');
+        if (parts.length == 2) {
+          final n = double.tryParse(parts[0]);
+          final d = double.tryParse(parts[1]);
+          if (n != null && d != null && n > 0 && d > 0) return n / d;
+        }
+        final v = double.tryParse(t);
+        if (v != null && v > 0) return v;
+      }
+    }
+  } catch (_) {}
+  return 25;
+}
+
+/// 视频关键帧时间点（毫秒）。切段边界对齐关键帧，避免 `-ss` 回退到上一个
+/// 关键帧导致前后两段内容重叠、时间轴对不上原片。
+Future<List<int>> _dbKeyframeMs(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'v:0',
+      '-show_packets',
+      '-show_entries', 'packet=pts_time,flags',
+      '-of', 'csv=p=0',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final out = <int>[];
+      for (final line in '${r.stdout}'.split('\n')) {
+        final parts = line.trim().split(',');
+        if (parts.length < 2 || !parts[1].startsWith('K')) continue;
+        final pts = double.tryParse(parts[0]);
+        if (pts == null) continue;
+        out.add((pts * 1000).round());
+      }
+      if (out.isNotEmpty) {
+        out.sort();
+        return out;
+      }
+    }
+  } catch (_) {}
+  return const <int>[];
+}
+
+/// 按毫秒区间切一段：视频流 `-c:v copy`（不重编码、不改分辨率/帧率/画质），
+/// 音频重编码为 AAC 并用 apad 补齐到段长。
 ///
-/// 为什么音频必须重编码：实测 -c copy 切出的片段，AAC 的时长元数据会被
-/// 方舟解析成 3.625ms，直接拒收：
+/// 为什么音频必须重编码：实测 `-c copy` 切出的片段，AAC 的时长元数据会被
+/// 方舟解析成 3.625ms 直接拒收：
 ///   "The request failed because the duration of the input audio (3.625ms)
 ///    is shorter than the limit (10ms)"（param: audio_url duration）。
-/// 重编码后多数片段正常，但 24 分钟 / 330MB 实测仍可能塌缩成 8ms ——
-/// 真正兜底的是上传前的 dbArkEnsureSegmentAudioSafe（重建 / 剥离）。
-/// 这里只保证「只带第一条音频轨」，避免多音轨时服务端抽到一条空轨。
-Future<List<File>> _dbSplitByTime({
+/// 重编码 + apad 后音频轨真实解码时长等于段长，服务端不会再量出 8ms。
+Future<File> _dbCutSegment({
+  required File src,
+  required ({int start, int end}) range,
+  required String outPath,
+  required bool srcHasAudio,
+  void Function(int elapsedSec)? onTick,
+}) async {
+  final startSec = (range.start / 1000.0).toStringAsFixed(3);
+  final lenD = (range.end - range.start) / 1000.0;
+  final lenSec = lenD.toStringAsFixed(3);
+  // ★ 视频必须用「帧数」收口：实测 `-c:v copy` + 输入 seek 时 `-t` 只截住
+  //   音频，视频会一路复制到片尾（20s 的段实测写出 40s、内容与时间轴错位）。
+  final fps = await _dbVideoFps(src);
+  var frames = (lenD * fps).round();
+  if (frames < 1) frames = 1;
+  frames += 2; // 关键帧对齐余量
+  final args = <String>[
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-ss', startSec,
+    '-i', src.path,
+    '-map', '0:v:0',
+    // ★ 只取第一条音频轨：`0:a?` 会映射全部音轨，多音轨源片切片后
+    //   服务端可能抽到一条空轨/坏轨，量出 8ms 直接 400。
+    '-map', srcHasAudio ? '0:a:0' : '0:a:0?',
+    '-c:v', 'copy',
+    if (srcHasAudio) ...<String>[
+      '-c:a', 'aac',
+      '-b:a', '128k',
+      // 输入 seek 后音频首帧 pts 可能不为 0，异步对齐到 0；
+      // apad 把音频补齐到段长（由下面的输出侧 -t 收口）。
+      '-af', 'aresample=async=1:first_pts=0,apad',
+    ],
+    // ★ 输出侧 -t 必须放在 -i 之后：放在输入侧只限制「读取多少」，
+    //   apad 会无限产帧，封装器会一直写下去（实测卡死十几小时）。
+    '-frames:v', '$frames',
+    '-t', lenSec,
+    '-avoid_negative_ts', 'make_zero',
+    '-movflags', '+faststart',
+    outPath,
+  ];
+  final r = await _dbRunFfmpegWithTicks(args, onTick: onTick);
+  if (r.exitCode != 0) {
+    throw DbVideoArkException(
+        '视频切段失败（${_dbClock(range.start / 1000.0)} - '
+        '${_dbClock(range.end / 1000.0)}，ffmpeg exit=${r.exitCode}）：'
+        '${'${r.stderr}'.trim()}');
+  }
+  final f = File(outPath);
+  if (!f.existsSync() || f.lengthSync() <= 0) {
+    throw DbVideoArkException('视频切段失败（无输出）：$outPath');
+  }
+  return f;
+}
+
+/// 等分切段 + 逐段音频前置校验（碎片与相邻段合并重切，不剥离音频）。
+///
+/// 边界一律用毫秒整数计算：浮点秒乘除是 8ms/9ms 临界误差的高发点。
+Future<List<_DbSegPart>> _dbSplitByTime({
   required File src,
   required int segCount,
   required double duration,
+  required bool srcHasAudio,
   void Function(int index, int total, int elapsedSec)? onSeg,
 }) async {
   final tmpDir = Directory(
       '${Directory.systemTemp.path}/kewe_vseg_${DateTime.now().microsecondsSinceEpoch}');
   tmpDir.createSync(recursive: true);
-  final segSec = duration / segCount;
-  final out = <File>[];
-  for (var i = 0; i < segCount; i++) {
-    final start = segSec * i;
-    final len = (i == segCount - 1) ? (duration - start) : segSec;
-    if (len <= 0.5) continue;
-    final path = '${tmpDir.path}/seg_${i.toString().padLeft(3, '0')}.mp4';
-    onSeg?.call(i, segCount, 0);
-    // ★ 每段 ffmpeg 拷贝期间每 2 秒上报一次耗时：
-    //   大文件单段拷贝可能要几十秒，期间没有任何事件，界面就像卡死。
-    final r = await _dbRunFfmpegWithTicks(
-      [
-        '-y', '-hide_banner', '-loglevel', 'error',
-        '-ss', start.toStringAsFixed(3),
-        '-t', len.toStringAsFixed(3),
-        '-i', src.path,
-        '-map', '0:v:0',
-        // ★ 只取第一条音频轨：`0:a?` 会映射全部音轨，多音轨源片切片后
-        //   服务端可能抽到一条空轨/坏轨，量出 8ms 直接 400。
-        '-map', '0:a:0?',
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-        // 输入 seek 后音频首帧 pts 可能不为 0，异步对齐到 0，
-        // 避免切出的 AAC 时长元数据塌缩成几毫秒被方舟拒收。
-        '-af', 'aresample=async=1:first_pts=0',
-        '-avoid_negative_ts', 'make_zero',
-        '-movflags', '+faststart',
-        path,
-      ],
-      onTick: (sec) => onSeg?.call(i, segCount, sec),
-    );
-    if (r.exitCode != 0) {
+
+  final totalMs = (duration * 1000).round();
+  if (totalMs <= 0) throw DbVideoArkException('视频时长为 0，无法切段');
+
+  // 等分目标边界（毫秒整数），再对齐到关键帧：
+  // 输入 seek 只能从关键帧开始，边界不落在关键帧上就会与上一段内容重叠、
+  // 时间轴整体前移。关键帧离目标超过 6 秒则保持等分目标（宁可轻微重叠，
+  // 也不把某一段拉得过大）。
+  final keyframes = await _dbKeyframeMs(src);
+  final bounds = <int>[0];
+  for (var i = 1; i < segCount; i++) {
+    final target = (totalMs * i) ~/ segCount;
+    int? pick;
+    for (final k in keyframes) {
+      if (k <= bounds.last + 800) continue;
+      if (k >= totalMs - 500) continue;
+      if (pick == null || (k - target).abs() < (pick - target).abs()) pick = k;
+    }
+    if (pick != null && (pick - target).abs() <= 6000) {
+      bounds.add(pick);
+      logp('✂️ 分段边界 ${target}ms → 关键帧 ${pick}ms');
+    } else {
+      bounds.add(target);
+    }
+  }
+  bounds.add(totalMs);
+
+  final ranges = <({int start, int end})>[];
+  for (var i = 0; i < bounds.length - 1; i++) {
+    if (bounds[i + 1] > bounds[i]) {
+      ranges.add((start: bounds[i], end: bounds[i + 1]));
+    }
+  }
+  // 尾部残段（<500ms）并进上一段，绝不单独成一个分片。
+  if (ranges.length > 1 && ranges.last.end - ranges.last.start < 500) {
+    final last = ranges.removeLast();
+    final prev = ranges.removeLast();
+    ranges.add((start: prev.start, end: last.end));
+  }
+
+  final files = <File>[];
+  for (var i = 0; i < ranges.length; i++) {
+    onSeg?.call(i, ranges.length, 0);
+    files.add(await _dbCutSegment(
+      src: src,
+      range: ranges[i],
+      outPath: '${tmpDir.path}/seg_${i.toString().padLeft(3, '0')}.mp4',
+      srcHasAudio: srcHasAudio,
+      onTick: (sec) => onSeg?.call(i, ranges.length, sec),
+    ));
+  }
+
+  if (!srcHasAudio) {
+    logp('🔇 源片无音频轨：${files.length} 个分片按纯视频上传（合法特例）');
+    return <_DbSegPart>[
+      for (var i = 0; i < files.length; i++)
+        _DbSegPart(
+          file: files[i],
+          startMs: ranges[i].start,
+          endMs: ranges[i].end,
+          hasAudio: false,
+          audioMs: 0,
+          rebuilt: false,
+        ),
+    ];
+  }
+
+  // 逐段前置校验：<10ms 的音轨先本地重建；重建不回来的与相邻段合并重切。
+  var guard = 0;
+  while (true) {
+    var bad = -1;
+    for (var i = 0; i < files.length; i++) {
+      final m = await _dbMeasureAudio(files[i]);
+      if (!m.health.hasAudio) {
+        // 源片有音轨、这段却没有：补静音轨，绝不按「无音频」上传。
+        logp('⚠️ 第 ${i + 1}/${files.length} 段切出来没有音轨'
+            '（源片有音轨）→ 补静音轨后上传（不改成无音频）');
+        if (await _dbAddSilentAudioTrack(files[i])) continue;
+        bad = i;
+        break;
+      }
+      final pass = m.audioMs >= dbArkAudioHardMinMs &&
+          m.health.startMs <= dbArkAudioMaxStartMs;
+      if (pass) {
+        logp('✅ 第 ${i + 1}/${files.length} 段音频校验通过'
+            '（可信 ${m.audioMs}ms，起点 ${m.health.startMs}ms）');
+        continue;
+      }
+      logp('⚠️ 第 ${i + 1}/${files.length} 段音频过短'
+          '（${m.audioMs}ms < ${dbArkAudioHardMinMs}ms）'
+          '→ 本地重建音频轨（保留原样本，不剥离）');
+      if (await _dbRepairAudioInPlace(files[i],
+          label: '第 ${i + 1}/${files.length} 段')) {
+        final m2 = await _dbMeasureAudio(files[i]);
+        logp('✅ 第 ${i + 1}/${files.length} 段重建后通过'
+            '（可信 ${m2.audioMs}ms）');
+        continue;
+      }
+      bad = i;
+      break;
+    }
+    if (bad < 0) break;
+
+    // 合并：与相邻分片并成一段，重新切割、重新探测（全程保留音频）。
+    if (files.length <= 1) {
       throw DbVideoArkException(
-          '视频等分切段失败（第 ${i + 1}/$segCount 段，'
-          'ffmpeg exit=${r.exitCode}）：${'${r.stderr}'.trim()}');
+          '整片只有 1 个分片且音频无法修复到 ≥${dbArkAudioHardMinMs}ms'
+          '（音频已完整保留，绝不剥离）',
+          code: dbArkAudioTooShortCode);
     }
-    final f = File(path);
-    if (!f.existsSync() || f.lengthSync() <= 0) {
-      throw DbVideoArkException('视频等分切段失败（第 ${i + 1}/$segCount 段无输出）');
+    guard++;
+    if (guard > ranges.length + 5) {
+      throw DbVideoArkException(
+          '音频碎片合并次数异常（$guard 次），已中止；音频始终完整保留',
+          code: dbArkAudioTooShortCode);
     }
-    out.add(f);
+    final nb = bad > 0 ? bad - 1 : bad + 1;
+    final s = ranges[bad].start < ranges[nb].start
+        ? ranges[bad].start
+        : ranges[nb].start;
+    final e = ranges[bad].end > ranges[nb].end
+        ? ranges[bad].end
+        : ranges[nb].end;
+    for (final k in <int>[bad, nb]) {
+      try {
+        files[k].deleteSync();
+      } catch (_) {}
+    }
+    final keep = bad < nb ? bad : nb;
+    final drop = bad > nb ? bad : nb;
+    logp('🔗 第 ${bad + 1}/${files.length} 段与相邻段合并为 '
+        '${_dbClock(s / 1000.0)} - ${_dbClock(e / 1000.0)}'
+        '（${e - s}ms）后重切（音频不剥离）');
+    ranges[keep] = (start: s, end: e);
+    files[keep] = await _dbCutSegment(
+      src: src,
+      range: (start: s, end: e),
+      outPath: '${tmpDir.path}/seg_merge_${guard}_${s}_$e.mp4',
+      srcHasAudio: true,
+      onTick: (sec) => onSeg?.call(keep, ranges.length, sec),
+    );
+    ranges.removeAt(drop);
+    files.removeAt(drop);
   }
-  if (out.isEmpty) {
-    throw DbVideoArkException('视频等分切段后没有得到任何片段');
+
+  final parts = <_DbSegPart>[];
+  for (var i = 0; i < files.length; i++) {
+    final m = await _dbMeasureAudio(files[i]);
+    parts.add(_DbSegPart(
+      file: files[i],
+      startMs: ranges[i].start,
+      endMs: ranges[i].end,
+      hasAudio: m.health.hasAudio,
+      audioMs: m.audioMs,
+      rebuilt: false,
+    ));
   }
-  return out;
+  logp('🎬 分段完成：${parts.length} 段，全部通过音频前置校验（≥${dbArkAudioHardMinMs}ms）');
+  return parts;
 }
 
 /// ffmpeg 执行期间每 2 秒回调一次耗时（避免长时间无事件）。
@@ -2588,8 +2868,12 @@ String _dbSegFullPrompt({
       '严禁猜测其他段落的内容。';
 }
 
-/// 分段完整理解：逐段上传（fps 严格等于配置值，不降帧、不重试）、
+/// 分段完整理解：逐段上传（fps 严格等于配置值，不降帧）、
 /// 逐段做完整转写，最后按全片时间轴拼接成一份连续记录。
+///
+/// ★ 音频纪律（2026-11-25 六修）：全程保留音频。8ms 400 的处理顺序是
+///   本地前置校验 → 重建音频轨 → 与相邻分片合并重切 → 换音频预处理模型；
+///   任何分支都不得剥离音轨、不得生成 noaud 文件、不得无声重试。
 Future<String> dbDescribeVideoInSegments({
   required File file,
   required String fileName,
@@ -2605,13 +2889,16 @@ Future<String> dbDescribeVideoInSegments({
       : 'doubao-seed-2-1-lite-260915';
   // 推理模型与预处理模型是两件事：预处理必须显式指定模型（否则音频不被
   // 抽出、只剩 8ms 占位）；推理模型保持用户配置，绝不做静默替换。
+  final srcHasAudio = (await _dbAudioHealth(file)).hasAudio;
   Directory? tmpDir;
+  var uploadSeq = 0;
   try {
     onProgress?.call({'stage': 'seg_split', 'segments': segCount});
-    final segs = await _dbSplitByTime(
+    final parts = await _dbSplitByTime(
       src: file,
       segCount: segCount,
       duration: duration,
+      srcHasAudio: srcHasAudio,
       onSeg: (i, total, elapsedSec) {
         onProgress?.call({
           'stage': 'seg_split',
@@ -2622,203 +2909,237 @@ Future<String> dbDescribeVideoInSegments({
         });
       },
     );
-    tmpDir = segs.first.parent;
+    tmpDir = parts.first.file.parent;
+    logp('🎬 ${fileName}: 分段 ${parts.length} 段，'
+        '音轨=${srcHasAudio ? '有（全程保留）' : '无（源片本身无音轨）'}');
 
-    // 用实测时长重建时间轴（-ss 按关键帧对齐，理论等分会有微小偏差）
-    final durs = <double>[];
-    var total = 0.0;
-    for (final s in segs) {
-      final d = await _dbProbeDurationSec(s);
-      durs.add(d > 0 ? d : 0);
-      total += d > 0 ? d : 0;
+    /// 上传 → 等预处理 → 转写，这一个分片完整跑完才返回正文。
+    Future<String> describePart({
+      required int index,
+      required _DbSegPart p,
+      required String uploadName,
+      required String ppModel,
+      required int maxTokens,
+    }) async {
+      final segSize = p.file.lengthSync();
+      final up = await _dbArkUploadWithModelFallback(
+        file: p.file,
+        fileName: uploadName,
+        bucket: cfg.tosBucket,
+        prefix: cfg.tosPrefix,
+        model: ppModel,
+        apiKey: apiKey,
+        fps: fps,
+        maxVideoTokens: cfg.maxVideoTokens,
+        minFrames: cfg.minFrames,
+        label: '第 ${index + 1}/${parts.length} 段',
+      );
+      final fileId = up.fileId;
+      await dbArkWaitFileActive(
+        apiKey: apiKey,
+        fileId: fileId,
+        timeout: dbArkPreprocessTimeoutFor(segSize),
+        onTick: (status, waitedSec) {
+          onProgress?.call({
+            'stage': 'preprocess',
+            'segment': index + 1,
+            'segments': parts.length,
+            'status': status,
+            'waited': waitedSec,
+          });
+        },
+      );
+      onProgress?.call({
+        'stage': 'describe',
+        'segment': index + 1,
+        'segments': parts.length,
+        'chars': 0,
+      });
+      logp('🧠 第 ${index + 1}/${parts.length} 段转写开始'
+          '（段长 ${_dbClock(p.lenSec)}，预算 $maxTokens token，'
+          '文件 ${dbFmtSize(segSize)}）');
+      return _dbArkDescribeSegment(
+        apiKey: apiKey,
+        model: model,
+        fileId: fileId,
+        prompt: _dbSegFullPrompt(
+          videoName: fileName,
+          index: index,
+          total: parts.length,
+          startSec: p.startSec,
+          endSec: p.endSec,
+        ),
+        maxTokens: maxTokens,
+        onChars: (chars) => onProgress?.call({
+          'stage': 'describe',
+          'segment': index + 1,
+          'segments': parts.length,
+          'chars': chars,
+        }),
+        onTick: (sec) => onProgress?.call({
+          'stage': 'describe',
+          'segment': index + 1,
+          'segments': parts.length,
+          'elapsed': sec,
+        }),
+      );
     }
-    if (total <= 0) total = duration;
 
     // ★ 段级容错：一段失败（上传 / 预处理 / 转写任一环节）只标记该段，
-    //   绝不能让整段循环中断 —— 旧实现里第一段 400 就直接抛异常，
-    //   第二、三段根本没上传到方舟。现在失败段记入 failedNotes，后续段
-    //   照常上传、照常理解；全部段失败才整体报错。
+    //   绝不能让整段循环中断；只有「音频时长不足且合并 3 次仍修不好」
+    //   才会按铁律中止整个任务（绝不剥离音频降级通关）。
     final okBlocks = <String>[];
     final failedNotes = <String>[];
-    var cursor = 0.0;
-    for (var i = 0; i < segs.length; i++) {
-      final start = cursor;
-      final end = cursor + durs[i];
+
+    var i = 0;
+    while (i < parts.length) {
+      var p = parts[i];
+      if (p.text != null) {
+        i++;
+        continue;
+      }
+      var segLabel = '第 ${i + 1}/${parts.length} 段';
       onProgress?.call({
         'stage': 'segment_start',
         'segment': i + 1,
-        'segments': segs.length,
-        'start': start.round(),
-        'end': end.round(),
+        'segments': parts.length,
+        'start': p.startMs ~/ 1000,
+        'end': p.endMs ~/ 1000,
       });
-      final segSec = durs[i] > 0 ? durs[i] : duration / segs.length;
-      final segBudget = dbVideoTranscriptMaxTokens(segSec);
-      final segLabel = '第 ${i + 1}/${segs.length} 段';
-      final segName = _dbSegFileName(fileName, i, segs.length);
 
-      // 段级音频体检后才知道这一路有没有音轨，预处理模型据此解析；
-      // 默认按「有音轨」起步，保证第一次上传就带上音频能力模型。
-      var segHasAudio = true;
-      var degraded = false;
-      var degradeNote = '';
-      var ppModel = dbArkVideoPreprocessModel(
-        configured: cfg.preprocessModel,
-        hasAudio: true,
-        inference: model,
-      );
+      var merges = 0;
 
-      /// 上传 → 等预处理 → 转写，这一段完整跑完才返回正文。
-      Future<String> describeOnce({required String uploadName}) async {
-        final segSize = segs[i].lengthSync();
-        final up = await _dbArkUploadWithModelFallback(
-          file: segs[i],
-          fileName: uploadName,
-          bucket: cfg.tosBucket,
-          prefix: cfg.tosPrefix,
-          model: ppModel,
-          apiKey: apiKey,
-          fps: fps,
-          maxVideoTokens: cfg.maxVideoTokens,
-          minFrames: cfg.minFrames,
-          label: segLabel,
+      // 合并相邻分片并重试（音频全程保留）；合并 3 次仍不合格则中止任务。
+      Future<void> mergeAndRetry(Object? cause) async {
+        merges++;
+        if (merges > 3) {
+          throw DbVideoArkException(
+              '$segLabel 音频被判过短（$cause），已与相邻分片合并重试 '
+              '3 次仍失败；音频全程保留、未剥离，任务中止',
+              code: dbArkAudioTooShortCode);
+        }
+        logp('⚠️ $segLabel 音频仍被判过短（$cause）→ '
+            '与相邻分片合并后重试（第 $merges/3 次，音频不剥离）');
+        i = await _dbMergeSegParts(
+          parts,
+          i,
+          src: file,
+          srcHasAudio: srcHasAudio,
         );
-        final fileId = up.fileId;
-        await dbArkWaitFileActive(
-          apiKey: apiKey,
-          fileId: fileId,
-          timeout: dbArkPreprocessTimeoutFor(segSize),
-          onTick: (status, waitedSec) {
-            onProgress?.call({
-              'stage': 'preprocess',
-              'segment': i + 1,
-              'segments': segs.length,
-              'status': status,
-              'waited': waitedSec,
-            });
-          },
-        );
-        onProgress?.call({
-          'stage': 'describe',
-          'segment': i + 1,
-          'segments': segs.length,
-          'chars': 0,
-        });
-        logp('🧠 $segLabel 转写开始'
-            '（段长 ${_dbClock(segSec)}，预算 $segBudget token，'
-            '文件 ${dbFmtSize(segSize)}）');
-        return _dbArkDescribeSegment(
-          apiKey: apiKey,
-          model: model,
-          fileId: fileId,
-          prompt: _dbSegFullPrompt(
-            videoName: fileName,
-            index: i,
-            total: segs.length,
-            startSec: start,
-            endSec: end,
-          ),
-          maxTokens: segBudget,
-          onChars: (chars) => onProgress?.call({
-            'stage': 'describe',
-            'segment': i + 1,
-            'segments': segs.length,
-            'chars': chars,
-          }),
-          onTick: (sec) => onProgress?.call({
-            'stage': 'describe',
-            'segment': i + 1,
-            'segments': segs.length,
-            'elapsed': sec,
-          }),
-        );
+        p = parts[i];
+        segLabel = '第 ${i + 1}/${parts.length} 段';
       }
 
-      try {
-        // ★ 上传前的音频前置拦截：不合格就地重建，救不回来才降级为纯视频，
-        //   保证进入 POST /files 的每一段音频都 ≥10ms。
-        final gate = await dbArkEnsureSegmentAudioSafe(
-          segs[i],
-          label: segLabel,
-          targetSec: segSec,
-        );
-        segHasAudio = gate.hasAudio;
-        degraded = gate.degraded;
-        degradeNote = gate.note;
-        ppModel = dbArkVideoPreprocessModel(
-          configured: cfg.preprocessModel,
-          hasAudio: segHasAudio,
-          inference: model,
-        );
-        logp('🎛️ $segLabel 预处理模型: $ppModel'
-            '（音轨=${segHasAudio ? '有' : '无'}，'
-            '推理模型=$model）');
-
-        // ★ 三段式自愈（顺序固定，不允许跳级）：
-        //   1) 当前预处理模型正常跑完；
-        //   2) 服务端仍判「音频过短」→ 换官方音频推荐模型重新预处理一次
-        //      （换名上传，避免 TOS 同名覆盖）——这一步仍然保留音频；
-        //   3) 只有第 2 步也失败，才剥离音频重试，并强制在结果里标注降级。
-        var text = '';
-        Object? audioErr;
+      while (true) {
         try {
-          text = await describeOnce(uploadName: segName);
-        } catch (e) {
-          if (!dbArkIsAudioTooShortError(e)) rethrow;
-          audioErr = e;
-        }
-        if (audioErr != null && ppModel.trim() != dbArkAudioPreprocessModel) {
-          logp('⚠️ $segLabel 方舟仍报音频过短（$audioErr）→ '
-              '换预处理模型 $dbArkAudioPreprocessModel 重新预处理一次（音频不剥离）');
-          ppModel = dbArkAudioPreprocessModel;
+          // ★ 上传前最后一道音频校验：任何 <10ms 都在这里被拦下；
+          //   不合格先重建音频轨，绝不剥离。
+          ({bool hasAudio, bool rebuilt, int audioMs}) gate;
           try {
-            text = await describeOnce(
-                uploadName: _dbSegAudioModelName(segName));
-            audioErr = null;
-          } catch (e2) {
-            if (!dbArkIsAudioTooShortError(e2)) rethrow;
-            audioErr = e2;
+            gate = await dbArkEnsureSegmentAudioSafe(p.file, label: segLabel);
+          } on DbVideoArkException catch (e) {
+            if (e.code != dbArkAudioTooShortCode) rethrow;
+            await mergeAndRetry(e.message);
+            continue;
           }
-        }
-        if (audioErr != null) {
-          // 最后手段：纯视频段没有 audio_url 可校验，换名重传。
-          logp('⚠️ $segLabel 音频仍被判过短（$audioErr）→ '
-              '降级：剥离音频后重试一次');
-          await _dbStripSegmentAudioInPlace(segs[i]);
-          degraded = true;
-          degradeNote = '服务端仍判音频过短，已剥离音轨重试';
-          text = await describeOnce(uploadName: _dbSegNoAudioName(segName));
-        }
+          p.hasAudio = gate.hasAudio;
+          p.audioMs = gate.audioMs;
+          p.rebuilt = gate.rebuilt;
+          var ppModel = dbArkVideoPreprocessModel(
+            configured: cfg.preprocessModel,
+            hasAudio: p.hasAudio,
+            inference: model,
+          );
+          logp('🎛️ $segLabel 预处理模型: $ppModel'
+              '（音轨=${p.hasAudio ? '有' : '无'}，推理模型=$model）');
 
-        logp('🎬 $segLabel 完整理解完成'
-            '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
-        // 降级必须可见：该段音频没参与理解，结果里写清楚，不假装正常。
-        final block = degraded
-            ? '〔降级：$degradeNote —— 本段仅按画面理解，音频内容缺失〕\n$text'
-            : text;
-        if (segs.length > 1) {
-          okBlocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$block');
-        } else {
-          okBlocks.add(block);
+          // ★ 两级自愈（顺序固定，不允许跳级）：
+          //   1) 当前预处理模型正常跑完；
+          //   2) 服务端仍判「音频过短」→ 换官方音频推荐模型重新预处理一次
+          //      （换名上传，避免 TOS 同名覆盖）——这一步仍然保留音频；
+          //   3) 第 2 步仍失败 → 与相邻分片合并重切后重试（最多 3 次）。
+          //      全程不剥离音频、不生成 noaud、不走无声重试。
+          final segBudget = dbVideoTranscriptMaxTokens(
+              p.lenSec > 0 ? p.lenSec : duration / parts.length);
+          Object? audioErr;
+          String? text;
+          try {
+            text = await describePart(
+              index: i,
+              p: p,
+              uploadName: _dbSegFileName(fileName, i, parts.length,
+                  variant: uploadSeq++),
+              ppModel: ppModel,
+              maxTokens: segBudget,
+            );
+          } catch (e) {
+            if (!dbArkIsAudioTooShortError(e)) rethrow;
+            audioErr = e;
+          }
+          if (audioErr != null && ppModel.trim() != dbArkAudioPreprocessModel) {
+            logp('⚠️ $segLabel 方舟仍报音频过短（$audioErr）→ '
+                '换预处理模型 $dbArkAudioPreprocessModel 重新预处理一次（音频不剥离）');
+            ppModel = dbArkAudioPreprocessModel;
+            try {
+              text = await describePart(
+                index: i,
+                p: p,
+                uploadName: _dbSegAudioModelName(_dbSegFileName(
+                    fileName, i, parts.length,
+                    variant: uploadSeq++)),
+                ppModel: ppModel,
+                maxTokens: segBudget,
+              );
+              audioErr = null;
+            } catch (e2) {
+              if (!dbArkIsAudioTooShortError(e2)) rethrow;
+              audioErr = e2;
+            }
+          }
+          if (audioErr != null) {
+            await mergeAndRetry(audioErr);
+            continue;
+          }
+
+          p.text = text;
+          logp('🎬 $segLabel 完整理解完成'
+              '（${_dbClock(p.startSec)}-${_dbClock(p.endSec)}，'
+              '${runeLen(text ?? '')} 字）');
+          onProgress?.call({
+            'stage': 'segment_done',
+            'segment': i + 1,
+            'segments': parts.length,
+            'percent': ((i + 1) * 100) ~/ parts.length,
+          });
+          break;
+        } catch (e) {
+          // 音频碎片无法修复属于致命项：按铁律中止任务，
+          // 绝不像旧实现那样剥离音频后假装成功。
+          if (e is DbVideoArkException && e.code == dbArkAudioTooShortCode) {
+            rethrow;
+          }
+          p.error = '$segLabel（${_dbClock(p.startSec)} - '
+              '${_dbClock(p.endSec)}）：$e';
+          logp('⚠️ ${p.error} —— 跳过该段，继续处理其余分段');
+          onProgress?.call({
+            'stage': 'segment_failed',
+            'segment': i + 1,
+            'segments': parts.length,
+            'error': '$e',
+          });
+          break;
         }
-        onProgress?.call({
-          'stage': 'segment_done',
-          'segment': i + 1,
-          'segments': segs.length,
-          'percent': ((i + 1) * 100) ~/ segs.length,
-        });
-      } catch (e) {
-        final note = '第 ${i + 1}/${segs.length} 段'
-            '（${_dbClock(start)} - ${_dbClock(end)}）：$e';
-        failedNotes.add(note);
-        logp('⚠️ $note —— 跳过该段，继续处理其余分段');
-        onProgress?.call({
-          'stage': 'segment_failed',
-          'segment': i + 1,
-          'segments': segs.length,
-          'error': '$e',
-        });
       }
-      cursor = end;
+      i++;
+    }
+
+    for (final p in parts) {
+      if (p.text != null) {
+        okBlocks.add(parts.length > 1
+            ? '【${_dbClock(p.startSec)} - ${_dbClock(p.endSec)}】\n${p.text}'
+            : p.text!);
+      }
+      if (p.error != null) failedNotes.add(p.error!);
     }
 
     if (okBlocks.isEmpty) {
@@ -2827,12 +3148,12 @@ Future<String> dbDescribeVideoInSegments({
     }
 
     final body = okBlocks.join('\n\n');
-    if (segs.length == 1 && failedNotes.isEmpty) return body;
+    if (parts.length == 1 && failedNotes.isEmpty) return body;
     final failedSuffix = failedNotes.isEmpty
         ? ''
         : '\n\n【未能理解的段落（原片对应时间轴，内容缺失，请勿臆补）】\n'
             '${failedNotes.join('\n')}';
-    return '''【《$fileName》完整理解 · 全片 ${_dbClock(total)} · ${_dbFpsStr(fps)} fps · 等分 ${segs.length} 段】
+    return '''【《$fileName》完整理解 · 全片 ${_dbClock(duration)} · ${_dbFpsStr(fps)} fps · 等分 ${parts.length} 段】
 （下面按全片时间轴顺序连续记录；分段只为绕过方舟「单次请求 3600 帧」的上限，内容本身是一整条视频，段与段自然衔接。）
 
 $body$failedSuffix''';
@@ -2847,8 +3168,90 @@ $body$failedSuffix''';
   }
 }
 
-/// 段文件名：ASCII、带段号，避免 TOS 上同名覆盖。
-String _dbSegFileName(String videoName, int index, int total) {
+/// 把第 i 段与相邻分片合并、重新切割并做音频前置校验；
+/// 返回合并后所在的下标。全程保留音频，绝不剥离。
+Future<int> _dbMergeSegParts(
+  List<_DbSegPart> parts,
+  int i, {
+  required File src,
+  required bool srcHasAudio,
+}) async {
+  var idx = i;
+  var guard = 0;
+  while (parts.length > 1) {
+    guard++;
+    if (guard > parts.length + 3) break;
+    final nb = idx > 0 ? idx - 1 : idx + 1;
+    final s = parts[idx].startMs < parts[nb].startMs
+        ? parts[idx].startMs
+        : parts[nb].startMs;
+    final e = parts[idx].endMs > parts[nb].endMs
+        ? parts[idx].endMs
+        : parts[nb].endMs;
+    final tmpPath =
+        '${parts[idx].file.parent.path}/seg_merge_srv_${s}_${e}_'
+        '${DateTime.now().microsecondsSinceEpoch}.mp4';
+    final f = await _dbCutSegment(
+      src: src,
+      range: (start: s, end: e),
+      outPath: tmpPath,
+      srcHasAudio: srcHasAudio,
+    );
+    var hasAudio = false;
+    var audioMs = 0;
+    var rebuilt = false;
+    var ok = true;
+    try {
+      final gate = await dbArkEnsureSegmentAudioSafe(
+        f,
+        label: '合并段 ${_dbClock(s / 1000.0)}-${_dbClock(e / 1000.0)}',
+      );
+      hasAudio = gate.hasAudio;
+      audioMs = gate.audioMs;
+      rebuilt = gate.rebuilt;
+    } on DbVideoArkException catch (err) {
+      if (err.code != dbArkAudioTooShortCode) rethrow;
+      ok = false;
+    }
+    if (!ok) {
+      try {
+        f.deleteSync();
+      } catch (_) {}
+      // 这一段合起来还是修不好：继续并到更远的相邻段（范围更大、音频更多）。
+      idx = nb;
+      continue;
+    }
+    final keep = idx < nb ? idx : nb;
+    final drop = idx > nb ? idx : nb;
+    try {
+      parts[keep].file.deleteSync();
+    } catch (_) {}
+    try {
+      parts[drop].file.deleteSync();
+    } catch (_) {}
+    final merged = _DbSegPart(
+      file: f,
+      startMs: s,
+      endMs: e,
+      hasAudio: hasAudio,
+      audioMs: audioMs,
+      rebuilt: rebuilt,
+    );
+    parts.removeAt(drop);
+    parts[keep] = merged;
+    logp('🔗 分片已合并：${_dbClock(s / 1000.0)} - ${_dbClock(e / 1000.0)}'
+        '（${e - s}ms，音频 ${audioMs}ms，未剥离）');
+    return keep;
+  }
+  throw DbVideoArkException(
+      '音频仍被判过短且已无可合并的相邻分片（音频全程保留，未剥离）',
+      code: dbArkAudioTooShortCode);
+}
+
+/// 段文件名：ASCII、带段号；[variant] 保证每次重传都是新名字，
+/// 避免 TOS 同名覆盖（合并 / 重试后段号可能重复使用）。
+String _dbSegFileName(String videoName, int index, int total,
+    {int variant = 0}) {
   var base = videoName.trim();
   final dot = base.lastIndexOf('.');
   var stem = dot > 0 ? base.substring(0, dot) : base;
@@ -2858,14 +3261,8 @@ String _dbSegFileName(String videoName, int index, int total) {
   if (stem.isEmpty) stem = 'video';
   final no = (index + 1).toString().padLeft(2, '0');
   final all = total.toString().padLeft(2, '0');
-  return '${stem}_s${no}of$all$ext';
-}
-
-/// 剥离音频后的重传文件名：带 _noaud 后缀，避免覆盖 TOS 上同名对象。
-String _dbSegNoAudioName(String name) {
-  final dot = name.lastIndexOf('.');
-  if (dot <= 0) return '${name}_noaud';
-  return '${name.substring(0, dot)}_noaud${name.substring(dot)}';
+  final v = variant > 0 ? '_v$variant' : '';
+  return '${stem}_s${no}of$all$v$ext';
 }
 
 /// 换音频预处理模型重传的文件名：带 _audpp 后缀，避免覆盖 TOS 上同名对象。
