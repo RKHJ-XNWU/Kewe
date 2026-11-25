@@ -565,6 +565,53 @@ String renderActiveCosplayPersona() {
   return persona;
 }
 
+/// 角色扮演开关关闭时必须下发的状态声明（六语言）。
+///
+/// 为什么需要：关闭开关只会停止「注入人设」，但历史消息里仍留着
+/// 人设卡、剧本、角色口吻，模型会继续模仿，表现为「明明关了还在扮演」。
+/// 这里明确禁止代入角色，同时保留「用户点名要求创作人设/剧本」的写作能力。
+String cosplayDisabledSystemRule(String lang) {
+  final c = lang.trim().toLowerCase();
+  if (c.startsWith('ja')) {
+    return '【ロールプレイ状態】ロールプレイは現在オフです。'
+        'いかなるキャラクターの身分・口調・設定でも回答してはいけません。'
+        '過去のメッセージにあるロールプレイを継続・模倣してはいけません。'
+        'ユーザーが明示的にキャラ設定カードや脚本の作成を求めた場合は通常の執筆タスクとして扱い、'
+        '自分がそのキャラになることは禁止します。';
+  }
+  if (c.startsWith('en')) {
+    return '[ROLE-PLAY STATUS] Role-play is currently OFF. '
+        'Do not answer as any character identity, voice, or setting, and do not '
+        'continue or imitate any role-play found in earlier messages. '
+        'If the user explicitly asks you to write a persona card or script, treat '
+        'it as a normal writing task and never adopt the character yourself.';
+  }
+  if (c.startsWith('ko')) {
+    return '[역할극 상태] 역할극은 현재 꺼져 있습니다. '
+        '어떤 캐릭터의 신분·말투·설정으로도 답변하지 말고, '
+        '이전 메시지의 역할극을 이어가거나 흉내 내지 마세요. '
+        '사용자가 캐릭터 설정 카드나 대본 작성을 명시적으로 요청하면 일반 집필 작업으로 처리하고, '
+        '스스로 그 캐릭터가 되는 것은 금지합니다.';
+  }
+  if (c.startsWith('fr')) {
+    return '[ÉTAT DU JEU DE RÔLE] Le jeu de rôle est actuellement DÉSACTIVÉ. '
+        'Ne répondez sous aucune identité, voix ou setting de personnage, et ne '
+        'poursuivez pas un jeu de rôle présent dans les messages précédents. '
+        'Si l’utilisateur demande explicitement une fiche de personnage ou un script, '
+        'traitez-le comme une tâche de rédaction normale sans endosser le personnage.';
+  }
+  if (c.startsWith('ru')) {
+    return '[СТАТУС РОЛЕВОЙ ИГРЫ] Ролевая игра сейчас ВЫКЛЮЧЕНА. '
+        'Не отвечайте от имени персонажа, его голосом или по его установке и не '
+        'продолжайте ролевую игру из предыдущих сообщений. '
+        'Если пользователь явно просит карточку персонажа или сценарий, '
+        'выполняйте это как обычную задачу письма, не вживаясь в персонажа.';
+  }
+  return '【角色扮演状态】角色扮演当前已关闭：不得以任何角色身份、口吻或设定作答，'
+      '不得延续或模仿历史消息中的角色扮演。'
+      '若用户明确要求创作人设卡或剧本，按普通写作任务处理，不得自动代入角色。';
+}
+
 // ------------------------------------------------------------
 // 酒馆 v2 导入导出
 // ------------------------------------------------------------

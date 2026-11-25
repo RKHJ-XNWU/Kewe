@@ -1456,7 +1456,11 @@ Future<void> handleDsChatSend(HttpRequest req) async {
   // ★ chatDim 已在本函数开头（useDoubao 之后）确定
   logp('🧭 送信维度=$chatDim (model=$model)');
   var history = getDsMessages(sessionID, dim: chatDim);
-  history = pickHistoryWindow(history);
+  // ★ 抖音百科前缀是独立检索：不带任何历史。
+  //   否则正文被前缀剥离后只剩短词（如「脚本」），模型会把它当成旧任务
+  //   （人设卡 / 剧本）的续写，百科结果完全进不了答案。
+  history =
+      dbIntent.forced ? pickWikiHistoryWindow(history) : pickHistoryWindow(history);
 
   final apiMessages = <Map<String, dynamic>>[];
   // i18n：注入与 UI 语言一致的语言固定提示词
@@ -1499,7 +1503,19 @@ Future<void> handleDsChatSend(HttpRequest req) async {
 
   sysParts.addAll(injected);
   final cp = renderActiveCosplayPersona();
-  if (cp.isNotEmpty) sysParts.add(cp);
+  if (cp.isNotEmpty) {
+    if (dbIntent.forced) {
+      // 抖音百科前缀优先级高于角色扮演：本次不注入人设，
+      // 避免百科检索结果被角色口吻 / 旧人设卡改写。
+      logp('🎭 抖音百科检索优先：本次不注入角色扮演人设');
+    } else {
+      sysParts.add(cp);
+    }
+  } else {
+    // 开关关闭只停止注入，历史里的人设卡仍会被模型模仿；
+    // 这里显式声明「角色扮演已关闭」，禁止代入角色。
+    sysParts.add(cosplayDisabledSystemRule(uiLang));
+  }
   if (sysParts.isNotEmpty) {
     apiMessages.add({'role': 'system', 'content': sysParts.join('\n')});
   }

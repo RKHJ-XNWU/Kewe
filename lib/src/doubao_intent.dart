@@ -159,6 +159,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
     '4. 禁止向用户索要链接或要求用户自行搜索。',
     '5. 信源前缀已由系统剥离；禁止说用户只发了某个词、没写前缀或要求补充前缀。',
     '6. 必须基于本次联网内容插件返回的结果组织答案；若结果为空，明确说明抖音百科检索无结果。',
+    '7. 本次是独立百科检索：禁止把它当作旧任务（人设卡、剧本、设定表）的续写，'
+        '禁止复述或改写上一轮回答，也不使用角色扮演人设与口吻。',
   ].join('\n');
   final c = (lang).trim().toLowerCase();
   if (c.isEmpty || c == 'zh') return zh;
@@ -173,6 +175,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. ユーザーにリンクや手動検索を要求してはいけません。',
       '5. 出典接頭辞はシステムが除去済みです。ユーザーが単語だけを送った、接頭辞がない、補足が必要などと言ってはいけません。',
       '6. 今回のウェブコンテンツプラグインの検索結果に基づいて回答してください。結果が空なら抖音百科に検索結果がない旨を明記してください。',
+      '7. 今回は独立した百科検索です。過去のタスク（キャラ設定カード・脚本・設定表）の続きとして扱わず、'
+          '前回の回答を復唱・改変せず、ロールプレイの人設や口調も使用しないでください。',
     ].join('\n');
   }
   if (c == 'en') {
@@ -188,6 +192,9 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. Never ask the user for links or ask the user to search manually.',
       '5. The source prefix was removed by the system; never say the user sent only a word, omitted the prefix, or needs to add it.',
       '6. Base the answer on this web-content plugin result; if it is empty, explicitly say Douyin Wiki returned no result.',
+      '7. This is a standalone wiki lookup: never treat it as a continuation of an earlier task '
+          '(persona card, script, setting sheet), never repeat or rewrite the previous answer, '
+          'and do not use any role-play persona or voice.',
     ].join('\n');
   }
   if (c == 'ko') {
@@ -202,6 +209,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
       '5. 출처 접두사는 시스템이 이미 제거했다. 사용자가 단어만 보냈다거나 접두사가 없다고 말하거나 보완을 요구하지 않는다.',
       '6. 이번 웹 콘텐츠 플러그인 결과를 기반으로 답변하고, 결과가 비어 있으면 Douyin Wiki 검색 결과가 없다고 명확히 밝힌다.',
+      '7. 이번은 독립적인 백과 검색이다. 이전 작업(캐릭터 설정 카드·대본·설정표)의 이어쓰기로 취급하지 말고, '
+          '지난 답변을 복창하거나 바꿔 쓰지 말며, 역할극 인물 설정이나 말투도 사용하지 않는다.',
     ].join('\n');
   }
   if (c == 'fr') {
@@ -217,6 +226,9 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
       '5. Le préfixe source a été supprimé par le système ; ne dites jamais que l’utilisateur a envoyé seulement un mot, omis le préfixe ou doit l’ajouter.',
       '6. Fonder la réponse sur le résultat de ce plugin de contenu web ; s’il est vide, indiquer explicitement que Douyin Wiki n’a renvoyé aucun résultat.',
+      '7. Il s’agit d’une recherche wiki autonome : ne la traitez pas comme la suite d’une tâche '
+          'précédente (fiche de personnage, script, fiche de réglages), ne répétez ni ne réécrivez '
+          'la réponse précédente, et n’utilisez aucune identité ni voix de jeu de rôle.',
     ].join('\n');
   }
   if (c == 'ru') {
@@ -231,6 +243,9 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
       '5. Префикс источника уже удалён системой; никогда не говорите, что пользователь отправил только слово, не указал префикс или должен его добавить.',
       '6. Стройте ответ на результате этого плагина веб-контента; если результат пуст, явно укажите, что Douyin Wiki не вернул результатов.',
+      '7. Это самостоятельный поиск в вики: не считайте его продолжением прежней задачи '
+          '(карточка персонажа, сценарий, таблица настроек), не повторяйте и не переписывайте '
+          'предыдущий ответ и не используйте ролевую личность или её голос.',
     ].join('\n');
   }
   return zh;
@@ -254,6 +269,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
     '4. 禁止向用户索要链接或要求用户自行搜索。',
     '5. 信源前缀已由系统剥离；禁止说用户只发了某个词、没写前缀或要求补充前缀。',
     '6. 必须基于当前通道实际可用的搜索结果组织答案；若结果为空，明确说明检索无结果。',
+    '7. 本次是独立检索：禁止当作旧任务（人设卡、剧本、设定表）的续写，'
+        '禁止复述上一轮回答，也不使用角色扮演人设与口吻。',
   ].join('\n');
   final c = lang.trim().toLowerCase();
   if (c.isEmpty || c == 'zh') return zh;
@@ -269,6 +286,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '4. ユーザーにリンクや手動検索を要求してはいけません。',
       '5. 出典接頭辞はシステムが除去済みです。ユーザーが単語だけを送った、接頭辞がない、補足が必要などと言ってはいけません。',
       '6. 現在のチャネルで取得した検索結果に基づいて回答し、結果が空なら検索結果がない旨を明記してください。',
+      '7. 今回は独立した検索です。過去のタスク（キャラ設定カード・脚本・設定表）の続きとして扱わず、'
+          '前回の回答を復唱せず、ロールプレイの人設や口調も使用しないでください。',
     ].join('\n');
   }
   if (c == 'en') {
@@ -287,6 +306,9 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '4. Never ask the user for links or ask the user to search manually.',
       '5. The source prefix was removed by the system; never say the user sent only a word, omitted the prefix, or needs to add it.',
       '6. Base the answer on the search result available in the current channel; if it is empty, explicitly say retrieval returned no result.',
+      '7. This is a standalone search: never treat it as a continuation of an earlier task '
+          '(persona card, script, setting sheet), never repeat the previous answer, '
+          'and do not use any role-play persona or voice.',
     ].join('\n');
   }
   if (c == 'ko') {
@@ -301,6 +323,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
       '5. 출처 접두사는 시스템이 이미 제거했다. 사용자가 단어만 보냈다거나 접두사가 없다고 말하거나 보완을 요구하지 않는다.',
       '6. 현재 채널에서 가져온 검색 결과를 기반으로 답변하고, 결과가 비어 있으면 검색 결과가 없다고 명확히 밝힌다.',
+      '7. 이번은 독립적인 검색이다. 이전 작업(캐릭터 설정 카드·대본·설정표)의 이어쓰기로 취급하지 말고, '
+          '지난 답변을 복창하지 말며, 역할극 인물 설정이나 말투도 사용하지 않는다.',
     ].join('\n');
   }
   if (c == 'fr') {
@@ -319,6 +343,9 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
       '5. Le préfixe source a été supprimé par le système ; ne dites jamais que l’utilisateur a envoyé seulement un mot, omis le préfixe ou doit l’ajouter.',
       '6. Fonder la réponse sur le résultat de recherche disponible dans le canal actuel ; s’il est vide, indiquer explicitement qu’aucun résultat n’a été trouvé.',
+      '7. Il s’agit d’une recherche autonome : ne la traitez pas comme la suite d’une tâche '
+          'précédente (fiche de personnage, script, fiche de réglages), ne répétez pas la réponse '
+          'précédente et n’utilisez aucune identité ni voix de jeu de rôle.',
     ].join('\n');
   }
   if (c == 'ru') {
@@ -337,6 +364,9 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
       '5. Префикс источника уже удалён системой; никогда не говорите, что пользователь отправил только слово, не указал префикс или должен его добавить.',
       '6. Стройте ответ на результате поиска, доступном в текущем канале; если результат пуст, явно укажите, что результаты не найдены.',
+      '7. Это самостоятельный поиск: не считайте его продолжением прежней задачи '
+          '(карточка персонажа, сценарий, таблица настроек), не повторяйте предыдущий ответ '
+          'и не используйте ролевую личность или её голос.',
     ].join('\n');
   }
   return zh;

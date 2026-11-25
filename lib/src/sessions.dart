@@ -822,6 +822,15 @@ List<DsMessage> pickHistoryWindow(List<DsMessage> history) {
   return selected;
 }
 
+/// 抖音百科 / 百科前缀 = 独立检索请求，不携带任何历史。
+///
+/// 为什么必须清空：前缀被剥离后正文只剩一个短词（如「脚本」），而历史里
+/// 往往留着人设卡、剧本、设定表、上一轮长回答。模型会把这个短词当成旧任务
+/// 的续写（例如把「脚本」理解成「大肥鱼人设卡脚本」），百科检索结果因此
+/// 完全进不了答案。清空历史是唯一能保证「检索词独立理解」的做法。
+List<DsMessage> pickWikiHistoryWindow(List<DsMessage> history) =>
+    const <DsMessage>[];
+
 bool deleteDsSessionRaw(String id) {
   final path = dsSessionPath(id);
   try {
