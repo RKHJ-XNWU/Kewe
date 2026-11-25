@@ -147,8 +147,8 @@ const Map<String, Map<String, String>> _dbMsgTable = <String, Map<String, String
     'fr': 'Fichier audio trop volumineux (limite 40 Mo) : {0}',
   },
   'videoTooLarge': <String, String>{
-    // 视频上限从 40MB 提升到 2GB：45MB 以内直传 video_url，
-    // 超过则用 ffmpeg 无损切片后逐段理解再汇总（见 doubao_video_ark.dart）。
+    // 视频上限从 40MB 提升到 2GB：整片直传 TOS 走 file_id，
+    // 不切片、不分段（见 doubao_video_ark.dart）。
     'ja': '视频文件过大（上限 2GB）：{0}',
     'zh': '视频文件过大（上限 2GB）：{0}',
     'en': 'Video file is too large (limit 2GB): {0}',

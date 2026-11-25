@@ -1354,8 +1354,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
         '🧠 DeepSeek 思考开关: ${deepThink ? 'enabled' : 'disabled'} / model=$model');
   }
   final dbMediaParts = <Map<String, dynamic>>[];
-  // 视频统一由 doubao_video_ark 处理：≤45MB 直接作为 video_url 片段，
-  // >45MB 用 ffmpeg 无损切片后逐段理解（2GB 也能看完）。
+  // 视频统一由 doubao_video_ark 处理：整片直传方舟 TOS（≤2GB），
+  // 不切片、不分段、不降帧、不重试 —— 模型直接看完整视频。
   // 切片 + 逐段理解可能持续几分钟到几十分钟，而本机 HttpServer 的
   // idleTimeout 是 120 秒：流式模式下若等到主函数末尾才建立 SSE，
   // 等待期间连接会被掐断。因此「流式 + 含视频」时把媒体准备挪到 SSE 建连之后
@@ -1388,8 +1388,8 @@ Future<void> handleDsChatSend(HttpRequest req) async {
       logp('🎧 将音频直接发送给豆包语音理解: ${meta.name} (${prepared.format})');
     }
     // 视频：不再 readAsBytesSync + base64（2GB 走那条路必然 OOM）。
-    // 现在交给 doubao_video_ark：≤45MB 直接作为 video_url 片段，
-    // >45MB 用 ffmpeg 无损切片后逐段理解，结论并入 userPrompt。
+    // 现在交给 doubao_video_ark：整片直传 TOS 走 file_id，
+    // 不切片、不分段，失败如实抛出，不降级改写。
     if (!deferVideoPrepare) {
       try {
         final vid = await dbVideoContentForChat(
