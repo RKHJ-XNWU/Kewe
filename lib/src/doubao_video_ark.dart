@@ -1683,6 +1683,74 @@ Future<double> _dbProbeDurationSec(File f) async {
   return 0;
 }
 
+/// 读取首条音频流的时长（秒）；无音频或读不到返回 0。
+Future<double> _dbProbeAudioDurationSec(File f) async {
+  try {
+    final r = await Process.run('ffprobe', [
+      '-v', 'error',
+      '-select_streams', 'a:0',
+      '-show_entries', 'stream=duration',
+      '-of', 'default=nw=1:nk=1',
+      f.path,
+    ]);
+    if (r.exitCode == 0) {
+      final d = double.tryParse('${r.stdout}'.trim());
+      if (d != null && d > 0) return d;
+    }
+  } catch (_) {}
+  return 0;
+}
+
+/// 修复分段后“音频时长塌缩”的片段。
+///
+/// 2026-11-25 现场：24 分钟 / 330MB 视频切成 3 段后，方舟仍报
+/// audio duration 8ms（下限 10ms）。只做 -c:a aac 并不能保证每个
+/// 分段的音频时间戳都正常，所以输出后再探测一次：音频流存在但
+/// 短于 50ms 时，用 apad 补静音到该段时长，重新封装；视频流仍是
+/// -c:v copy，不重编码、不丢画质。无音频的片段直接跳过。
+Future<void> _dbFixShortSegmentAudio(File seg, double targetSec) async {
+  final audioDur = await _dbProbeAudioDurationSec(seg);
+  if (audioDur <= 0 || audioDur >= 0.05) return;
+  logp('⚠️ 分段音频仅 ${audioDur.toStringAsFixed(3)}s'
+      '（方舟下限 10ms），补静音后重新封装: ${seg.path}');
+  final fixed = File('${seg.path}.audiofix.mp4');
+  final r = await _dbRunFfmpegWithTicks([
+    '-y', '-hide_banner', '-loglevel', 'error',
+    '-i', seg.path,
+    '-map', '0:v:0',
+    '-map', '0:a:0?',
+    '-c:v', 'copy',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-af', 'aresample=async=1:first_pts=0,apad',
+    '-t', targetSec.toStringAsFixed(3),
+    '-avoid_negative_ts', 'make_zero',
+    '-movflags', '+faststart',
+    fixed.path,
+  ]);
+  final stderrText = '${r.stderr}'.trim();
+  if (r.exitCode != 0 || !fixed.existsSync() || fixed.lengthSync() <= 0) {
+    try {
+      fixed.deleteSync();
+    } catch (_) {}
+    throw DbVideoArkException(
+        '分段音频修复失败（原音频 ${audioDur.toStringAsFixed(3)}s，'
+        'ffmpeg exit=${r.exitCode}）：$stderrText');
+  }
+  final fixedAudio = await _dbProbeAudioDurationSec(fixed);
+  if (fixedAudio < 0.01) {
+    try {
+      fixed.deleteSync();
+    } catch (_) {}
+    throw DbVideoArkException(
+        '分段音频修复后仍过短（${fixedAudio.toStringAsFixed(3)}s）：${seg.path}');
+  }
+  try {
+    seg.deleteSync();
+  } catch (_) {}
+  fixed.renameSync(seg.path);
+}
+
 /// 按帧总数规划段数：≤安全帧上限（3000 帧）就是 1 段（整片直传，不分段）。
 int dbArkPlanSegCount(double durationSec, double fps) {
   if (durationSec <= 0) return 1;
@@ -1702,7 +1770,8 @@ int dbArkPlanSegCount(double durationSec, double fps) {
 /// 方舟解析成 3.625ms，直接拒收：
 ///   "The request failed because the duration of the input audio (3.625ms)
 ///    is shorter than the limit (10ms)"（param: audio_url duration）。
-/// 同一片段把音频用 -c:a aac 重编码后立刻成功。视频流不受影响。
+/// 重编码后多数片段正常，但 24 分钟 / 330MB 实测仍可能塌缩成 8ms，
+/// 所以输出后还要交给 _dbFixShortSegmentAudio 再探测、补静音。
 Future<List<File>> _dbSplitByTime({
   required File src,
   required int segCount,
@@ -1748,6 +1817,7 @@ Future<List<File>> _dbSplitByTime({
     if (!f.existsSync() || f.lengthSync() <= 0) {
       throw DbVideoArkException('视频等分切段失败（第 ${i + 1}/$segCount 段无输出）');
     }
+    await _dbFixShortSegmentAudio(f, len);
     out.add(f);
   }
   if (out.isEmpty) {
