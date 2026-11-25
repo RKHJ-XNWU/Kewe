@@ -157,9 +157,24 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
     '3. 若检索返回为空或失败，必须如实说明「检索无结果／检索失败」及具体原因，'
         '禁止改口为「我无法查询」或「我无法联网」。',
     '4. 禁止向用户索要链接或要求用户自行搜索。',
+    '5. 信源前缀已由系统剥离；禁止说用户只发了某个词、没写前缀或要求补充前缀。',
+    '6. 必须基于本次联网内容插件返回的结果组织答案；若结果为空，明确说明抖音百科检索无结果。',
   ].join('\n');
   final c = (lang).trim().toLowerCase();
-  if (c.isEmpty || c == 'ja' || c == 'zh') return zh;
+  if (c.isEmpty || c == 'zh') return zh;
+  if (c == 'ja') {
+    return <String>[
+      '【強制検索ルール】',
+      'ユーザーメッセージに「抖音百科」の出典接頭辞（${intent.hits.join('、')}）があります。今回は以下を必ず実行してください:',
+      '1. 回答前にウェブコンテンツプラグインで必ず検索してください。記憶だけで回答することを禁止します。',
+      '2. 回答に情報出典を明記してください。',
+      '3. 検索結果が空または失敗した場合は、実際の原因とともに「検索結果なし／検索失敗」を明確に伝えてください。'
+          '「検索できない」と言い換えてはいけません。',
+      '4. ユーザーにリンクや手動検索を要求してはいけません。',
+      '5. 出典接頭辞はシステムが除去済みです。ユーザーが単語だけを送った、接頭辞がない、補足が必要などと言ってはいけません。',
+      '6. 今回のウェブコンテンツプラグインの検索結果に基づいて回答してください。結果が空なら抖音百科に検索結果がない旨を明記してください。',
+    ].join('\n');
+  }
   if (c == 'en') {
     return <String>[
       '[MANDATORY RETRIEVAL RULE]',
@@ -171,6 +186,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '3. If retrieval returns nothing or fails, report the empty result or '
           'failure with its actual cause. Never claim you cannot search.',
       '4. Never ask the user for links or ask the user to search manually.',
+      '5. The source prefix was removed by the system; never say the user sent only a word, omitted the prefix, or needs to add it.',
+      '6. Base the answer on this web-content plugin result; if it is empty, explicitly say Douyin Wiki returned no result.',
     ].join('\n');
   }
   if (c == 'ko') {
@@ -183,6 +200,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '3. 검색 결과가 없거나 실패하면 실제 원인과 함께 「검색 결과 없음/실패」를 명확히 밝힌다. '
           '「검색할 수 없다」고 말하지 않는다.',
       '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
+      '5. 출처 접두사는 시스템이 이미 제거했다. 사용자가 단어만 보냈다거나 접두사가 없다고 말하거나 보완을 요구하지 않는다.',
+      '6. 이번 웹 콘텐츠 플러그인 결과를 기반으로 답변하고, 결과가 비어 있으면 Douyin Wiki 검색 결과가 없다고 명확히 밝힌다.',
     ].join('\n');
   }
   if (c == 'fr') {
@@ -196,6 +215,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '3. Si la recherche ne renvoie rien ou échoue, signaler le résultat vide '
           'ou l’échec avec sa cause réelle. Ne jamais dire que vous ne pouvez pas rechercher.',
       '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
+      '5. Le préfixe source a été supprimé par le système ; ne dites jamais que l’utilisateur a envoyé seulement un mot, omis le préfixe ou doit l’ajouter.',
+      '6. Fonder la réponse sur le résultat de ce plugin de contenu web ; s’il est vide, indiquer explicitement que Douyin Wiki n’a renvoyé aucun résultat.',
     ].join('\n');
   }
   if (c == 'ru') {
@@ -208,6 +229,8 @@ String dbIntentSystemRule(DbIntent intent, String lang) {
       '3. Если поиск ничего не вернул или завершился ошибкой, сообщить об этом '
           'и указать фактическую причину. Нельзя утверждать, что вы не можете искать.',
       '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
+      '5. Префикс источника уже удалён системой; никогда не говорите, что пользователь отправил только слово, не указал префикс или должен его добавить.',
+      '6. Стройте ответ на результате этого плагина веб-контента; если результат пуст, явно укажите, что Douyin Wiki не вернул результатов.',
     ].join('\n');
   }
   return zh;
@@ -229,9 +252,25 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
     '2. 回答中必须标明实际使用的搜索来源，并明确说明本次不是抖音百科插件检索。',
     '3. 若检索返回为空或失败，必须如实说明「检索无结果／检索失败」及具体原因。',
     '4. 禁止向用户索要链接或要求用户自行搜索。',
+    '5. 信源前缀已由系统剥离；禁止说用户只发了某个词、没写前缀或要求补充前缀。',
+    '6. 必须基于当前通道实际可用的搜索结果组织答案；若结果为空，明确说明检索无结果。',
   ].join('\n');
   final c = lang.trim().toLowerCase();
-  if (c.isEmpty || c == 'ja' || c == 'zh') return zh;
+  if (c.isEmpty || c == 'zh') return zh;
+  if (c == 'ja') {
+    return <String>[
+      '【強制検索ルール】',
+      'ユーザーメッセージに「抖音百科」の出典接頭辞（${intent.hits.join(', ')}）がありますが、'
+          '現在のチャネルはDoubao/Arkではないため、抖音百科ウェブコンテンツプラグインは利用できません。',
+      '今回は以下を必ず実行してください:',
+      '1. 回答前に現在のチャネルで利用可能なウェブ検索を実行してください。記憶だけで回答することを禁止します。',
+      '2. 実際の検索出典を明記し、今回は抖音百科プラグインではないことを明確に伝えてください。',
+      '3. 検索結果が空または失敗した場合は、実際の原因とともに「検索結果なし／検索失敗」を明確に伝えてください。',
+      '4. ユーザーにリンクや手動検索を要求してはいけません。',
+      '5. 出典接頭辞はシステムが除去済みです。ユーザーが単語だけを送った、接頭辞がない、補足が必要などと言ってはいけません。',
+      '6. 現在のチャネルで取得した検索結果に基づいて回答し、結果が空なら検索結果がない旨を明記してください。',
+    ].join('\n');
+  }
   if (c == 'en') {
     return <String>[
       '[MANDATORY RETRIEVAL RULE]',
@@ -246,6 +285,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '3. If retrieval returns nothing or fails, report the empty result or '
           'failure with its actual cause.',
       '4. Never ask the user for links or ask the user to search manually.',
+      '5. The source prefix was removed by the system; never say the user sent only a word, omitted the prefix, or needs to add it.',
+      '6. Base the answer on the search result available in the current channel; if it is empty, explicitly say retrieval returned no result.',
     ].join('\n');
   }
   if (c == 'ko') {
@@ -258,6 +299,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '2. 실제 검색 출처를 표시하고, 이번 검색이 抖音百科 플러그인이 아님을 분명히 밝힌다.',
       '3. 검색 결과가 없거나 실패하면 실제 원인과 함께 「검색 결과 없음/실패」를 명확히 밝힌다.',
       '4. 사용자에게 링크나 직접 검색을 요구하지 않는다.',
+      '5. 출처 접두사는 시스템이 이미 제거했다. 사용자가 단어만 보냈다거나 접두사가 없다고 말하거나 보완을 요구하지 않는다.',
+      '6. 현재 채널에서 가져온 검색 결과를 기반으로 답변하고, 결과가 비어 있으면 검색 결과가 없다고 명확히 밝힌다.',
     ].join('\n');
   }
   if (c == 'fr') {
@@ -274,6 +317,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '3. Si la recherche ne renvoie rien ou échoue, signaler le résultat vide '
           'ou l’échec avec sa cause réelle.',
       '4. Ne jamais demander des liens ni demander à l’utilisateur de chercher lui-même.',
+      '5. Le préfixe source a été supprimé par le système ; ne dites jamais que l’utilisateur a envoyé seulement un mot, omis le préfixe ou doit l’ajouter.',
+      '6. Fonder la réponse sur le résultat de recherche disponible dans le canal actuel ; s’il est vide, indiquer explicitement qu’aucun résultat n’a été trouvé.',
     ].join('\n');
   }
   if (c == 'ru') {
@@ -290,6 +335,8 @@ String dbIntentFallbackSearchRule(DbIntent intent, String lang) {
       '3. Если поиск ничего не вернул или завершился ошибкой, сообщить об этом '
           'и указать фактическую причину.',
       '4. Не просить у пользователя ссылки и не предлагать ему искать самостоятельно.',
+      '5. Префикс источника уже удалён системой; никогда не говорите, что пользователь отправил только слово, не указал префикс или должен его добавить.',
+      '6. Стройте ответ на результате поиска, доступном в текущем канале; если результат пуст, явно укажите, что результаты не найдены.',
     ].join('\n');
   }
   return zh;

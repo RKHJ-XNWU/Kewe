@@ -292,11 +292,10 @@ Future<void> callDbWikiResponsesStream(
     body['instructions'] = built.instructions;
   }
   if (forceSearch) {
-    // 显式前缀 = 用户已经明确要求检索，不允许模型自行判断“不需要搜”。
-    // 仅 web_search 一个工具时，required 等价于「必须调用联网内容插件」。
-    body['tool_choice'] = 'required';
+    // 显式前缀 = 用户已经明确要求检索，精确指定内置 web_search，不允许模型改走其他工具。
+    body['tool_choice'] = <String, dynamic>{'type': 'web_search'};
     body['max_tool_calls'] = 1;
-    logp('🎯 前缀强制检索：tool_choice=required（必须调用 web_search）');
+    logp('🎯 前缀强制检索：tool_choice=web_search（必须调用联网内容插件）');
   }
 
   final url = dbWikiEndpoint(baseUrl);
@@ -676,9 +675,9 @@ Future<DbWikiRound> _dbWikiStreamRound({
   };
   if (instructions.isNotEmpty) body['instructions'] = instructions;
   if (forceSearch) {
-    body['tool_choice'] = 'required';
+    body['tool_choice'] = <String, dynamic>{'type': 'web_search'};
     body['max_tool_calls'] = 1;
-    logp('🎯 工具混用 · 前缀强制检索：tool_choice=required（首轮只挂 web_search）');
+    logp('🎯 工具混用 · 前缀强制检索：tool_choice=web_search（首轮只挂 web_search）');
   }
 
   final url = dbWikiEndpoint(baseUrl);
@@ -846,15 +845,18 @@ Future<DbWikiRound> _dbWikiStreamRound({
       if (r is Map) {
         final out = r['output'];
         if (out is List) {
+          var outputSearchCount = 0;
           for (final item in out) {
             if (item is! Map) continue;
             final it = Map<String, dynamic>.from(item);
             final itType = (it['type'] ?? '').toString();
-            if (itType == 'web_search_call') searchCount++;
+            if (itType == 'web_search_call') outputSearchCount++;
             if (itType == 'message' || itType == 'function_call') {
               rawItems.add(it);
             }
           }
+          // completed 事件已计数时，output 只作为漏事件兜底，避免一次检索被算成两次。
+          if (outputSearchCount > searchCount) searchCount = outputSearchCount;
         }
         if (usageAcc != null) {
           final u = r['usage'];
