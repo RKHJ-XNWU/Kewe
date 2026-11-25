@@ -330,6 +330,33 @@ DSH_BASE="$PWD" dart run bin/main.dart
 
 确认 `DSH_BASE` 可读写，并避免使用其他用户的私有目录。不要通过提交密钥或个人数据来“修复”权限问题。
 
+## 已知问题（Known Issues）
+
+编号规则：`KI-xxx` 只增不改；修复后在本条补「已修复 + 提交号」，不删除条目。等级：**P0** 静默错误 / 数据损坏，**P1** 崩溃或 500，**P2** 组合态报错（可用前端禁用绕过），**P3** 体验与显示。
+
+### KI-001 加载更多历史消息后，滚动位置异常，需要多次上滑才能到达顶部
+
+- **状态**：已定位，未修复（2026-11-25 登记）
+- **等级**：P3（体验与显示；但复现率 100%，非偶发）
+- **触发条件**：会话消息总数超过渲染窗口（`MSG_RENDER_WINDOW = 10`），连续点击「加载更多」直到 `renderedStart` 归零并触发后端分页
+- **现象**：点击加载更多后，画面不向前停留，反而跳向更晚的消息；用户需要连续上滑多次才能回到顶部看到刚加载的内容。打开会话时也会出现数次位置跳动。
+- **复现路径（必现）**：
+  1. 打开会话：后端返回 40 条（`MSG_PAGE_SIZE = 40`），前端只渲染最后 10 条，`renderedStart = 30`
+  2. 连续点击 3 次加载更多：`renderedStart` 由 30 → 20 → 10 → 0
+  3. 第 3 次点击触发后端分页，`older` 的 40 条 `concat` 后 `total = 80`
+  4. `renderMessages()` 重算 `start = 80 - 10 = 70`，刚加载的 40 条不进入 DOM
+- **定位**：
+  - `deepseek-chat.js:2724-2725`：`renderMessages()` 无条件重算 `start = total - MSG_RENDER_WINDOW`，覆盖了加载更多时维护的 `renderedStart`
+  - `deepseek-chat.js:2740-2741`：`scrollTop = pendingScrollTop + (新 scrollHeight - 旧 scrollHeight)`，在 `innerHTML = ''` 之后语义失效；新渲染节点少于旧节点时 delta 为负
+  - `deepseek-chat.js:2754-2760`：渲染后于 120 / 320 / 650ms 四次强制 `scrollToBottom(true)`，用户此时手动上滑会被拽回底部
+  - `deepseek-chat.js:2790-2791`：`prependMsgs` 用 scrollHeight 差值补位，公式 / 图片 / 字体在补位之后继续改变高度，补偿值失效
+- **修复方向（未实施）**：
+  1. 加载更多时保留窗口起点（`state.prepending` 为真时 `start = 0`），不要重算
+  2. 用「可见锚点元素 id + 其 top」在重排前后还原 `scrollTop`，替代 scrollHeight 差值
+  3. `createMsgEl` 写入 `dataset.mid = msg.id`，以消息 id 而非数组索引作为 DOM 身份
+  4. 强制回底的定时器保存 id，在 `wheel` / `touchstart` / 点击 sentinel 时全部清空
+- **风险**：改动涉及渲染窗口与滚动锚定，可能出现消息重复渲染或新的滚动抖动，需分别在「打开会话 / 加载更多 / 流式追加」三个场景验证
+
 ## 安全说明
 
 - 不要在源码、README、Issue 或提交历史中写入 API Key、GitHub Token、Cookie 或个人隐私数据。
@@ -338,6 +365,10 @@ DSH_BASE="$PWD" dart run bin/main.dart
 - 上游模型可用性、额度和内容限制由对应服务商决定。
 
 ## 维护记录
+
+2026-11-25：
+
+- 新增「已知问题（Known Issues）」章节与 `KI-xxx` 编号规则，登记 KI-001（加载更多历史消息后滚动位置异常，需多次上滑才能到达顶部；P3，未修复）。
 
 2026-11-23：
 
