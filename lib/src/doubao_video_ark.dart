@@ -520,8 +520,14 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       //   分段路径不在这里做：分段后由 dbArkEnsureSegmentAudioSafe 逐段拦截，
       //   避免为整片重编码一条几十分钟的音频。
       Directory? audioFixTempDir;
+      var wholeHasAudio = true; // 拦截失败时按「有音频」处理，强制音频预处理模型
+      var wholeDegraded = false;
+      var wholeNote = '';
       try {
         final safe = await dbArkPrepareWholeVideoSafe(f);
+        wholeHasAudio = safe.hasAudio;
+        wholeDegraded = safe.degraded;
+        wholeNote = safe.note;
         if (safe.file.path != f.path) {
           f = safe.file;
           absPath = f.path;
@@ -530,6 +536,9 @@ Future<({List<Map<String, dynamic>> parts, String text})>
       } catch (e) {
         logp('⚠️ 整片音频前置拦截失败（按原样继续）: $e');
       }
+      if (wholeDegraded) {
+        logp('⚠️ 整片降级：$wholeNote —— 本次仅按画面理解，音频未参与');
+      }
       try {
         onProgress?.call({...tag, 'stage': 'tos_reference', 'size': size});
         final part = await dbArkVideoPartForLocalFile(
@@ -537,6 +546,11 @@ Future<({List<Map<String, dynamic>> parts, String text})>
           fileName: meta.name,
           model: model,
           apiKey: apiKey,
+          preprocessModel: dbArkVideoPreprocessModel(
+            configured: cfg.preprocessModel,
+            hasAudio: wholeHasAudio,
+            inference: model,
+          ),
           onProgress: (info) => onProgress?.call({...tag, ...info}),
         );
         parts.add(part);
@@ -618,7 +632,7 @@ String _dbArkCacheKey(File f, int size) {
   return '${f.path}|$size|$mt';
 }
 
-String? _dbArkCacheLookup(String key, double fps) {
+String? _dbArkCacheLookup(String key, double fps, String model) {
   final raw = _dbArkCacheLoad()[key];
   if (raw is Map) {
     final e = asMap(raw);
@@ -626,9 +640,12 @@ String? _dbArkCacheLookup(String key, double fps) {
     final at = intArgDefault(e, 'at', 0);
     final sameFps =
         ((e['fps'] is num) ? (e['fps'] as num).toDouble() : -1) == fps;
+    // ★ 预处理模型必须参与命中判定：旧缓存可能是「无音频模型」预处理出来的
+    //   产物（音频没被处理，只剩 8ms 占位），复用它等于把修好的代码又走回 400。
+    final sameModel = mStr(e, 'model') == model;
     final fresh =
         DateTime.now().millisecondsSinceEpoch - at < _dbArkFileTtlMs;
-    if (id.isNotEmpty && fresh && sameFps) return id;
+    if (id.isNotEmpty && fresh && sameFps && sameModel) return id;
   }
   return null;
 }
@@ -647,6 +664,96 @@ void _dbArkCacheStore(String key, String arkFileId, String model, double fps) {
     return now - intArgDefault(e, 'at', 0) >= _dbArkFileTtlMs;
   });
   _dbArkCacheSave(all);
+}
+
+/// 判断异常是不是「带 preprocess_configs[video][model] 上传被服务端拒绝」。
+///
+/// 本账号历史上出现过：上传带 model → 400 "Project is invalid / param:
+/// project_name"。音频能力模型必须带 model 才能生效，但账号没绑 project 时
+/// 会整条上传失败，所以这种情况要退回不带 model 的老通道，而不是让视频挂掉。
+bool dbArkIsPreprocessModelRejected(Object err) {
+  final s = '$err'.toLowerCase();
+  if (s.contains('project is invalid') || s.contains('project_name')) return true;
+  if (s.contains('preprocess_configs') && s.contains('model')) return true;
+  if (s.contains('invalid') && s.contains('project')) return true;
+  return false;
+}
+
+/// 带音频预处理模型上传；模型被拒时自动退回「不指定模型」的老通道重试一次。
+///
+/// 返回值带回「这次真正落地的预处理模型」，供 file_id 缓存按真实模型记账 ——
+/// 否则退回默认策略的产物会被记成「音频模型」产物，后续又被错误复用。
+Future<({String fileId, String model})> _dbArkUploadWithModelFallback({
+  required File file,
+  required String fileName,
+  required String bucket,
+  required String prefix,
+  required String model,
+  required String apiKey,
+  required double fps,
+  int maxVideoTokens = 0,
+  int minFrames = 0,
+  void Function(int sent, int total)? onProgress,
+  String? label,
+}) async {
+  try {
+    final id = await _dbArkUploadToTosBucket(
+      file: file,
+      fileName: fileName,
+      bucket: bucket,
+      prefix: prefix,
+      model: model,
+      apiKey: apiKey,
+      fps: fps,
+      maxVideoTokens: maxVideoTokens,
+      minFrames: minFrames,
+      onProgress: onProgress,
+    );
+    return (fileId: id, model: model);
+  } catch (e) {
+    if (model.trim().isEmpty || !dbArkIsPreprocessModelRejected(e)) rethrow;
+    logp('⚠️ ${label ?? fileName} 预处理模型 $model 被服务端拒绝（$e）');
+
+    // 第二跳：换官方音频推荐模型（账号未必开通，失败才继续退）。
+    if (model.trim() != dbArkAudioPreprocessModel) {
+      logp('   → 改用音频推荐模型 $dbArkAudioPreprocessModel 重试预处理');
+      try {
+        final id = await _dbArkUploadToTosBucket(
+          file: file,
+          fileName: fileName,
+          bucket: bucket,
+          prefix: prefix,
+          model: dbArkAudioPreprocessModel,
+          apiKey: apiKey,
+          fps: fps,
+          maxVideoTokens: maxVideoTokens,
+          minFrames: minFrames,
+          onProgress: onProgress,
+        );
+        return (fileId: id, model: dbArkAudioPreprocessModel);
+      } catch (e2) {
+        logp('   → 音频推荐模型仍被拒绝：$e2');
+      }
+    }
+
+    // 最后一跳：退回「不指定模型」的原通道 —— 上传仍成功，但音频可能不被抽取，
+    // 由后续 400 自愈与降级标注兜住，绝不把整条视频判死。
+    logp('⚠️ ${label ?? fileName} 退回未指定模型的默认预处理'
+        '（该片音频可能不被抽取）');
+    final id = await _dbArkUploadToTosBucket(
+      file: file,
+      fileName: fileName,
+      bucket: bucket,
+      prefix: prefix,
+      model: '',
+      apiKey: apiKey,
+      fps: fps,
+      maxVideoTokens: maxVideoTokens,
+      minFrames: minFrames,
+      onProgress: onProgress,
+    );
+    return (fileId: id, model: '');
+  }
 }
 
 /// 直接以二进制方式上传到方舟 Files API，同时传 tos[bucket]/tos[prefix]：
@@ -870,6 +977,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
   required String fileName,
   required String model,
   required String apiKey,
+  String? preprocessModel,
   void Function(Map<String, dynamic> info)? onProgress,
 }) async {
   final cfg = dbVideoArkConfig();
@@ -888,11 +996,17 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
 
+  // 预处理模型由调用方按「是否带音轨」解析好（见 dbArkVideoPreprocessModel），
+  // 未传时退回配置值，保持旧行为。
+  final ppModel = (preprocessModel ?? cfg.preprocessModel).trim();
+  logp('🎛️ 视频预处理模型: ${ppModel.isEmpty ? '(未指定，服务端默认策略)' : ppModel}'
+      '（文件 $fileName）');
+
   // 配置里的 fps 原样透传，绝不自动降帧。
   final fps = cfg.fps <= 0 ? 1.0 : cfg.fps;
   final key = _dbArkCacheKey(f, size);
 
-  final cached = _dbArkCacheLookup(key, fps);
+  final cached = _dbArkCacheLookup(key, fps, ppModel);
   if (cached != null) {
     onProgress?.call({'stage': 'cache_hit', 'arkFileId': cached});
     return dbArkVideoPartByFileId(cached, fps: fps);
@@ -910,12 +1024,12 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     'attempt': 1,
     'fps': fps,
   });
-  final arkId = await _dbArkUploadToTosBucket(
+  final up = await _dbArkUploadWithModelFallback(
     file: f,
     fileName: fileName,
     bucket: cfg.tosBucket,
     prefix: cfg.tosPrefix,
-    model: cfg.preprocessModel,
+    model: ppModel,
     apiKey: apiKey,
     fps: fps,
     maxVideoTokens: cfg.maxVideoTokens,
@@ -930,6 +1044,10 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
       });
     },
   );
+  final arkId = up.fileId;
+  if (up.model != ppModel) {
+    logp('⚠️ 预处理模型实际回退为「未指定」（原计划 $ppModel）');
+  }
   onProgress?.call({'stage': 'tos_upload_done', 'size': size});
   onProgress?.call({'stage': 'tos_reference', 'size': size});
 
@@ -975,7 +1093,7 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
         '体积都无关（30 秒 HEVC 与 5 分钟 HEVC 都正常 active）。',
         code: 'preprocess_failed');
   }
-  _dbArkCacheStore(key, arkId, cfg.preprocessModel, fps);
+  _dbArkCacheStore(key, arkId, up.model, fps);
   return dbArkVideoPartByFileId(arkId, fps: fps);
 }
 
@@ -1721,10 +1839,62 @@ Future<double> _dbProbeDurationSec(File f) async {
 //   → 命中风险：重建「起点 0 / 长度等于视频 / 单一 AAC 轨」再封装
 //   → 重建后仍不合格：剥离音频，出纯视频段（纯视频无 audio_url 可校验）
 //   → 每一次上传前再体检一遍，只让合格文件进 POST /files
+//
+// ★ 2026-11-25 四修：真机 8ms 的根因不在本地文件，而在「上传时没指定
+//   预处理模型」。Files API 文档原文：「如需处理视频中的音频内容，
+//   preprocess_configs.video.model 该字段需指定为支持音频理解的模型」；
+//   **不传该字段时**按 doubao-seed-1.8 之前的策略预处理 —— 音频根本不被
+//   处理，服务端只挂一条约 8ms 的占位音频，chat 阶段必然 400。
+//   本项目默认 preprocessModel 为空（为空就不写这个字段），所以本地把音轨
+//   修得再完美也没用：对方读的不是我们上传文件里的音轨。
+//   故：带音轨的视频一律显式指定该字段（优先复用推理模型，其次官方音频
+//   推荐模型）。该字段与推理模型不强耦合，只影响抽帧/音频预处理策略，
+//   推理模型本身与结果口径保持不变。
 // ============================================================
 
 /// 方舟 chat 对输入音频的硬性下限：10ms。
 const double dbArkAudioHardMinSec = 0.01;
+
+/// 兜底用的音频预处理模型：官方音频理解推荐模型（能真正抽出视频音频）。
+///
+/// 只在「推理模型不是方舟原生 id」或「用户配置的预处理模型被服务端拒绝」
+/// 时兜底使用；正常路径优先复用用户的推理模型，不改变其模型选择。
+const String dbArkAudioPreprocessModel = 'doubao-seed-2-0-lite-260428';
+
+/// 是否是方舟原生的模型 / 接入点 id（可以安全地写进预处理字段）。
+///
+/// 方舟模型 id 形如 `doubao-seed-2-1-lite-260915`（结尾是 6 位日期），
+/// 接入点形如 `ep-2025...`；中转站别名（如 `doubao-2.1-lite`）不在此列，
+/// 写进预处理字段会被服务端判「模型不存在」，所以一律不认。
+bool dbArkLooksLikeArkModel(String model) {
+  final m = model.trim().toLowerCase();
+  if (m.startsWith('ep-')) return true;
+  return RegExp(r'^doubao-[a-z0-9.-]+-\d{6}$').hasMatch(m);
+}
+
+/// 解析视频上传时真正要写进 `preprocess_configs.video.model` 的模型。
+///
+/// 官方文档：该字段不传时按 doubao-seed-1.8 之前的策略预处理，**视频中的
+/// 音频不会被处理**，服务端只剩一条约 8ms 的占位音频 → chat 阶段必 400。
+/// 所以只要文件带音轨，就必须显式指定一个模型。
+///
+/// 优先级（尽量保持用户原有模型选择不变）：
+///   1) 用户显式配置的 preprocessModel；
+///   2) 本次请求的推理模型（方舟原生 id 直接复用，能力与推理侧一致）；
+///   3) 官方音频理解推荐模型 [dbArkAudioPreprocessModel]。
+/// 无音轨时保持原样（可以为空），行为与修复前完全一致。
+String dbArkVideoPreprocessModel({
+  required String configured,
+  required bool hasAudio,
+  String inference = '',
+}) {
+  final c = configured.trim();
+  if (!hasAudio) return c;
+  if (c.isNotEmpty) return c;
+  final i = inference.trim();
+  if (dbArkLooksLikeArkModel(i)) return i;
+  return dbArkAudioPreprocessModel;
+}
 
 /// 本地放行阈值：比服务端下限留 5 倍余量，绝不贴着 10ms 边界上传。
 const double dbArkAudioSafeMinSec = 0.05;
@@ -1980,8 +2150,12 @@ Future<bool> _dbStripAudioToCopy({
 ///
 /// 1) 无音频轨 → 放行（纯视频没有 audio_url 可校验）；
 /// 2) 体检合格 → 放行，并记录一行体检日志；
-/// 3) 命中风险 → 重建音频轨；重建后仍不合格 → 剥离音频。
-Future<void> dbArkEnsureSegmentAudioSafe(
+/// 3) 命中风险 → 重建音频轨；重建后仍不合格 → 剥离音频（降级，必须标注）。
+///
+/// 返回 [hasAudio]：最终文件是否仍带音轨（决定预处理模型要不要用音频模型）；
+/// 返回 [degraded]：是否已被迫降级为纯视频。
+Future<({bool hasAudio, bool degraded, String note})>
+    dbArkEnsureSegmentAudioSafe(
   File seg, {
   required String label,
   double targetSec = 0,
@@ -1989,10 +2163,12 @@ Future<void> dbArkEnsureSegmentAudioSafe(
   final health = await _dbAudioHealth(seg);
   if (!health.hasAudio) {
     logp('🔇 $label 无音频轨（纯视频），按原样放行');
-    return;
+    return (hasAudio: false, degraded: false, note: '无音频轨');
   }
   logp('🎚️ $label 音频体检: ${health.desc}');
-  if (!health.risky) return;
+  if (!health.risky) {
+    return (hasAudio: true, degraded: false, note: '音频正常');
+  }
   logp('⚠️ $label 音频异常（${health.riskReason}）→ 重建音频轨（视频流 -c:v copy）');
 
   final fixed = File('${seg.path}.audfix.mp4');
@@ -2015,7 +2191,7 @@ Future<void> dbArkEnsureSegmentAudioSafe(
       seg.deleteSync();
     } catch (_) {}
     fixed.renameSync(seg.path);
-    return;
+    return (hasAudio: true, degraded: false, note: '音频已重建');
   }
   try {
     if (fixed.existsSync()) fixed.deleteSync();
@@ -2023,13 +2199,13 @@ Future<void> dbArkEnsureSegmentAudioSafe(
 
   final silent = File('${seg.path}.noaud.mp4');
   if (await _dbStripAudioToCopy(src: seg, dst: silent)) {
-    logp('🩹 $label 音频轨无法修复，已剥离为纯视频'
-        '（永不触发 audio_url duration 校验）');
+    logp('🩹 $label 音频轨无法修复，已降级为纯视频'
+        '（永不触发 audio_url duration 校验，但本段将听不到音频）');
     try {
       seg.deleteSync();
     } catch (_) {}
     silent.renameSync(seg.path);
-    return;
+    return (hasAudio: false, degraded: true, note: '音频轨不可修复，已降级为纯视频');
   }
   throw DbVideoArkException(
       '$label 音频轨异常且无法修复/剥离，为避免方舟 400 已中止本段');
@@ -2060,18 +2236,42 @@ bool dbArkIsAudioTooShortError(Object err) {
 ///
 /// 绝不改动用户原文件：需要修复时只在系统临时目录生成一份副本，
 /// 由调用方在上传结束后连目录一起清理。
-Future<({File file, Directory? tempDir})> dbArkPrepareWholeVideoSafe(
-    File src) async {
+///
+/// 返回值里的 [hasAudio] 是「最终上传文件是否仍带音轨」——调用方用它决定
+/// `preprocess_configs.video.model` 要不要强制音频能力模型；[degraded] 表示
+/// 音频已无法修复、被迫降级成纯视频（必须在日志与结果里显式标注）。
+Future<
+    ({
+      File file,
+      Directory? tempDir,
+      bool hasAudio,
+      bool degraded,
+      String note,
+    })> dbArkPrepareWholeVideoSafe(File src) async {
   final health = await _dbAudioHealth(src);
   if (!health.hasAudio) {
     logp('🔇 整片无音频轨（纯视频），按原样上传');
-    return (file: src, tempDir: null);
+    return (
+      file: src,
+      tempDir: null,
+      hasAudio: false,
+      degraded: false,
+      note: '无音频轨',
+    );
   }
   logp('🎚️ 整片音频体检: ${health.desc}');
   // 多音轨也要重建：服务端可能抽取「非主轨」，抽到一条空轨就是 8ms。
   final trackCount = await _dbAudioTrackCount(src);
   final multiTrack = trackCount > 1;
-  if (!health.risky && !multiTrack) return (file: src, tempDir: null);
+  if (!health.risky && !multiTrack) {
+    return (
+      file: src,
+      tempDir: null,
+      hasAudio: true,
+      degraded: false,
+      note: '音频正常',
+    );
+  }
   if (!health.risky && multiTrack) {
     logp('⚠️ 整片存在 $trackCount 条音频轨 → 只保留主轨后上传（原文件不动）');
   } else {
@@ -2089,15 +2289,30 @@ Future<({File file, Directory? tempDir})> dbArkPrepareWholeVideoSafe(
         : '⚠️ 整片音频重建后仍不合格: ${h2.desc}，'
             '可解码 ${decoded.toStringAsFixed(3)}s');
   }
-  if (ok) return (file: dst, tempDir: tmpDir);
+  if (ok) {
+    return (
+      file: dst,
+      tempDir: tmpDir,
+      hasAudio: true,
+      degraded: false,
+      note: '音频已重建',
+    );
+  }
 
   try {
     if (dst.existsSync()) dst.deleteSync();
   } catch (_) {}
   final silent = File('${tmpDir.path}/safe_noaud.mp4');
   if (await _dbStripAudioToCopy(src: src, dst: silent)) {
-    logp('🩹 整片音频无法修复，已剥离为纯视频副本（原文件不动）');
-    return (file: silent, tempDir: tmpDir);
+    logp('🩹 整片音频无法修复，已剥离为纯视频副本（原文件不动）—— '
+        '这是降级路径：本片将听不到音频');
+    return (
+      file: silent,
+      tempDir: tmpDir,
+      hasAudio: false,
+      degraded: true,
+      note: '音频轨不可修复，已降级为纯视频',
+    );
   }
   try {
     tmpDir.deleteSync(recursive: true);
@@ -2388,6 +2603,8 @@ Future<String> dbDescribeVideoInSegments({
   final model = cfg.preprocessModel.trim().isNotEmpty
       ? cfg.preprocessModel.trim()
       : 'doubao-seed-2-1-lite-260915';
+  // 推理模型与预处理模型是两件事：预处理必须显式指定模型（否则音频不被
+  // 抽出、只剩 8ms 占位）；推理模型保持用户配置，绝不做静默替换。
   Directory? tmpDir;
   try {
     onProgress?.call({'stage': 'seg_split', 'segments': segCount});
@@ -2439,20 +2656,33 @@ Future<String> dbDescribeVideoInSegments({
       final segLabel = '第 ${i + 1}/${segs.length} 段';
       final segName = _dbSegFileName(fileName, i, segs.length);
 
+      // 段级音频体检后才知道这一路有没有音轨，预处理模型据此解析；
+      // 默认按「有音轨」起步，保证第一次上传就带上音频能力模型。
+      var segHasAudio = true;
+      var degraded = false;
+      var degradeNote = '';
+      var ppModel = dbArkVideoPreprocessModel(
+        configured: cfg.preprocessModel,
+        hasAudio: true,
+        inference: model,
+      );
+
       /// 上传 → 等预处理 → 转写，这一段完整跑完才返回正文。
       Future<String> describeOnce({required String uploadName}) async {
         final segSize = segs[i].lengthSync();
-        final fileId = await _dbArkUploadToTosBucket(
+        final up = await _dbArkUploadWithModelFallback(
           file: segs[i],
           fileName: uploadName,
           bucket: cfg.tosBucket,
           prefix: cfg.tosPrefix,
-          model: cfg.preprocessModel,
+          model: ppModel,
           apiKey: apiKey,
           fps: fps,
           maxVideoTokens: cfg.maxVideoTokens,
           minFrames: cfg.minFrames,
+          label: segLabel,
         );
+        final fileId = up.fileId;
         await dbArkWaitFileActive(
           apiKey: apiKey,
           fileId: fileId,
@@ -2504,33 +2734,71 @@ Future<String> dbDescribeVideoInSegments({
       }
 
       try {
-        // ★ 上传前的音频前置拦截：不合格就地重建，救不回来就剥离音频，
-        //   保证进入 POST /files 的每一段都不会被方舟判「音频 8ms」。
-        await dbArkEnsureSegmentAudioSafe(
+        // ★ 上传前的音频前置拦截：不合格就地重建，救不回来才降级为纯视频，
+        //   保证进入 POST /files 的每一段音频都 ≥10ms。
+        final gate = await dbArkEnsureSegmentAudioSafe(
           segs[i],
           label: segLabel,
           targetSec: segSec,
         );
+        segHasAudio = gate.hasAudio;
+        degraded = gate.degraded;
+        degradeNote = gate.note;
+        ppModel = dbArkVideoPreprocessModel(
+          configured: cfg.preprocessModel,
+          hasAudio: segHasAudio,
+          inference: model,
+        );
+        logp('🎛️ $segLabel 预处理模型: $ppModel'
+            '（音轨=${segHasAudio ? '有' : '无'}，'
+            '推理模型=$model）');
 
-        String text;
+        // ★ 三段式自愈（顺序固定，不允许跳级）：
+        //   1) 当前预处理模型正常跑完；
+        //   2) 服务端仍判「音频过短」→ 换官方音频推荐模型重新预处理一次
+        //      （换名上传，避免 TOS 同名覆盖）——这一步仍然保留音频；
+        //   3) 只有第 2 步也失败，才剥离音频重试，并强制在结果里标注降级。
+        var text = '';
+        Object? audioErr;
         try {
           text = await describeOnce(uploadName: segName);
         } catch (e) {
-          // ★ 自愈重试：本地拦截已生效、服务端仍报「音频时长过短」时，
-          //   说明对方量的是另一条轨或另一套度量。剥离音频出纯视频段
-          //  （没有音频轨就没有 audio_url 可校验），换名重传后只重试一次。
           if (!dbArkIsAudioTooShortError(e)) rethrow;
-          logp('⚠️ $segLabel 方舟仍报音频过短（$e）→ 剥离音频后重试一次');
+          audioErr = e;
+        }
+        if (audioErr != null && ppModel.trim() != dbArkAudioPreprocessModel) {
+          logp('⚠️ $segLabel 方舟仍报音频过短（$audioErr）→ '
+              '换预处理模型 $dbArkAudioPreprocessModel 重新预处理一次（音频不剥离）');
+          ppModel = dbArkAudioPreprocessModel;
+          try {
+            text = await describeOnce(
+                uploadName: _dbSegAudioModelName(segName));
+            audioErr = null;
+          } catch (e2) {
+            if (!dbArkIsAudioTooShortError(e2)) rethrow;
+            audioErr = e2;
+          }
+        }
+        if (audioErr != null) {
+          // 最后手段：纯视频段没有 audio_url 可校验，换名重传。
+          logp('⚠️ $segLabel 音频仍被判过短（$audioErr）→ '
+              '降级：剥离音频后重试一次');
           await _dbStripSegmentAudioInPlace(segs[i]);
+          degraded = true;
+          degradeNote = '服务端仍判音频过短，已剥离音轨重试';
           text = await describeOnce(uploadName: _dbSegNoAudioName(segName));
         }
 
         logp('🎬 $segLabel 完整理解完成'
             '（${_dbClock(start)}-${_dbClock(end)}，${runeLen(text)} 字）');
+        // 降级必须可见：该段音频没参与理解，结果里写清楚，不假装正常。
+        final block = degraded
+            ? '〔降级：$degradeNote —— 本段仅按画面理解，音频内容缺失〕\n$text'
+            : text;
         if (segs.length > 1) {
-          okBlocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$text');
+          okBlocks.add('【${_dbClock(start)} - ${_dbClock(end)}】\n$block');
         } else {
-          okBlocks.add(text);
+          okBlocks.add(block);
         }
         onProgress?.call({
           'stage': 'segment_done',
@@ -2598,4 +2866,11 @@ String _dbSegNoAudioName(String name) {
   final dot = name.lastIndexOf('.');
   if (dot <= 0) return '${name}_noaud';
   return '${name.substring(0, dot)}_noaud${name.substring(dot)}';
+}
+
+/// 换音频预处理模型重传的文件名：带 _audpp 后缀，避免覆盖 TOS 上同名对象。
+String _dbSegAudioModelName(String name) {
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0) return '${name}_audpp';
+  return '${name.substring(0, dot)}_audpp${name.substring(dot)}';
 }

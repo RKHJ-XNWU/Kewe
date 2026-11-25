@@ -253,6 +253,45 @@ Future<void> main() async {
       '');
   _check('不误判其它 400', !dbArkIsAudioTooShortError('HTTP 400：invalid model'), '');
 
+  stdout.writeln('=== H. 预处理模型解析（8ms 根因：model 必须支持音频）');
+  _check('空配置 + 有音轨 + 方舟原生推理模型 → 复用推理模型',
+      dbArkVideoPreprocessModel(
+              configured: '',
+              hasAudio: true,
+              inference: 'doubao-seed-2-1-lite-260915') ==
+          'doubao-seed-2-1-lite-260915',
+      '');
+  _check('空配置 + 有音轨 + 非方舟模型 → 音频推荐模型',
+      dbArkVideoPreprocessModel(
+              configured: '', hasAudio: true, inference: 'relay-gpt-4o') ==
+          dbArkAudioPreprocessModel,
+      '');
+  _check('配置的 preprocessModel 优先',
+      dbArkVideoPreprocessModel(
+              configured: 'ep-20251125-abcdef',
+              hasAudio: true,
+              inference: 'doubao-seed-2-1-lite-260915') ==
+          'ep-20251125-abcdef',
+      '');
+  _check('无音轨 → 原配置原样透传（空即空）',
+      dbArkVideoPreprocessModel(configured: '', hasAudio: false) == '', '');
+  _check('方舟原生 id 判定',
+      dbArkLooksLikeArkModel('ep-20251125-abcdef') &&
+          dbArkLooksLikeArkModel('doubao-seed-2-1-lite-260915'),
+      '');
+  _check('中转站别名不写进预处理字段',
+      !dbArkLooksLikeArkModel('gpt-4o-relay') &&
+          !dbArkLooksLikeArkModel('doubao-2.1-lite'),
+      '');
+  _check('识别「带 model 上传被拒」的 project 400',
+      dbArkIsPreprocessModelRejected(
+          '方舟 TOS 上传失败（HTTP 400）：{"error":{"code":"InvalidParameter","message":"Project is invalid","param":"project_name"}}'),
+      '');
+  _check('音频过短 400 不应被当成模型被拒',
+      !dbArkIsPreprocessModelRejected(
+          'HTTP 400：audio_url duration (8ms) shorter than the limit (10ms)'),
+      '');
+
   stdout.writeln('');
   stdout.writeln(_fail == 0 ? '全部通过（0 失败）' : '存在失败项：$_fail');
   exit(_fail == 0 ? 0 : 1);
