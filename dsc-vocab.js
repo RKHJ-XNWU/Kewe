@@ -44,13 +44,20 @@
         resolve(window.confirm(title + '\n\n' + msg));
         return;
       }
+      // 同一时间只允许一个确认框：已打开时直接取消第二次请求，避免连点多个删除后一次 OK 触发多条删除
+      if (overlay.classList.contains('open')) {
+        resolve(false);
+        return;
+      }
       
       titleEl.textContent = title;
       msgEl.textContent = msg;
+      okBtn.textContent = 'OK';
       overlay.classList.add('open');
       
       function cleanup(result) {
         overlay.classList.remove('open');
+        okBtn.textContent = 'OK';
         okBtn.removeEventListener('click', onOk);
         cancelBtn.removeEventListener('click', onCancel);
         overlay.removeEventListener('click', onOverlay);

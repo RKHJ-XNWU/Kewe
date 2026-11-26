@@ -359,7 +359,7 @@ DSH_BASE="$PWD" dart run bin/main.dart
 
 ### KI-002 点击「深度思考」「联网搜索」按钮后，不再出现吐司提示
 
-- **状态**：已登记，未修复（2026-11-26 登记）
+- **状态**：已修复（2026-11-26）
 - **等级**：P5（交互反馈缺失：开关本身正常，仅缺操作确认）
 - **触发条件**：对话页点击「深度思考」或「联网搜索」按钮（`dscDeepThinkBtn` / `dscWebSearchBtn`）
 - **现象**：按钮高亮与状态切换均正常，`localStorage` 也写入成功，但屏幕上方不再出现吐司；此前版本会显示「🧠 深度思考已开启 / 🌐 联网搜索已开启」这类提示。用户无法确认是否点上，容易重复点击。
@@ -368,12 +368,15 @@ DSH_BASE="$PWD" dart run bin/main.dart
   - `deepseek-chat.js:7649-7659` 深度思考绑定内同样调用了 `toast(...)`
   - 容器存在：`index.html:246` `<div class="dsc-toast-wrap" id="dscToastWrap"></div>`
   - 样式存在：`deepseek-chat.css:575` `position:fixed; top:70px; z-index:100002`
-  - `toast()` 实现：`deepseek-chat.js:657`，容器缺失时只 `console.log` 后 return；文案经 `dscT()`（`deepseek-chat.js:834`）翻译
+  - `toast()` 实现：`deepseek-chat.js:657`，容器缺失时只 `console.log` 后 return；文案经 `dscT()` 翻译
+- **实际根因（2026-11-26 复核）**：`toast()` 内调用的 `T()` 定义在主 IIFE 之外的另一个 IIFE；主 IIFE 内 9 处 `T(...)` 全部触发 `ReferenceError: T is not defined`。工具模式 / 联网 / 深度思考三处是 state 先改、toast 后调，所以按钮正常、吐司没有；其余调用在 `try` 内被吞掉。**与层叠 / 裁剪无关**，原 README 的层叠假设不成立。
+- **修复（2026-11-26 已实施）**：9 处 `T(` → `dscT(`；`#dscToastWrap` 移到 `body` 顶层并升到 `z-index:2147482600`；`kewe-ui.css` 的 toast 选择器改为 `.dsc-toast-wrap .dsc-toast`，避免宿主移出 app 后丢样式。
 - **二分定位（30 秒可判定，复现时先做这一步）**：
   1. 点击按钮后查 `#dscToastWrap` 是否新增 `.dsc-toast` 节点；
   2. **有节点但看不见** → 层叠/裁剪问题：祖先容器新增 `transform` / `filter` / `overflow:hidden` 会把 `position:fixed` 改为相对该祖先定位，直接推出可视区；
   3. **没有节点** → `toast()` 内部提前抛错，或 `dscT()` 命中空译文（会渲染出零高度空吐司，视觉上等于没有）。
-- **修复方向（未实施）**：按上一步结论二选一——修层叠（把 `#dscToastWrap` 提到 `body` 直属或去掉祖先 `transform`），或给 `toast()` 加空文案兜底（`dscT` 返回空时回落到原文）。
+  - 本次复核：点击后 `#dscToastWrap` **没有**新增节点，属第 3 类；控制台可见 `T is not defined`。
+- **修复方向（原假设，已被上方实际根因取代）**：按上一步结论二选一——修层叠（把 `#dscToastWrap` 提到 `body` 直属或去掉祖先 `transform`），或给 `toast()` 加空文案兜底（`dscT` 返回空时回落到原文）。实际修复采用「移宿主 + 改 `T` 作用域」。
 - **风险**：调整层叠可能影响其它浮层（`dsc-modal-overlay` / `dsc-sidebar`）的遮挡顺序，需同时验证设置弹窗与侧边栏。
 
 ### KI-003 开启智能联网搜索时，以图搜图失效
@@ -389,6 +392,15 @@ DSH_BASE="$PWD" dart run bin/main.dart
 - **修复方向（未实施）**：图搜图请求走独立通道；或本轮识别到图片检索意图时置 `web_search_options: disabled`，两者互斥而非叠加。
 - **验收**：智能搜索开启状态下图搜图仍返回检索结果，且不重复消耗搜索额度。
 
+### KI-004 删除确认弹窗被全屏页遮挡（点删除后像没反应）
+
+- **状态**：已修复（2026-11-26）
+- **等级**：P0（可导致误删：确认框不可见时全屏页仍可点击，连续点多个删除后一次 OK 会执行多条 `onOk`）
+- **触发条件**：在单词本 / 帖子广场里删除条目或帖子
+- **现象**：确认框其实已经生成，但被白底全屏面板整块盖住；用户必须先点返回，才能看到确认按钮，看起来像“点删除没反应”。
+- **根因**：`#dscConfirmOverlay` 是 `#deepseekChatApp` 的子节点，app 在 `deepseek-chat.css:3` 形成 `z-index:100000` 的堆叠上下文；普通 `.dsc-modal-overlay` 只有 `100001`。`fedaccd`（2026-11-23）把单词本 / 论坛全屏页提到 `z-index:100080 !important`，`100001 < 100080`，确认框被整块盖住。**此前没有**：旧版全屏页也是 `100001`，确认框在 DOM 最后、同层后绘制胜出。
+- **修复**：`kewe-ui.css` 增加 `#deepseekChatApp #dscConfirmOverlay { z-index:100200 !important; }`（高于全屏页 100080，低于全局吐司 / 门禁）；`dsc-vocab.js`、`dsc-forum.js` 的确认框加“已打开则取消第二次请求”的单飞守卫与 OK 文案复位，避免连点多个删除后一次确认执行多条；`dsc-forum.js` 修正 `'OK要' + ... + 'この投稿ですか？'` 的拼接错句。
+
 ## 安全说明
 - 不要在源码、README、Issue 或提交历史中写入 API Key、GitHub Token、Cookie 或个人隐私数据。
 - 中转站维度已停用，不应通过修改前端隐藏状态重新开放不可信转发通道。
@@ -396,6 +408,12 @@ DSH_BASE="$PWD" dart run bin/main.dart
 - 上游模型可用性、额度和内容限制由对应服务商决定。
 
 ## 维护记录
+
+2026-11-26：
+
+- 修复 KI-004（删除确认被单词本 / 论坛全屏页遮挡）：确认框 z-index 提到 100200；两个模块的确认框加单飞守卫与 OK 文案复位；修正论坛 `'OK要'` 拼接错句。
+- 修复 KI-002（深度思考 / 联网搜索吐司消失）：根因是主 IIFE 内 `T()` 未定义，9 处改为 `dscT()`；吐司宿主移到 `body` 顶层，并修正 KEWE toast 样式选择器。
+- 其他堆叠 / 误触修复：文件列表单文件删除补二次确认；通话浮层 z-index 提到 100200，不再依赖 Fullscreen API；悬浮球挂到 app 内并降到 99999，避免压住确认框 / 全屏页；认证门禁出现时清理注销确认层；论坛置顶 / 注目 / 非显示的确认文案改走 `T()`，去掉 `'OK要'` 前缀。
 
 2026-11-25：
 

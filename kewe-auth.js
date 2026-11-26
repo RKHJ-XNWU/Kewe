@@ -1188,6 +1188,11 @@
     if (state.gate) {
       state.gate.style.display = 'flex';
     }
+    // 2026-11-26 · 门禁出现时清理注销/退出确认，避免它被 z-index 更高的门禁盖住而无法操作
+    try {
+      var stale = document.querySelectorAll('.kewe-logout-overlay');
+      for (var i = 0; i < stale.length; i++) stale[i].remove();
+    } catch (eStale) {}
     try { document.documentElement.classList.add('kewe-auth-locked'); } catch (e) {}
   }
 

@@ -699,7 +699,10 @@
       '<circle cx="20" cy="20" r="1.6" fill="#fbbf24"/></svg>' +
       '<span class="kwe-orb-badge">ON</span>';
     btn.addEventListener('click', function () { openCommand(); });
-    document.body.appendChild(btn);
+    // 2026-11-26 · 挂到 app 内：随 app 一起显隐，且层级低于 .dsc-modal-overlay(100001)/全屏页(100080)，
+    // 不再浮在确认弹窗、单词本、论坛等页面上方抢点击。
+    var orbHost = document.getElementById('deepseekChatApp') || document.body;
+    orbHost.appendChild(btn);
   }
 
   // ------------------------------------------------------------

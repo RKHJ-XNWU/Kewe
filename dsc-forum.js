@@ -70,6 +70,11 @@
         resolve(window.confirm(title + '\n\n' + msg));
         return;
       }
+      // 同一时间只允许一个确认框：已打开时直接取消第二次请求，避免连点多个删除后一次 OK 触发多条删除
+      if (overlay.classList.contains('open')) {
+        resolve(false);
+        return;
+      }
       $('dscConfirmTitle').textContent = title;
       $('dscConfirmMsg').textContent = msg;
       okBtn.textContent = okText || 'OK';
@@ -77,6 +82,7 @@
 
       function cleanup(result) {
         overlay.classList.remove('open');
+        okBtn.textContent = 'OK';
         okBtn.removeEventListener('click', onOk);
         cancelBtn.removeEventListener('click', onCancel);
         overlay.removeEventListener('click', onOverlay);
@@ -602,22 +608,25 @@
 
   function togglePin(post) {
     var target = !post.isPinned;
-    confirmDialog('📌 ' + (target ? 'ピン留め' : 'ピン留めを解除'),
-      'OK要' + (target ? 'ピン留め' : 'ピン留めを解除') + 'この投稿ですか？', target ? 'ピン留め' : 'ピン留めを解除')
+    confirmDialog('📌 ' + (target ? T('ピン留め') : T('ピン留めを解除')),
+      target ? 'この投稿をピン留めしますか？' : 'この投稿のピン留めを解除しますか？',
+      target ? T('ピン留め') : T('ピン留めを解除'))
       .then(function (ok) { if (ok) doAction(post.id, 'pin', target); });
   }
 
   function toggleFeature(post) {
     var target = !post.isFeatured;
-    confirmDialog('💎 ' + (target ? '注目' : '注目を解除'),
-      'OK要' + (target ? '注目' : '注目を解除') + 'この投稿ですか？', target ? '注目' : '注目を解除')
+    confirmDialog('💎 ' + (target ? T('注目') : T('注目を解除')),
+      target ? 'この投稿を注目しますか？' : 'この投稿の注目を解除しますか？',
+      target ? T('注目') : T('注目を解除'))
       .then(function (ok) { if (ok) doAction(post.id, 'feature', target); });
   }
 
   function toggleBlock(post) {
     var target = !post.isBlocked;
-    confirmDialog('🚫 ' + (target ? '非表示' : '非表示を解除'),
-      'OK要' + (target ? '非表示' : '非表示を解除') + 'この投稿ですか？', target ? '非表示' : '非表示を解除')
+    confirmDialog('🚫 ' + (target ? T('非表示') : T('非表示を解除')),
+      target ? 'この投稿を非表示にしますか？' : 'この投稿の非表示を解除しますか？',
+      target ? T('非表示') : T('非表示を解除'))
       .then(function (ok) { if (ok) doAction(post.id, 'block', target); });
   }
 

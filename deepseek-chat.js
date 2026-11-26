@@ -664,6 +664,13 @@
         setTimeout(function () { el.remove(); }, 2600);
     }
 
+    // 2026-11-26 · 吐司宿主移到 body 顶层：避免被豆包/快捷模型/单词本/论坛等 body 级浮层盖住
+    // （此前 #dscToastWrap 在 #deepseekChatApp 内，z=100002 只在 app 的 100000 堆叠上下文里生效）
+    (function () {
+        var wrap = $('dscToastWrap');
+        if (wrap && wrap.parentNode !== document.body) document.body.appendChild(wrap);
+    })();
+
     // 中央エラー表示（opts 省略時は従来と同一挙動）
     // opts: { ms, closeable, action: { label, onClick } }
     function showCenterError(msg, opts) {
@@ -803,11 +810,15 @@
         return new Promise(function (resolve) {
             var overlay = $('dscConfirmOverlay');
             if (!overlay) { resolve(window.confirm(title + '\n' + msg)); return; }
+            // 同一时间只允许一个确认框：已打开时直接取消第二次请求，避免多次点击把多个 onOk 挂到同一个按钮上
+            if (overlay.classList.contains('open')) { resolve(false); return; }
             $('dscConfirmTitle').textContent = dscT(title);
             $('dscConfirmMsg').textContent = dscT(msg);
+            $('dscConfirmOk').textContent = 'OK';
             overlay.classList.add('open');
             state.confirmCb = function (ok) {
                 overlay.classList.remove('open');
+                $('dscConfirmOk').textContent = 'OK';
                 state.confirmCb = null;
                 resolve(ok);
             };
@@ -6002,7 +6013,7 @@
                 var __rbu0 = $('dscRelayBaseUrlInput');
                 if (__rbu0) { __rbu0.value = ''; __rbu0.placeholder = window.dscRelayDisabledText ? window.dscRelayDisabledText() : (window.DSC_RELAY_DISABLED_MSG || ''); }
                 var __rak0 = $('dscRelayApiKeyInput');
-                if (__rak0) { __rak0.value = ''; __rak0.placeholder = T('⛔ このチャネルは停止しました'); }
+                if (__rak0) { __rak0.value = ''; __rak0.placeholder = dscT('⛔ このチャネルは停止しました'); }
             } catch (e2) {}
         } catch (e) {
             var st2 = $('dscApiStatus');
@@ -6453,7 +6464,7 @@
         if (name.length > 120) { toast('モデル名が長すぎます（最大 120 字）', 'error'); return; }
         if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
         if (getCustomModels().indexOf(name) >= 0 || hasModelOption(name)) {
-            toast(T('そのモデル名は既に別のディメンションに存在します：') + name, 'error');
+            toast(dscT('そのモデル名は既に別のディメンションに存在します：') + name, 'error');
             return;
         }
         inp.value = '';
@@ -6478,7 +6489,7 @@
         if (/\s/.test(name)) { toast('モデル名に空白は使用できません', 'error'); return; }
         if (getCustomModels().indexOf(name) >= 0) { toast('既に追加されています：' + name, 'info'); inp.value = ''; return; }
         if (window.__dscIsRelayModel && window.__dscIsRelayModel(name)) {
-            toast(T('そのモデル名は既にリレー（st ディメンション）に存在します：') + name, 'error');
+            toast(dscT('そのモデル名は既にリレー（st ディメンション）に存在します：') + name, 'error');
             return;
         }
         inp.value = '';
@@ -6907,8 +6918,8 @@
                 '<span class="tx"><b></b><i></i></span>';
             badge.querySelector('.ic').textContent = d === 'db' ? '🧩' : (d === 'st' ? '🔀' : '🚀');
             badge.querySelector('b').textContent = m || '—';
-            badge.querySelector('i').textContent = d === 'db' ? T('豆包 · db ディメンション')
-                : (d === 'st' ? T('リレー · st ディメンション') : T('DeepSeek · ds ディメンション'));
+            badge.querySelector('i').textContent = d === 'db' ? dscT('豆包 · db ディメンション')
+                : (d === 'st' ? dscT('リレー · st ディメンション') : dscT('DeepSeek · ds ディメンション'));
             layer.appendChild(badge);
             setTimeout(function () {
                 if (!badge.parentNode) return;
@@ -7510,7 +7521,7 @@
             updateToolUI();
             updateLevelUI(state.reasoningLevel);
             saveToolState();
-            toast(T(state.enableTools ? '🤖 自律エージェントをオンにしました（最大 50 億ラウンド）' : '🤖 自律エージェントをオフにしました'), 'info');
+            toast(dscT(state.enableTools ? '🤖 自律エージェントをオンにしました（最大 50 億ラウンド）' : '🤖 自律エージェントをオフにしました'), 'info');
         });
 
         bind('dscCloseBtn', 'click', closeApp);
@@ -7643,7 +7654,7 @@
             state.webSearch = !state.webSearch;
             updateToolUI();
             saveToolState();
-            toast(T(state.webSearch ? '🌐 ウェブ検索をオンにしました' : '🌐 ウェブ検索をオフにしました'), 'info');
+            toast(dscT(state.webSearch ? '🌐 ウェブ検索をオンにしました' : '🌐 ウェブ検索をオフにしました'), 'info');
         });
 
         bind('dscDeepThinkBtn', 'click', function () {
@@ -7655,7 +7666,7 @@
             }
             updateToolUI();
             saveToolState();
-            toast(T(state.deepThink ? '🧠 深い思考をオンにしました' : '🧠 深い思考をオフにしました'), 'info');
+            toast(dscT(state.deepThink ? '🧠 深い思考をオンにしました' : '🧠 深い思考をオフにしました'), 'info');
         });
 
         bind('dscLevelBtn', 'click', openLevelDialog);

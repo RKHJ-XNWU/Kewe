@@ -227,6 +227,8 @@
     async function deleteFile(fileId) {
         var meta = dsFiles.find(function (f) { return f.id === fileId; });
         if (!meta) return;
+        // 2026-11-26 · 单文件删除补二次确认，避免误触 🗑 直接永久删除
+        if (!confirm(dsT('「{0}」を削除しますか？この操作は元に戻せません。', meta.name || fileId))) return;
         try {
             var res = await fetch('/api/ds-files/delete?id=' + encodeURIComponent(fileId), { method: 'DELETE' });
             if (!res.ok) throw new Error('削除に失敗しました');
