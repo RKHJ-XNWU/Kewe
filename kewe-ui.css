@@ -946,8 +946,9 @@ body { font-family: var(--kewe-font); color: var(--kewe-text); }
 }
 
 /* 2026-11-26 · 全局确认框必须高于全屏页(100080)与普通弹窗(100001)。
+ * deepseek-chat.js 会把它移到 body 顶层，脱离 app 的 100000 堆叠上下文；
  * 否则单词本/帖子广场里的删除确认会被白底全屏面板整个盖住，用户看起来像“点删除没反应”。 */
-#deepseekChatApp #dscConfirmOverlay {
+#dscConfirmOverlay {
     z-index: 100200 !important;
 }
 #deepseekChatApp #dscVocabOverlay .dsc-vocab,

@@ -399,7 +399,7 @@ DSH_BASE="$PWD" dart run bin/main.dart
 - **触发条件**：在单词本 / 帖子广场里删除条目或帖子
 - **现象**：确认框其实已经生成，但被白底全屏面板整块盖住；用户必须先点返回，才能看到确认按钮，看起来像“点删除没反应”。
 - **根因**：`#dscConfirmOverlay` 是 `#deepseekChatApp` 的子节点，app 在 `deepseek-chat.css:3` 形成 `z-index:100000` 的堆叠上下文；普通 `.dsc-modal-overlay` 只有 `100001`。`fedaccd`（2026-11-23）把单词本 / 论坛全屏页提到 `z-index:100080 !important`，`100001 < 100080`，确认框被整块盖住。**此前没有**：旧版全屏页也是 `100001`，确认框在 DOM 最后、同层后绘制胜出。
-- **修复**：`kewe-ui.css` 增加 `#deepseekChatApp #dscConfirmOverlay { z-index:100200 !important; }`（高于全屏页 100080，低于全局吐司 / 门禁）；`dsc-vocab.js`、`dsc-forum.js` 的确认框加“已打开则取消第二次请求”的单飞守卫与 OK 文案复位，避免连点多个删除后一次确认执行多条；`dsc-forum.js` 修正 `'OK要' + ... + 'この投稿ですか？'` 的拼接错句。
+- **修复**：`deepseek-chat.js` 启动时把 `#dscConfirmOverlay` 移到 `body` 顶层，脱离 app 的 100000 堆叠上下文；`kewe-ui.css` 增加全局 `#dscConfirmOverlay { z-index:100200 !important; }`（高于全屏页 100080 / 普通弹窗 100001，低于全局吐司 2147482600 / 门禁 2147483000）；`dsc-vocab.js`、`dsc-forum.js` 的确认框加“已打开则取消第二次请求”的单飞守卫与 OK 文案复位，避免连点多个删除后一次确认执行多条；`dsc-forum.js` 修正 `'OK要' + ... + 'この投稿ですか？'` 的拼接错句。
 
 ## 安全说明
 - 不要在源码、README、Issue 或提交历史中写入 API Key、GitHub Token、Cookie 或个人隐私数据。
@@ -411,7 +411,7 @@ DSH_BASE="$PWD" dart run bin/main.dart
 
 2026-11-26：
 
-- 修复 KI-004（删除确认被单词本 / 论坛全屏页遮挡）：确认框 z-index 提到 100200；两个模块的确认框加单飞守卫与 OK 文案复位；修正论坛 `'OK要'` 拼接错句。
+- 修复 KI-004（删除确认被单词本 / 论坛全屏页遮挡）：确认框移出 app 堆叠上下文、挂到 `body` 顶层并把 z-index 提到 100200；两个模块的确认框加单飞守卫与 OK 文案复位；修正论坛 `'OK要'` 拼接错句。
 - 修复 KI-002（深度思考 / 联网搜索吐司消失）：根因是主 IIFE 内 `T()` 未定义，9 处改为 `dscT()`；吐司宿主移到 `body` 顶层，并修正 KEWE toast 样式选择器。
 - 其他堆叠 / 误触修复：文件列表单文件删除补二次确认；通话浮层 z-index 提到 100200，不再依赖 Fullscreen API；悬浮球挂到 app 内并降到 99999，避免压住确认框 / 全屏页；认证门禁出现时清理注销确认层；论坛置顶 / 注目 / 非显示的确认文案改走 `T()`，去掉 `'OK要'` 前缀。
 

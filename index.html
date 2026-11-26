@@ -43,7 +43,7 @@
         .dsc-model-tab.active { background: #ffffff; color: #4f46e5; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
         .dsc-model-empty { padding: 18px 8px; text-align: center; font-size: 0.8rem; color: #9ca3af; }
     </style>
-    <link rel="stylesheet" href="kewe-ui.css?v=20261126-ustack1">
+    <link rel="stylesheet" href="kewe-ui.css?v=20261126-ustack2">
     <link rel="stylesheet" href="kewe-empire.css?v=20261126-ustack1">
     <script src="kewe-auth.js?v=20261126-ustack1"></script>
 </head>
@@ -748,7 +748,7 @@
     <script src="i18n/ai-prompts.js?v=20261123-1"></script>
     <script src="ds-files.js?v=20261126-ustack1"></script>
     <script src="ds-devtools.js?v=20261124-i18n1"></script>
-    <script src="deepseek-chat.js?v=20261126-ustack1"></script>
+    <script src="deepseek-chat.js?v=20261126-ustack2"></script>
     <script src="dsc-control-center.js?v=20261124-ctxmono"></script>
 
     <!-- ★ データ復元：完全用内联脚本接管，不改 deepseek-chat.js -->
@@ -793,12 +793,16 @@
                     resolve(window.confirm(title + '\n\n' + msg));
                     return;
                 }
+                // 同一时间只允许一个确认框：已打开时直接取消第二次请求，避免连点多个删除后一次 OK 触发多条删除
+                if (overlay.classList.contains('open')) { resolve(false); return; }
                 $('dscConfirmTitle').textContent = title;
                 $('dscConfirmMsg').textContent = msg;
+                okBtn.textContent = 'OK';
                 overlay.classList.add('open');
 
                 function cleanup(result) {
                     overlay.classList.remove('open');
+                    okBtn.textContent = 'OK';
                     okBtn.removeEventListener('click', onOk);
                     cancelBtn.removeEventListener('click', onCancel);
                     overlay.removeEventListener('click', onOverlay);

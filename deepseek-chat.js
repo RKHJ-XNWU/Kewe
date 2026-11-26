@@ -669,6 +669,10 @@
     (function () {
         var wrap = $('dscToastWrap');
         if (wrap && wrap.parentNode !== document.body) document.body.appendChild(wrap);
+        // 确认框是全局对话框：移到 body 顶层，脱离 app 的 100000 堆叠上下文，
+        // 否则 app 内再高的 z-index 也压不过 body 级浮层（公告 / 豆包页 / 搜索页等）。
+        var confirmOverlay = $('dscConfirmOverlay');
+        if (confirmOverlay && confirmOverlay.parentNode !== document.body) document.body.appendChild(confirmOverlay);
     })();
 
     // 中央エラー表示（opts 省略時は従来と同一挙動）
