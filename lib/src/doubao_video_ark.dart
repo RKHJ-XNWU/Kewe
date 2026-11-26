@@ -148,13 +148,8 @@ class DbVideoArkConfig {
   /// 单片上限（MB 级概念，默认 45MB，必须 < 50MB）
   int segmentMaxBytes;
 
-  /// 是否允许「无 TOS 桶时退回方舟托管存储」。
-  ///
-  /// 官方上限：托管存储单文件 512MB，TOS 桶视频 2GB。两条通道鉴权都只用
-  /// API Key，不需要 TOS 的 AK/SK。
-  /// 默认 false：必须配 tosBucket 才走视频整片直传（实测托管 file_id 在
-  /// 本账号的 chat 引用会 404，故不作为默认通路）；
-  /// 置 true 且文件 ≤512MB 时，允许托管存储通路，超限仍如实报错。
+  /// 是否优先尝试 Files API（file_id）通道。
+  /// 默认 false：实测当前 Key 的 file_id 无法被推理端引用（404）。
   bool useFilesApi;
 
   /// Files API 通道：火山 TOS Bucket（填了才启用 2GB 直传）
@@ -513,12 +508,10 @@ Future<({List<Map<String, dynamic>> parts, String text})>
     //   于是策略变成：≤3600 帧 → 整片直传（不分段、不降帧、不重试）；
     //   >3600 帧 → 等分切段，但每段仍是 fps=5 的完整转写（不是摘要），
     //   按全片时间轴拼接成一份连续记录。这样既守住 fps=5，也守住细节。
-    if (cfg.tosBucket.trim().isEmpty &&
-        !(cfg.useFilesApi && size <= dbArkStorageMaxBytes)) {
+    if (cfg.tosBucket.trim().isEmpty) {
       throw DbVideoArkException(
-          '视频 ${meta.name}（${dbFmtSize(size)}）未配置 tosBucket：'
-          '方舟托管存储单文件上限 ${dbFmtSize(dbArkStorageMaxBytes)}；'
-          '更大的视频请填写 TOS 桶（视频上限 ${dbFmtSize(dbArkTosMaxBytes)}）',
+          '未配置 tosBucket：视频直传需要 TOS Bucket（≥50MB 的视频无法走 '
+          'base64）：${meta.name}（${dbFmtSize(size)}）',
           code: 'tos_not_configured');
     }
     final dur = await _dbProbeDurationSec(f);
@@ -761,15 +754,9 @@ Future<({String fileId, String model})> _dbArkUploadWithModelFallback({
   }
 }
 
-/// 直接以二进制方式上传到方舟 Files API。
-///
-/// 两种落盘位置（官方《上传文件》接口文档，2026-11 核对）：
-///   · 传 `tos[bucket]` + `tos[prefix]`：文件写入用户自己的 TOS 桶，
-///     视频单文件上限 **2GB**（其它类型仍 512MB）；桶需提前创建并在方舟侧授权；
-///   · 不传 tos 参数：落在方舟平台托管存储，单文件上限 **512MB**，
-///     总存储 20GB / 默认保留 7 天。
-/// **鉴权统一用 API Key（`Authorization: Bearer`）**，两种落盘位置都不需要
-/// TOS 的 AK/SK —— Access Key 只是官方「可选」的另一种鉴权方式。
+/// 直接以二进制方式上传到方舟 Files API，同时传 tos[bucket]/tos[prefix]：
+/// 文件落在用户 TOS 桶，预处理也在方舟侧完成。
+/// 这是用户要求的「TOS 预处理」路径，不需要 TOS AK/SK，也不走本地理解。
 Future<String> _dbArkUploadToTosBucket({
   required File file,
   required String fileName,
@@ -786,21 +773,9 @@ Future<String> _dbArkUploadToTosBucket({
   if (total <= 0) {
     throw DbVideoArkException('视频文件为空：$fileName', code: 'empty');
   }
-  final useTos = bucket.trim().isNotEmpty;
-  final storageMode = useTos ? 'tos' : 'managed';
-  if (!useTos && total > dbArkStorageMaxBytes) {
-    // 托管存储 512MB 是官方硬上限，本地先拦，避免白传 500MB 才被服务端拒。
-    throw DbVideoArkException(
-        '视频 ${dbFmtSize(total)} 超过方舟托管存储单文件上限 '
-        '${dbFmtSize(dbArkStorageMaxBytes)}，且未配置 tosBucket：'
-        '请填写 TOS 桶（视频上限 2GB）后再试：$fileName',
-        code: 'tos_not_configured');
-  }
   var destPrefix = prefix.trim();
-  if (useTos) {
-    if (destPrefix.isEmpty) destPrefix = 'arkfiles/';
-    if (!destPrefix.endsWith('/')) destPrefix = '$destPrefix/';
-  }
+  if (destPrefix.isEmpty) destPrefix = 'arkfiles/';
+  if (!destPrefix.endsWith('/')) destPrefix = '$destPrefix/';
 
   final boundary =
       '----keweTosUpload${DateTime.now().microsecondsSinceEpoch}${randomHex(8)}';
@@ -812,11 +787,9 @@ Future<String> _dbArkUploadToTosBucket({
   }
 
   field('purpose', 'user_data');
-  if (useTos) {
-    field('tos[bucket]', bucket);
-    // 官方文档：TOS 目标路径；预处理产物会落在 <prefix>/ark_processed/<file_id>/
-    field('tos[prefix]', destPrefix);
-  }
+  field('tos[bucket]', bucket);
+  // 官方文档：TOS 目标路径；预处理产物会落在 <prefix>/ark_processed/<file_id>/
+  field('tos[prefix]', destPrefix);
   if (model.trim().isNotEmpty) {
     field('preprocess_configs[video][model]', model.trim());
   }
@@ -852,8 +825,8 @@ Future<String> _dbArkUploadToTosBucket({
       'multipart/form-data; boundary=$boundary');
   req.headers.contentLength = headBytes.length + total + tailBytes.length;
 
-  logp('☁️ 开始上传（${useTos ? 'TOS 桶: $destPrefix' : '方舟托管存储'}）: $uploadName '
-      '(${dbFmtSize(total)}, fps=${_dbFpsStr(fps)})');
+  logp('☁️ 开始上传到方舟 TOS: $uploadName '
+      '(${dbFmtSize(total)}, fps=${_dbFpsStr(fps)}, prefix=$destPrefix)');
 
   final raf = await file.open();
   var sent = 0;
@@ -911,8 +884,7 @@ Future<String> _dbArkUploadToTosBucket({
   if (id.isEmpty) {
     throw DbVideoArkException('方舟未返回 file id：${_dbErrText(body)}');
   }
-  logp('✅ 方舟文件创建: $id (status=${mStr(j, 'status')}, '
-      'storage=$storageMode${useTos ? ', bucket=$bucket' : ''})');
+  logp('✅ 方舟 TOS 文件创建: $id (status=${mStr(j, 'status')})');
   return id;
 }
 
@@ -1038,20 +1010,10 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     return dbArkVideoPartByFileId(cached, fps: fps);
   }
 
-  // 落盘位置二选一（官方限制：托管 512MB / TOS 视频 2GB）：
-  //   · 配了 tosBucket → 走 TOS，2GB 内整片直传；
-  //   · 没配 tosBucket → 仅当 useFilesApi=true 且 ≤512MB 才走托管存储，
-  //     其余情况如实报错，绝不悄悄降级成切片。
   if (cfg.tosBucket.trim().isEmpty) {
-    if (!(cfg.useFilesApi && size <= dbArkStorageMaxBytes)) {
-      throw DbVideoArkException(
-          'TOS Bucket 未配置，且当前策略不允许托管存储（单文件 '
-          '${dbFmtSize(dbArkStorageMaxBytes)}）：$fileName '
-          '（${dbFmtSize(size)}）',
-          code: 'tos_not_configured');
-    }
-    logp('ℹ️ 未配置 tosBucket：$fileName 走方舟托管存储'
-        '（${dbFmtSize(size)} ≤ ${dbFmtSize(dbArkStorageMaxBytes)}）');
+    throw DbVideoArkException(
+        'TOS Bucket 未配置，已按「只走 TOS 整片直传」策略停止，不回退本地。',
+        code: 'tos_not_configured');
   }
 
   onProgress?.call({
@@ -1059,7 +1021,6 @@ Future<Map<String, dynamic>> dbArkVideoPartForLocalFile({
     'size': size,
     'attempt': 1,
     'fps': fps,
-    'storage': cfg.tosBucket.trim().isEmpty ? 'managed' : 'tos',
   });
   final up = await _dbArkUploadWithModelFallback(
     file: f,
